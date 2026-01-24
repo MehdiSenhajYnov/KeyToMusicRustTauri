@@ -1,0 +1,334 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+KeyToMusic is a Tauri-based desktop soundboard application designed for manga reading. It provides global keyboard detection to trigger assigned sounds without interrupting the reading experience. The app supports multi-track audio playback with crossfading, YouTube downloads, momentum (start position), and multiple loop modes.
+
+**Platforms:** Windows 10/11, macOS 10.15+, Linux (Ubuntu, Fedora, Arch)
+
+## Tech Stack
+
+- **Framework:** Tauri 2.x (Rust backend + React frontend)
+- **Frontend:** React 18+ with TypeScript, Tailwind CSS, Zustand (state management)
+- **Backend:** Rust with rodio/cpal (audio), symphonia (fast seeking), rdev (global key detection)
+- **External Tools:** yt-dlp (YouTube downloads)
+
+## Project Structure
+
+```
+keytomusic/
+├── src/                          # React/TypeScript frontend
+│   ├── components/               # UI components (Layout, Tracks, Sounds, Keys, etc.)
+│   ├── stores/                   # Zustand state management
+│   ├── hooks/                    # Custom React hooks
+│   ├── types/                    # TypeScript type definitions
+│   └── utils/                    # Frontend utilities
+├── src-tauri/                    # Rust backend
+│   ├── src/
+│   │   ├── main.rs               # Tauri entry point
+│   │   ├── commands.rs           # Tauri commands exposed to frontend
+│   │   ├── audio/                # Audio engine, tracks, crossfade, symphonia seeking
+│   │   ├── keys/                 # Global keyboard detection & mapping
+│   │   ├── youtube/              # YouTube downloader, cache, ffmpeg/yt-dlp managers
+│   │   └── storage/              # Profile & config persistence
+│   └── Cargo.toml
+├── data/                         # Runtime user data (profiles, cache, config)
+└── resources/                    # Static resources (icons, error sounds)
+```
+
+## Core Architecture Concepts
+
+### Audio System
+
+**Multi-Track Architecture:** The app supports up to 20 independent audio tracks (OST, Ambiance, SFX). Each track can play one sound at a time. Playing a new sound on a track triggers a crossfade.
+
+**Volume Hierarchy:**
+```
+final_volume = sound.volume × track.volume × master_volume
+```
+
+**Real-time Sound Volume:** Sound volume can be changed while playing via the `set_sound_volume` command, which updates the sink volume immediately without restarting playback.
+
+**Audio Event Forwarding:** A dedicated polling thread in `main.rs` drains audio engine events every 100ms and emits them as Tauri events (`sound_started`, `sound_ended`, `playback_progress`) to the frontend.
+
+**Duration Reading:** Audio file durations are computed via symphonia header reading (`n_frames / sample_rate`), providing instant results without decoding. Falls back to rodio sample-counting only when headers lack frame count info.
+
+**Crossfade:** 500ms default duration with a custom curve that creates a brief silence gap between outgoing and incoming sounds (35%-65% of the duration). Crossfade only occurs between sounds on the same track.
+
+**Momentum:** Each sound has a momentum property (start position in seconds). Sounds can start from 0:00 or from their momentum position. Auto-Momentum mode or Shift key triggers momentum start.
+
+**Playback via Symphonia:** All audio playback uses a custom `SymphoniaSource` that implements `rodio::Source`. This provides consistent format support (MP3, M4A/AAC, OGG, FLAC, WAV) and instant byte-level seeking for momentum (O(1) for CBR, O(log n) for VBR). The `isomp4` symphonia feature is required for M4A files from YouTube downloads.
+
+**Audio Device Selection:** Users can select a specific output device from Settings, or follow the system default (None). The device list is provided via `cpal` host enumeration. The selected device is persisted in `config.json` as `audioDevice`.
+
+**Seamless Device Switching:** When the audio device changes (either via user selection in Settings or OS default device change), playback resumes automatically on the new device. The engine captures each playing track's state (file_path, position, volumes), rebuilds the OutputStream, then immediately resumes all tracks at their captured positions with no crossfade. This produces a brief gap (<50ms) but no `SoundEnded` events are emitted, so the frontend sees uninterrupted playback. The `AudioTrack` struct stores `file_path: Option<String>` to enable this resume capability.
+
+**Device Polling:** When following the system default (audioDevice = None), the audio thread polls for default device changes every 3 seconds via `cpal::default_host().default_output_device()`. If the device name changes, the seamless switch is triggered automatically.
+
+### Key Detection
+
+Uses `rdev` for global keyboard event capture (works when app is in background).
+
+**Cooldown:** Global 1500ms cooldown (configurable) applies to ALL key presses to prevent accidental spam.
+
+**Global Shortcuts:** Master Stop, Auto-Momentum toggle, and Key Detection toggle shortcuts all work regardless of key detection state (both foreground and background). They are checked before the `enabled` guard in `detector.rs`. Only sound-triggering key presses are blocked when detection is disabled.
+
+**Master Stop:** Configurable key combination (default: Ctrl+Shift+S) stops all sounds on all tracks. Works both in background (via rdev) and in foreground (via browser keyboard handler with pressed keys tracking).
+
+**Frontend Key Detection Guard:** The `handleKeyPress` function checks `config.keyDetectionEnabled` before processing any key event, ensuring the toggle actually disables detection.
+
+**Auto-disable:** Key detection is automatically disabled when text input fields are focused in the UI.
+
+**Keyboard Layout Support (AZERTY etc.):** Uses `charToKeyCode(e.key) || e.code` pattern for layout-independent key codes. A dynamic `layoutMap` records actual characters from keydown events via `recordKeyLayout()`. The `keyCodeToDisplay()` function checks layoutMap first for correct display, falling back to QWERTY map.
+
+**Sticky Modifier Fix:** `pressedKeysRef` is cleared on window `blur` event to prevent phantom modifier keys (e.g., Alt stuck after Alt+Tab) from triggering shortcuts incorrectly.
+
+### Sound Assignment & Loop Modes
+
+Each key binding associates:
+- A keyboard key (e.g., "KeyA", "F5")
+- A track ID
+- A list of sound IDs (can assign multiple sounds to one key)
+- A loop mode
+- An optional custom name (defaults to first sound's name in the UI)
+
+**Key Reassignment:** The SoundDetails panel supports:
+- **Change entire binding's key:** "Change Key" button captures a new key and moves all sounds (merges if target key exists).
+- **Move individual sound:** "Move" button per sound captures a target key and moves just that sound (creates binding if needed, removes source binding if empty).
+
+**Track Management:** Track of an existing binding can be changed via dropdown in SoundDetails. Tracks can be renamed by double-clicking their name in TrackView.
+
+**Loop Modes:**
+- `off`: Play a random sound from the list (no repeat), stop when finished
+- `single`: Loop the same sound continuously (respects momentum on loop)
+- `random`: Play a random sound from the list (avoid repeating the same), auto-play next on end
+- `sequential`: Cycle through sounds in order, auto-play next on end
+
+### YouTube Integration
+
+**yt-dlp:** Downloads YouTube audio as M4A (best audio quality) and stores in `data/cache/`. Uses video ID as filename (`{video_id}.m4a`) for predictable paths.
+
+**ffmpeg Auto-Install:** YouTube provides DASH fragmented MP4 audio which requires ffmpeg to remux into proper M4A. The app auto-downloads ffmpeg from `yt-dlp/FFmpeg-Builds` GitHub releases on first YouTube download. ffmpeg is stored in the app's `bin/` directory alongside yt-dlp, and yt-dlp auto-detects it via `--ffmpeg-location`.
+
+**Canonical URL Cache:** Cache lookups use canonical URLs (`https://www.youtube.com/watch?v={id}`) to avoid duplicate downloads when URLs contain extra parameters (list=, pp=, etc.).
+
+**Title Extraction:** Uses `--write-info-json` flag to get the video title from yt-dlp's JSON output. The info.json file is cleaned up after reading.
+
+**Retry Logic:** Transient network errors (connection, timeout, incomplete reads) are automatically retried up to 3 times with a 2-second delay between attempts. Non-retryable errors (private video, unavailable, geo-blocked) fail immediately.
+
+**Cache Cleanup:** At startup, after `save_profile`, and after `delete_profile`, the app scans all profile JSONs to collect referenced `cachedPath` values. Cache entries (and their files) not referenced by any profile are automatically deleted. This scan-based approach avoids stale `usedBy` tracking.
+
+### Profiles & Persistence
+
+**Profiles:** Each profile (saved as `data/profiles/{uuid}.json`) contains:
+- Sounds (with local path or YouTube URL + cached path)
+- Tracks configuration
+- Key bindings
+
+**Profile Switch:** All playing sounds are stopped (`stopAllSounds()`) before loading a new profile.
+
+**Global Config:** `data/config.json` stores app-wide settings (master volume, auto-momentum, key detection enabled, master stop shortcut, auto-momentum shortcut, key detection shortcut, crossfade duration, key cooldown, audio device).
+
+**Auto-save:** Configuration saves automatically on changes (with 1-second debounce), on app close, and every 5 minutes.
+
+### Import/Export
+
+**Export Format:** `.ktm` files (ZIP archives containing `profile.json`, `metadata.json`, and a `sounds/` folder with audio files).
+
+**Export UX:** Export uses a global Zustand store (`exportStore.ts`) so progress persists beyond the Settings modal lifecycle. A floating progress bar (`ExportProgress.tsx`) shows current/total files and filename, with a cancel button. Export emits `export_progress` events from Rust to frontend via Tauri.
+
+**Export Safety:**
+- **Temp file pattern:** Export writes to `{output}.tmp` first, then renames to final path on success. This prevents corrupt files if the process is interrupted.
+- **Tracking file:** Before export starts, the temp path is written to `data/export_in_progress.txt`. On success, this file is deleted. On next startup, `cleanup_interrupted_export()` checks for this file and deletes the orphaned temp file.
+- **Cancellation:** Uses `AtomicBool` static (`EXPORT_CANCELLED`) checked between each file copy in the export loop. On cancel: drops zip writer, deletes temp file and tracking file, returns "Export cancelled" error.
+- **Window close interception:** `onCloseRequested` handler warns the user if export is in progress. If they confirm close, `cleanupExportTemp()` is called before closing.
+
+**Tauri 2 Permissions:** The `capabilities/default.json` must include `core:window:allow-destroy` and `core:window:allow-close` for `onCloseRequested` to work correctly (these are NOT included in `core:window:default`).
+
+**Import Process:** Extracts the .ktm file, assigns new UUID to avoid conflicts, copies audio files to `data/imported_sounds/{new_id}/`, and updates file paths.
+
+## Development Commands
+
+Since this is a new project, here are the setup and common commands:
+
+### Initial Setup
+```bash
+# Create Tauri project with React + TypeScript template
+npm create tauri-app@latest keytomusic -- --template react-ts
+
+# Install dependencies
+npm install zustand
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+
+# Add Rust dependencies to src-tauri/Cargo.toml:
+# tauri, serde, serde_json, rodio, rdev, tokio, uuid, walkdir, sanitize-filename
+```
+
+### Development
+```bash
+# Run in development mode (hot reload)
+npm run tauri dev
+
+# Build frontend only
+npm run build
+
+# Format Rust code
+cargo fmt --manifest-path src-tauri/Cargo.toml
+
+# Lint Rust code
+cargo clippy --manifest-path src-tauri/Cargo.toml
+
+# Run Rust tests
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+### Build
+```bash
+# Build production app (creates installer)
+npm run tauri build
+```
+
+## Key Implementation Notes
+
+### Tauri Commands Pattern
+
+All backend functionality is exposed via Tauri commands in `src-tauri/src/commands.rs`:
+
+```rust
+#[tauri::command]
+fn play_sound(track_id: String, sound_id: String, file_path: String, start_position: f64, sound_volume: f32) -> Result<(), String>;
+
+#[tauri::command]
+fn stop_sound(track_id: String) -> Result<(), String>;
+
+#[tauri::command]
+fn stop_all_sounds() -> Result<(), String>;
+
+#[tauri::command]
+fn set_sound_volume(track_id: String, sound_id: String, volume: f32) -> Result<(), String>;
+
+#[tauri::command]
+async fn get_audio_duration(path: String) -> Result<f64, String>;
+
+#[tauri::command]
+async fn preload_profile_sounds(sounds: Vec<SoundPreloadEntry>) -> Result<HashMap<String, f64>, String>;
+
+#[tauri::command]
+fn list_audio_devices() -> Vec<String>;
+
+#[tauri::command]
+fn set_audio_device(device: Option<String>) -> Result<(), String>;
+
+#[tauri::command]
+async fn add_sound_from_youtube(url: String) -> Result<Sound, String>;
+// ... etc
+```
+
+Frontend invokes these via:
+```typescript
+import { invoke } from '@tauri-apps/api';
+await invoke('play_sound', { trackId, soundId, startPosition });
+```
+
+### Backend → Frontend Events
+
+The backend emits events for real-time updates:
+
+```rust
+// Rust side
+app_handle.emit_all("sound_started", payload).ok();
+```
+
+```typescript
+// React side
+import { listen } from '@tauri-apps/api/event';
+useEffect(() => {
+  const unlisten = listen('sound_started', (event) => {
+    // Handle event
+  });
+  return () => { unlisten.then(f => f()); };
+}, []);
+```
+
+Event types: `sound_started`, `sound_ended`, `playback_progress`, `key_pressed`, `master_stop_triggered`, `download_progress`, `download_complete`, `download_error`, `sound_not_found`, `export_progress`.
+
+### Error Handling
+
+Use custom error types with `thiserror` crate. Key errors:
+- `SoundFileNotFound`: Show modal to update path or remove sound
+- `YouTubeDownloadFailed`: Display user-friendly message
+- `YtDlpNotFound`: Prompt user to install yt-dlp
+- `UnsupportedFormat`: Supported formats are MP3, WAV, OGG, FLAC
+
+When a sound fails to play, trigger error sound (`resources/sounds/error.mp3`) and emit `sound_not_found` event.
+
+### Thread Safety
+
+The audio engine runs in a separate thread. Use Tokio channels or Arc<Mutex<>> for state sharing between Tauri command handlers and the audio thread.
+
+### Data Paths
+
+Use platform-specific app data directories:
+- Windows: `C:\Users\{user}\AppData\Roaming\KeyToMusic\`
+- macOS: `/Users/{user}/Library/Application Support/KeyToMusic/`
+- Linux: `/home/{user}/.local/share/keytomusic/`
+
+### Recommended Development Order
+
+1. **Foundations:** Types, storage, basic Tauri commands
+2. **Audio Engine:** Basic playback, tracks, crossfade, buffering
+3. **Key Detection:** Global keyboard capture with cooldown
+4. **UI:** Layout, profiles, tracks view, sound management
+5. **YouTube:** Download and cache system
+6. **Import/Export:** .ktm file handling
+7. **Polish:** Error handling, testing, optimization
+
+## UI Design Considerations
+
+- **Dark Theme:** Default color palette with indigo/violet accents
+- **Minimum Window Size:** 800x600 pixels
+- **Layout:** Header (logo, master volume, settings, window controls) + Sidebar (profiles, controls, now playing) + Main Content (track view, key assignments, sound details)
+- **Key Assignment Grid:** Visual representation of assigned keys with custom name (or first sound name) and total sound count. Keys can be deleted via the SoundDetails panel.
+- **Now Playing:** Seekable progress slider (drag-then-release pattern) with stop button per track. Updates position in real-time via `playback_progress` events.
+- **AddSoundModal:** Per-file momentum editors with number input, slider, and play/stop preview. Multiple sounds are grouped by key before creating bindings.
+- **Resizable SoundDetails Panel:** Divider bar between KeyGrid and SoundDetails with drag-to-resize (min 120px, default 256px). Uses mousedown/mousemove/mouseup pattern with body cursor override.
+- **Drag & Drop:** Support for adding multiple audio files at once with bulk assignment to specified keys
+
+## Technical Limits
+
+- **Max Tracks:** 20
+- **Momentum Seeking:** Instant via symphonia byte-level seek (no pre-loading needed)
+- **Cooldown Range:** 0ms - 5000ms
+- **Crossfade Range:** 100ms - 2000ms
+- **Supported Audio Formats:** MP3, WAV, OGG, FLAC, AAC
+- **Audio Thread:** Dynamic timeout (200ms idle, 16ms when playing) to reduce CPU usage
+
+## Dependencies (Cargo.toml excerpt)
+
+```toml
+[dependencies]
+tauri = { version = "2", features = ["shell-open"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rodio = "0.19"         # Audio playback
+cpal = "0.15"          # Audio device enumeration
+symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "wav", "pcm", "aac", "isomp4"] }  # Fast seeking + M4A
+rdev = "0.5"           # Global key detection
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+walkdir = "2"          # File traversal
+sanitize-filename = "0.5"
+zip = { version = "2", default-features = false, features = ["deflate"] }  # ffmpeg ZIP extraction
+```
+
+## External Requirements
+
+- **yt-dlp:** Auto-downloaded to `{app_data}/bin/yt-dlp.exe` on first YouTube download. No user installation needed.
+- **ffmpeg:** Auto-downloaded to `{app_data}/bin/ffmpeg.exe` on first YouTube download (required for M4A remuxing). No user installation needed.
+
+## Reference
+
+See `KeyToMusic_Technical_Specification.md` for comprehensive implementation details, data models, UI mockups, and pseudocode algorithms.

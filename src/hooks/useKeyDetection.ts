@@ -1,0 +1,236 @@
+import { useEffect, useCallback, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { useAudioStore } from "../stores/audioStore";
+import { useProfileStore } from "../stores/profileStore";
+import { useSettingsStore } from "../stores/settingsStore";
+import * as commands from "../utils/tauriCommands";
+import { charToKeyCode, recordKeyLayout } from "../utils/keyMapping";
+import type { LoopMode, Sound } from "../types";
+
+interface KeyPressedPayload {
+  keyCode: string;
+  withShift: boolean;
+}
+
+function selectSound(
+  soundIds: string[],
+  sounds: Sound[],
+  loopMode: LoopMode,
+  currentIndex: number
+): { sound: Sound | null; nextIndex: number } {
+  const available = soundIds
+    .map((id) => sounds.find((s) => s.id === id))
+    .filter((s): s is Sound => s !== undefined);
+
+  if (available.length === 0) return { sound: null, nextIndex: 0 };
+
+  switch (loopMode) {
+    case "off": {
+      if (available.length === 1) return { sound: available[0], nextIndex: 0 };
+      let idx: number;
+      do {
+        idx = Math.floor(Math.random() * available.length);
+      } while (idx === currentIndex && available.length > 1);
+      return { sound: available[idx], nextIndex: idx };
+    }
+    case "single":
+      return {
+        sound: available[Math.min(currentIndex, available.length - 1)],
+        nextIndex: currentIndex,
+      };
+    case "sequential": {
+      const idx = currentIndex % available.length;
+      return { sound: available[idx], nextIndex: idx + 1 };
+    }
+    case "random": {
+      if (available.length === 1) return { sound: available[0], nextIndex: 0 };
+      let idx: number;
+      do {
+        idx = Math.floor(Math.random() * available.length);
+      } while (idx === currentIndex && available.length > 1);
+      return { sound: available[idx], nextIndex: idx };
+    }
+  }
+}
+
+function getSoundFilePath(sound: Sound): string {
+  if (sound.source.type === "local") return sound.source.path;
+  return sound.source.cachedPath;
+}
+
+export function useKeyDetection() {
+  const setLastKeyPressed = useAudioStore((s) => s.setLastKeyPressed);
+  const currentProfile = useProfileStore((s) => s.currentProfile);
+  const updateKeyBinding = useProfileStore((s) => s.updateKeyBinding);
+  const config = useSettingsStore((s) => s.config);
+  const toggleKeyDetection = useSettingsStore((s) => s.toggleKeyDetection);
+  const toggleAutoMomentum = useSettingsStore((s) => s.toggleAutoMomentum);
+  const lastTriggerTime = useRef(0);
+
+  const handleKeyPress = useCallback(
+    async (payload: KeyPressedPayload) => {
+      if (!config.keyDetectionEnabled) return;
+
+      setLastKeyPressed(payload.keyCode);
+      setTimeout(() => setLastKeyPressed(null), 300);
+
+      if (!currentProfile) return;
+
+      const binding = currentProfile.keyBindings.find(
+        (kb) => kb.keyCode === payload.keyCode
+      );
+      if (!binding) return;
+
+      // Cooldown: only block if a sound was recently triggered
+      const now = Date.now();
+      if (now - lastTriggerTime.current < config.keyCooldown) {
+        return;
+      }
+
+      const { sound, nextIndex } = selectSound(
+        binding.soundIds,
+        currentProfile.sounds,
+        binding.loopMode,
+        binding.currentIndex
+      );
+      if (!sound) return;
+
+      // Update currentIndex for off/sequential/random
+      if (binding.loopMode !== "single") {
+        updateKeyBinding(binding.keyCode, { currentIndex: nextIndex });
+      }
+
+      const startPosition =
+        config.autoMomentum || payload.withShift ? sound.momentum : 0;
+
+      const filePath = getSoundFilePath(sound);
+
+      try {
+        await commands.playSound(
+          binding.trackId,
+          sound.id,
+          filePath,
+          startPosition,
+          sound.volume
+        );
+        // Cooldown starts only on successful play
+        lastTriggerTime.current = Date.now();
+      } catch (e) {
+        console.error("[useKeyDetection] Play error:", e);
+      }
+    },
+    [currentProfile, config.autoMomentum, config.keyCooldown, config.keyDetectionEnabled, setLastKeyPressed, updateKeyBinding]
+  );
+
+  // Listen for Tauri events from rdev (background key detection)
+  useEffect(() => {
+    const unlistenKey = listen<KeyPressedPayload>(
+      "key_pressed",
+      (event) => {
+        handleKeyPress(event.payload);
+      }
+    );
+
+    const unlistenStop = listen("master_stop_triggered", () => {
+      setLastKeyPressed(null);
+    });
+
+    const unlistenToggleKd = listen("toggle_key_detection", () => {
+      toggleKeyDetection();
+    });
+
+    const unlistenToggleAm = listen("toggle_auto_momentum", () => {
+      toggleAutoMomentum();
+    });
+
+    return () => {
+      unlistenKey.then((f) => f());
+      unlistenStop.then((f) => f());
+      unlistenToggleKd.then((f) => f());
+      unlistenToggleAm.then((f) => f());
+    };
+  }, [handleKeyPress, setLastKeyPressed, toggleKeyDetection, toggleAutoMomentum]);
+
+  // Fallback: browser keyboard events (foreground key detection)
+  const pressedKeysRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const handleBrowserKeyDown = (e: KeyboardEvent) => {
+      // Skip if focused on text input
+      const target = e.target as HTMLElement;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      // Track pressed keys for shortcut detection (use character-based code to match rdev)
+      const resolvedCode = charToKeyCode(e.key) || e.code;
+      pressedKeysRef.current.add(resolvedCode);
+      recordKeyLayout(resolvedCode, e.key);
+
+      // Check key detection toggle shortcut (works even when detection is off)
+      if (
+        config.keyDetectionShortcut.length > 0 &&
+        config.keyDetectionShortcut.every((k) => pressedKeysRef.current.has(k))
+      ) {
+        e.preventDefault();
+        toggleKeyDetection();
+        return;
+      }
+
+      // Check master stop shortcut
+      if (
+        config.masterStopShortcut.length > 0 &&
+        config.masterStopShortcut.every((k) => pressedKeysRef.current.has(k))
+      ) {
+        e.preventDefault();
+        commands.stopAllSounds().catch(console.error);
+        setLastKeyPressed(null);
+        return;
+      }
+
+      // Check auto momentum toggle shortcut
+      if (
+        config.autoMomentumShortcut.length > 0 &&
+        config.autoMomentumShortcut.every((k) => pressedKeysRef.current.has(k))
+      ) {
+        e.preventDefault();
+        toggleAutoMomentum();
+        return;
+      }
+
+      // Convert key character to keyCode (layout-aware)
+      const keyCode = charToKeyCode(e.key) || e.code;
+
+      if (currentProfile?.keyBindings.some((kb) => kb.keyCode === keyCode)) {
+        e.preventDefault();
+      }
+
+      handleKeyPress({
+        keyCode,
+        withShift: e.shiftKey,
+      });
+    };
+
+    const handleBrowserKeyUp = (e: KeyboardEvent) => {
+      const resolvedCode = charToKeyCode(e.key) || e.code;
+      pressedKeysRef.current.delete(resolvedCode);
+    };
+
+    const handleWindowBlur = () => {
+      pressedKeysRef.current.clear();
+    };
+
+    window.addEventListener("keydown", handleBrowserKeyDown);
+    window.addEventListener("keyup", handleBrowserKeyUp);
+    window.addEventListener("blur", handleWindowBlur);
+    return () => {
+      window.removeEventListener("keydown", handleBrowserKeyDown);
+      window.removeEventListener("keyup", handleBrowserKeyUp);
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, [handleKeyPress, currentProfile, config.masterStopShortcut, config.keyDetectionShortcut, config.autoMomentumShortcut, setLastKeyPressed, toggleKeyDetection, toggleAutoMomentum]);
+}

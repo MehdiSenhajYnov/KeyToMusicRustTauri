@@ -1,0 +1,48 @@
+import { useSettingsStore } from "../../stores/settingsStore";
+
+interface HeaderProps {
+  onSettingsClick: () => void;
+}
+
+export function Header({ onSettingsClick }: HeaderProps) {
+  const { config, setMasterVolume } = useSettingsStore();
+
+  return (
+    <header className="h-12 bg-bg-secondary border-b border-border-color flex items-center px-4 gap-4 shrink-0">
+      <div className="flex items-center gap-2">
+        <span className="text-accent-primary font-bold text-lg">KTM</span>
+        <span className="text-text-secondary text-sm hidden sm:inline">
+          KeyToMusic
+        </span>
+      </div>
+
+      <div className="flex-1" />
+
+      <div className="flex items-center gap-2">
+        <span className="text-text-muted text-xs">Vol</span>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={Math.round(config.masterVolume * 100)}
+          onChange={(e) => setMasterVolume(Number(e.target.value) / 100)}
+          className="w-24 h-1 accent-accent-primary"
+        />
+        <span className="text-text-secondary text-xs w-8">
+          {Math.round(config.masterVolume * 100)}%
+        </span>
+      </div>
+
+      <button
+        onClick={onSettingsClick}
+        className="p-2 text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+        title="Settings"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      </button>
+    </header>
+  );
+}
