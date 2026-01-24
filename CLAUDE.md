@@ -21,8 +21,9 @@ KeyToMusic is a Tauri-based desktop soundboard application designed for manga re
 keytomusic/
 ├── src/                          # React/TypeScript frontend
 │   ├── components/               # UI components (Layout, Tracks, Sounds, Keys, etc.)
-│   │   └── Errors/              # FileNotFoundModal
-│   ├── stores/                   # Zustand state management (profile, settings, error, export, toast)
+│   │   ├── Errors/              # FileNotFoundModal
+│   │   └── ConfirmDialog.tsx    # Custom confirm modal (replaces browser confirm())
+│   ├── stores/                   # Zustand state management (profile, settings, error, export, toast, confirm)
 │   ├── hooks/                    # Custom React hooks (useAudioEvents, useKeyDetection)
 │   ├── types/                    # TypeScript type definitions
 │   └── utils/                    # Frontend utilities (errorMessages, keyMapping, fileHelpers, tauriCommands)
@@ -31,7 +32,10 @@ keytomusic/
 │   │   ├── main.rs               # Tauri entry point, logging init, event forwarding
 │   │   ├── commands.rs           # Tauri commands exposed to frontend
 │   │   ├── audio/                # Audio engine, tracks, crossfade, symphonia seeking
-│   │   ├── keys/                 # Global keyboard detection & mapping
+│   │   ├── keys/                 # Global keyboard detection & mapping (platform-specific)
+│   │   │   ├── detector.rs       # Key detector with cooldown, shortcuts
+│   │   │   ├── mapping.rs        # KeyEvent types, key code conversions
+│   │   │   └── macos_listener.rs # macOS-only CGEventTap implementation
 │   │   ├── youtube/              # YouTube downloader, cache, ffmpeg/yt-dlp managers
 │   │   ├── import_export/        # .ktm file handling
 │   │   └── storage/              # Profile & config persistence
@@ -71,7 +75,15 @@ final_volume = sound.volume × track.volume × master_volume
 
 ### Key Detection
 
-Uses `rdev` for global keyboard event capture (works when app is in background).
+Uses platform-specific global keyboard capture (works when app is in background):
+- **Windows/Linux:** Uses `rdev` crate
+- **macOS:** Uses custom CGEventTap implementation (see below)
+
+**macOS CGEventTap Implementation:** On macOS 13+, rdev crashes because it calls `TSMGetInputSourceProperty` from a background thread, which Apple now enforces must run on the main dispatch queue. The custom implementation in `src-tauri/src/keys/macos_listener.rs` uses CoreGraphics CGEventTap directly:
+- Creates an event tap at HID level for hardware-level key capture
+- Runs in a CFRunLoop on a dedicated Rust thread
+- Maps hardware keycodes (0x00-0x7E) directly to Web KeyboardEvent.code strings
+- Still captures keys globally even when app is in background
 
 **Cooldown:** Global 1500ms cooldown (configurable) applies to ALL key presses to prevent accidental spam.
 
@@ -86,6 +98,23 @@ Uses `rdev` for global keyboard event capture (works when app is in background).
 **Keyboard Layout Support (AZERTY etc.):** Uses `charToKeyCode(e.key) || e.code` pattern for layout-independent key codes. A dynamic `layoutMap` records actual characters from keydown events via `recordKeyLayout()`. The `keyCodeToDisplay()` function checks layoutMap first for correct display, falling back to QWERTY map.
 
 **Sticky Modifier Fix:** `pressedKeysRef` is cleared on window `blur` event to prevent phantom modifier keys (e.g., Alt stuck after Alt+Tab) from triggering shortcuts incorrectly.
+
+### Modal Dialogs (ConfirmDialog)
+
+**Why custom dialogs:** Browser `confirm()` doesn't work on macOS WKWebView (returns immediately without user input). A custom React modal with Zustand store replaces all confirmation dialogs.
+
+**Pattern:**
+```typescript
+// Usage anywhere in the app:
+const confirmed = await useConfirmStore.getState().confirm("Delete this item?");
+if (confirmed) { /* proceed */ }
+```
+
+**Store (`src/stores/confirmStore.ts`):**
+- `confirm(message): Promise<boolean>` - Shows modal, returns promise
+- `close(result: boolean)` - Resolves promise and hides modal
+
+**Component (`src/components/ConfirmDialog.tsx`):** Modal with Cancel/Confirm buttons, dark theme, uses `autoFocus` on Confirm button.
 
 ### Sound Assignment & Loop Modes
 
@@ -372,7 +401,11 @@ serde_json = "1"
 rodio = "0.19"         # Audio playback
 cpal = "0.15"          # Audio device enumeration
 symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "wav", "pcm", "aac", "isomp4"] }  # Fast seeking + M4A
-rdev = "0.5"           # Global key detection
+
+# Platform-specific:
+[target."cfg(not(target_os = \"macos\"))".dependencies]
+rdev = "0.5"           # Global key detection (Windows/Linux only)
+# macOS uses native CGEventTap via CoreGraphics FFI (no external crate)
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 walkdir = "2"          # File traversal

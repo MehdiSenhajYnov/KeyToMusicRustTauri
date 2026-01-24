@@ -53,7 +53,7 @@
 | Framework Desktop | **Tauri 2.x** | Performances natives, taille réduite, accès système via Rust |
 | Frontend | **React 18+ avec TypeScript** | UI moderne, écosystème riche, typage fort |
 | Backend Audio | **Rust (rodio/cpal + symphonia)** | Lecture audio performante, seeking instantané |
-| Détection Touches | **Rust (rdev)** | Capture globale des événements clavier |
+| Détection Touches | **Rust (rdev/CGEventTap)** | rdev sur Win/Linux, CGEventTap custom sur macOS |
 | Téléchargement YT | **yt-dlp** (binaire externe) | Fiable, maintenu activement |
 | Styling | **Tailwind CSS** | Styling rapide, thème sombre facile |
 | State Management | **Zustand** | Simple, performant, TypeScript natif |
@@ -68,8 +68,12 @@ serde_json = "1"
 rodio = "0.19"  # Lecture audio
 cpal = "0.15"   # Énumération des périphériques audio
 symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "wav", "pcm", "aac", "isomp4"] }  # Seeking rapide + M4A
-rdev = "0.5"    # Détection globale des touches
 tokio = { version = "1", features = ["full"] }
+
+# Dépendances conditionnelles par plateforme:
+[target."cfg(not(target_os = \"macos\"))".dependencies]
+rdev = "0.5"    # Détection globale des touches (Windows/Linux uniquement)
+# Note: macOS utilise CoreGraphics CGEventTap directement via FFI (voir section 6.7)
 uuid = { version = "1", features = ["v4"] }
 walkdir = "2"   # Parcours de fichiers
 sanitize-filename = "0.5"  # Nettoyage noms de fichiers
@@ -895,7 +899,13 @@ struct TrackResumeInfo {
 
 ### 6.1 Architecture
 
-Le système utilise `rdev` pour capturer les événements clavier au niveau système, permettant la détection même quand l'application est en arrière-plan.
+Le système capture les événements clavier au niveau système, permettant la détection même quand l'application est en arrière-plan.
+
+**Implémentation par plateforme:**
+- **Windows/Linux:** Utilise `rdev` pour la capture globale
+- **macOS:** Utilise une implémentation custom CGEventTap (voir section 6.7)
+
+La raison de cette séparation: sur macOS 13+, rdev crash car il appelle `TSMGetInputSourceProperty` depuis un thread background, ce qu'Apple interdit maintenant (doit être sur la main dispatch queue).
 
 ```rust
 // src-tauri/src/keys/detector.rs
@@ -1123,6 +1133,77 @@ useEffect(() => {
         document.removeEventListener('focusout', handleFocusOut);
     };
 }, []);
+```
+
+### 6.7 Implémentation macOS (CGEventTap)
+
+Sur macOS, le système utilise une implémentation custom via CoreGraphics CGEventTap au lieu de rdev.
+
+**Fichier:** `src-tauri/src/keys/macos_listener.rs`
+
+**Raison:** rdev appelle `TSMGetInputSourceProperty` depuis un thread background, ce qui cause un crash (SIGTRAP) sur macOS 13+ car Apple enforce que cette API doit être appelée depuis la main dispatch queue.
+
+**Architecture:**
+```rust
+// Points d'entrée FFI CoreGraphics/CoreFoundation
+extern "C" {
+    fn CGEventTapCreate(...) -> *mut c_void;
+    fn CFRunLoopAddSource(...);
+    fn CFRunLoopRun();
+    // etc.
+}
+
+pub enum MacKeyEvent {
+    Press(String),   // key code string
+    Release(String),
+}
+
+/// Bloque le thread courant et écoute les événements clavier
+pub fn listen_macos<F>(callback: F) -> Result<(), String>
+where
+    F: Fn(MacKeyEvent) + 'static
+{
+    // 1. Créer un CGEventTap au niveau HID
+    // 2. Attacher au CFRunLoop
+    // 3. Bloquer avec CFRunLoopRun()
+}
+```
+
+**Mapping des Hardware Keycodes:**
+Les keycodes macOS (0x00-0x7E) sont mappés vers des strings Web KeyboardEvent.code:
+- 0x00 → "KeyA", 0x01 → "KeyS", ...
+- 0x12 → "Digit1", 0x13 → "Digit2", ...
+- 0x7A → "F1", 0x78 → "F2", ...
+- Modificateurs via flags: Shift, Control, Option, Command
+
+**Touches supportées:**
+- 26 lettres (A-Z)
+- 10 chiffres (0-9)
+- F1-F12
+- Flèches, navigation (Home, End, PageUp, PageDown, Insert, Delete)
+- Pavé numérique complet
+- Modificateurs (Shift, Control, Alt/Option, Meta/Command, CapsLock)
+- Touches spéciales (Enter, Tab, Space, Backspace, Escape)
+- Ponctuation et symboles
+
+**Intégration dans detector.rs:**
+```rust
+#[cfg(target_os = "macos")]
+{
+    use crate::keys::macos_listener::{listen_macos, MacKeyEvent};
+    listen_macos(move |event| {
+        let (code, is_press) = match event {
+            MacKeyEvent::Press(c) => (c, true),
+            MacKeyEvent::Release(c) => (c, false),
+        };
+        handle_key_event(code, is_press);
+    }).ok();
+}
+
+#[cfg(not(target_os = "macos"))]
+{
+    rdev::listen(move |event| { ... }).ok();
+}
 ```
 
 ---
@@ -1675,6 +1756,42 @@ interface SoundNotFoundEntry {
 // 1. verify_profile_sounds() au chargement du profil
 // 2. sound_not_found events pendant la lecture
 ```
+
+#### 9.4.3 ConfirmDialog (Confirmation Custom)
+
+**Problème:** Le `confirm()` natif du navigateur ne fonctionne pas sur macOS WKWebView (retourne immédiatement sans attendre l'input utilisateur).
+
+**Solution:** Un composant React modal avec un store Zustand pour gérer l'état.
+
+```tsx
+// src/stores/confirmStore.ts
+interface ConfirmStore {
+  isOpen: boolean;
+  message: string;
+  resolve: ((value: boolean) => void) | null;
+  confirm: (message: string) => Promise<boolean>;
+  close: (result: boolean) => void;
+}
+
+// Usage:
+const confirmed = await useConfirmStore.getState().confirm("Supprimer cet élément ?");
+if (confirmed) {
+  // Procéder à la suppression
+}
+```
+
+**Composant (`src/components/ConfirmDialog.tsx`):**
+- Modal avec fond semi-transparent (`bg-black/60`)
+- Deux boutons: "Cancel" (gris) et "Confirm" (indigo, `autoFocus`)
+- Thème sombre cohérent avec l'app
+- Se ferme automatiquement après choix
+
+**Utilisation dans l'app:**
+- Fermeture de fenêtre pendant un export
+- Suppression de profil
+- Suppression de piste
+- Fusion de bindings lors du changement de touche
+- Déplacement de sons entre touches
 
 ### 9.5 Interactions Drag & Drop
 
@@ -2515,6 +2632,8 @@ useEffect(() => {
 4. **Cross-platform** : Tester régulièrement sur les 3 OS cibles
 5. **yt-dlp & ffmpeg** : Auto-téléchargés dans `{app_data}/bin/`. yt-dlp depuis GitHub releases, ffmpeg depuis yt-dlp/FFmpeg-Builds. Pas d'installation manuelle requise.
 6. **Format M4A** : YouTube fournit du DASH fMP4 qui nécessite ffmpeg pour être remuxé en M4A lisible. Le feature `isomp4` de symphonia est requis pour le playback.
+7. **macOS Key Detection** : Utiliser CGEventTap au lieu de rdev sur macOS 13+ pour éviter le crash lié à `TSMGetInputSourceProperty`. Le code est dans `macos_listener.rs`.
+8. **Dialogs natifs** : Ne pas utiliser `confirm()` ou `alert()` du navigateur sur macOS (WKWebView ne les supporte pas correctement). Utiliser `ConfirmDialog` + `confirmStore` à la place.
 
 ---
 
@@ -2553,6 +2672,10 @@ useEffect(() => {
 
 ---
 
-**Document généré le** : 2024-01-20  
-**Version** : 1.0.0  
+**Document généré le** : 2024-01-20
+**Dernière mise à jour** : 2025-01-25
+**Version** : 1.1.0
 **Auteur** : Document technique pour Claude Code
+
+### Changelog
+- **v1.1.0** (2025-01-25): Ajout de l'implémentation macOS CGEventTap (section 6.7), ConfirmDialog (section 9.4.3), dépendances conditionnelles par plateforme
