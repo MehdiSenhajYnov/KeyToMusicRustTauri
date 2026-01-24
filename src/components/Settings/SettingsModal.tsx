@@ -324,7 +324,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <label className="text-text-secondary text-sm font-medium">
             Import / Export
           </label>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => {
                 if (currentProfile) {
@@ -359,6 +359,30 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               className="px-3 py-1.5 text-sm bg-accent-primary/20 text-accent-primary rounded hover:bg-accent-primary/30"
             >
               Import Profile
+            </button>
+            <button
+              onClick={async () => {
+                setImportStatus("Choosing legacy file...");
+                try {
+                  const path = await commands.pickLegacyFile();
+                  if (!path) {
+                    setImportStatus(null);
+                    return;
+                  }
+                  setImportStatus("Converting legacy save...");
+                  const profile = await commands.importLegacySave(path);
+                  await loadProfiles();
+                  await loadProfile(profile.id);
+                  setImportStatus(`Imported "${profile.name}" successfully!`);
+                  setTimeout(() => setImportStatus(null), 3000);
+                } catch (e) {
+                  setImportStatus(`Error: ${e}`);
+                  setTimeout(() => setImportStatus(null), 5000);
+                }
+              }}
+              className="px-3 py-1.5 text-sm bg-yellow-500/20 text-yellow-400 rounded hover:bg-yellow-500/30"
+            >
+              Import Legacy Save
             </button>
           </div>
           {importStatus && (

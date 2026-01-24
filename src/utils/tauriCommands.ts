@@ -186,6 +186,16 @@ export async function cancelExport(): Promise<void> {
   return invoke("cancel_export");
 }
 
+// ─── Legacy Import ────────────────────────────────────────────────────────
+
+export async function pickLegacyFile(): Promise<string | null> {
+  return invoke<string | null>("pick_legacy_file");
+}
+
+export async function importLegacySave(path: string): Promise<Profile> {
+  return invoke<Profile>("import_legacy_save", { path });
+}
+
 // ─── Error Handling ───────────────────────────────────────────────────────
 
 export interface MissingSoundInfo {

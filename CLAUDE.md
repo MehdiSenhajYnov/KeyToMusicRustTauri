@@ -153,6 +153,8 @@ Each key binding associates:
 
 **Import Process:** Extracts the .ktm file, assigns new UUID to avoid conflicts, copies audio files to `data/imported_sounds/{new_id}/`, and updates file paths.
 
+**Legacy Import:** Converts save files from the old KeyToMusic (Unity-based) version into new profiles. The legacy format uses a `Sounds` array with numeric Windows virtual key codes (`Key`), character labels (`UserKeyChar`), and `SoundInfos` containing `uniqueId`, `soundPath`, `soundName`, and `soundMomentum`. Conversion maps VK codes to web `KeyCode` strings (65-90→KeyA-KeyZ, 48-57→Digit0-Digit9, 112-123→F1-F12, plus OEM keys), creates `SoundSource::Local` entries (normalizing `/` to `\` on Windows), assigns all bindings to a default "OST" track, and sets volume to 1.0, loop mode to "off", duration to 0.0 (computed on load). The UI button is in the Settings modal Import/Export section.
+
 ## Development Commands
 
 Since this is a new project, here are the setup and common commands:
@@ -228,6 +230,13 @@ fn set_audio_device(device: Option<String>) -> Result<(), String>;
 
 #[tauri::command]
 async fn add_sound_from_youtube(url: String, download_id: String) -> Result<Sound, String>;
+
+// Legacy import commands
+#[tauri::command]
+async fn pick_legacy_file() -> Result<Option<String>, String>;
+
+#[tauri::command]
+async fn import_legacy_save(path: String) -> Result<Profile, String>;
 
 // Error handling commands
 #[tauri::command]

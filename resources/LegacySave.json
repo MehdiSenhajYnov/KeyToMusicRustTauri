@@ -1,0 +1,310 @@
+{
+  "Sounds": [
+    {
+      "Key": 68,
+      "UserKeyChar": "D",
+      "SoundInfos": [
+        {
+          "uniqueId": "e6fb6419-7c99-432d-917d-ce7e7d6633a2",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Heroic Music Red Moon by Atom Music Audio.mp3",
+          "soundName": "Heroic Music Red Moon by Atom Music Audio",
+          "soundMomentum": 118
+        }
+      ]
+    },
+    {
+      "Key": 83,
+      "UserKeyChar": "S",
+      "SoundInfos": [
+        {
+          "uniqueId": "eb036314-e080-4e20-ac2d-578735d2bd72",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/WE ARE VANGUARD  Epic Powerful Orchestral Music.mp3",
+          "soundName": "WE ARE VANGUARD  Epic Powerful Orchestral Music",
+          "soundMomentum": 142
+        }
+      ]
+    },
+    {
+      "Key": 88,
+      "UserKeyChar": "X",
+      "SoundInfos": [
+        {
+          "uniqueId": "5274c392-831a-404c-a5d2-2aaf687dc5c3",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Burn - Ellie Goulding  Epic Emotional Orchestra Ver..mp3",
+          "soundName": "Burn - Ellie Goulding  Epic Emotional Orchestra Ver.",
+          "soundMomentum": 136
+        }
+      ]
+    },
+    {
+      "Key": 73,
+      "UserKeyChar": "I",
+      "SoundInfos": [
+        {
+          "uniqueId": "e9a1dc89-b206-4ef1-bc07-cdb14c51b591",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Epic Orchestral Music Obscurity — Audiomachine.mp3",
+          "soundName": "Epic Orchestral Music Obscurity — Audiomachine",
+          "soundMomentum": 36
+        }
+      ]
+    },
+    {
+      "Key": 78,
+      "UserKeyChar": "N",
+      "SoundInfos": [
+        {
+          "uniqueId": "e5cc91a4-57e8-486e-965c-ae1a45fa454b",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Royal Blood.mp3",
+          "soundName": "Royal Blood",
+          "soundMomentum": 74
+        }
+      ]
+    },
+    {
+      "Key": 66,
+      "UserKeyChar": "B",
+      "SoundInfos": [
+        {
+          "uniqueId": "13be4f42-e207-4c8c-b847-8510774e5ce3",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Downfall Of Prosperity.mp3",
+          "soundName": "Downfall Of Prosperity",
+          "soundMomentum": 65
+        }
+      ]
+    },
+    {
+      "Key": 67,
+      "UserKeyChar": "C",
+      "SoundInfos": [
+        {
+          "uniqueId": "81d34eaa-5473-46b0-b044-5589e0dac176",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Crown Of Vengeance.mp3",
+          "soundName": "Crown Of Vengeance",
+          "soundMomentum": 31
+        }
+      ]
+    },
+    {
+      "Key": 86,
+      "UserKeyChar": "V",
+      "SoundInfos": [
+        {
+          "uniqueId": "65e4b6bc-e89b-47ad-bb0c-96519133d6ee",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Symphonia.mp3",
+          "soundName": "Symphonia",
+          "soundMomentum": 46
+        }
+      ]
+    },
+    {
+      "Key": 65,
+      "UserKeyChar": "A",
+      "SoundInfos": [
+        {
+          "uniqueId": "37d4907b-777b-4b83-a8e5-1033c755c2eb",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/After The Fall.mp3",
+          "soundName": "After The Fall",
+          "soundMomentum": 61
+        }
+      ]
+    },
+    {
+      "Key": 72,
+      "UserKeyChar": "H",
+      "SoundInfos": [
+        {
+          "uniqueId": "c3193955-bf9a-40e1-bff1-83e6bf02bc64",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Jo Blankenburg - Hyde (Epic Massive Powerful Choral Music).mp3",
+          "soundName": "Jo Blankenburg - Hyde (Epic Massive Powerful Choral Music)",
+          "soundMomentum": 70
+        }
+      ]
+    },
+    {
+      "Key": 77,
+      "UserKeyChar": "M",
+      "SoundInfos": [
+        {
+          "uniqueId": "0b9b529a-1722-4898-bda0-dff43f4e1cdf",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Might⁺U.mp3",
+          "soundName": "Might⁺U",
+          "soundMomentum": 118
+        }
+      ]
+    },
+    {
+      "Key": 81,
+      "UserKeyChar": "Q",
+      "SoundInfos": [
+        {
+          "uniqueId": "409731ef-feb7-45ee-a03e-e165db4b5b83",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Naruto - Afternoon of Konoha.mp3",
+          "soundName": "Naruto - Afternoon of Konoha",
+          "soundMomentum": 0
+        }
+      ]
+    },
+    {
+      "Key": 71,
+      "UserKeyChar": "G",
+      "SoundInfos": [
+        {
+          "uniqueId": "6c2219f3-eccd-4023-a5e8-41a4940dddd9",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Two Steps From Hell - Protectors of the Earth.mp3",
+          "soundName": "Two Steps From Hell - Protectors of the Earth",
+          "soundMomentum": 66
+        }
+      ]
+    },
+    {
+      "Key": 89,
+      "UserKeyChar": "Y",
+      "SoundInfos": [
+        {
+          "uniqueId": "4165b730-fe63-4bd0-955c-939ccce334f3",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/IMAscore - Children of Time Extended.mp3",
+          "soundName": "IMAscore - Children of Time Extended",
+          "soundMomentum": 266
+        }
+      ]
+    },
+    {
+      "Key": 70,
+      "UserKeyChar": "F",
+      "SoundInfos": [
+        {
+          "uniqueId": "0ae0dace-6c05-40cd-9e9c-481422abc887",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Zack Hemsey - See what I've become.mp3",
+          "soundName": "Zack Hemsey - See what I've become",
+          "soundMomentum": 38
+        }
+      ]
+    },
+    {
+      "Key": 69,
+      "UserKeyChar": "E",
+      "SoundInfos": [
+        {
+          "uniqueId": "02829fe7-3e73-47be-8b9e-a2a2bba3f701",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Jo Blankenburg - Voyager Extended.mp3",
+          "soundName": "Jo Blankenburg - Voyager Extended",
+          "soundMomentum": 196
+        },
+        {
+          "uniqueId": "90c06d88-2dc8-442e-ba89-3bd407517efa",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Jo Blankenburg - Voyager Extended1.mp3",
+          "soundName": "Jo Blankenburg - Voyager Extended1",
+          "soundMomentum": 38
+        }
+      ]
+    },
+    {
+      "Key": 90,
+      "UserKeyChar": "Z",
+      "SoundInfos": [
+        {
+          "uniqueId": "3ef607f1-b8c0-4508-afe5-7dc43811ad63",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Nanatsu no Taizai S2 -  Escanor Theme (Rearrangement).mp3",
+          "soundName": "Nanatsu no Taizai S2 -  Escanor Theme (Rearrangement)",
+          "soundMomentum": 196
+        }
+      ]
+    },
+    {
+      "Key": 87,
+      "UserKeyChar": "W",
+      "SoundInfos": [
+        {
+          "uniqueId": "ca6e1aa6-45dd-4af2-ae21-1e36c814f8ca",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Soundmopi - Return Of The Hero [Epic Heroic Choral Action].mp3",
+          "soundName": "Soundmopi - Return Of The Hero [Epic Heroic Choral Action]",
+          "soundMomentum": 23
+        }
+      ]
+    },
+    {
+      "Key": 74,
+      "UserKeyChar": "J",
+      "SoundInfos": [
+        {
+          "uniqueId": "029678f9-6279-4d78-bc6c-bd4e1aa1b269",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Demon Slayer Tanjiro vs Rui Epic OST.mp3",
+          "soundName": "Demon Slayer Tanjiro vs Rui Epic OST",
+          "soundMomentum": 33
+        }
+      ]
+    },
+    {
+      "Key": 76,
+      "UserKeyChar": "L",
+      "SoundInfos": [
+        {
+          "uniqueId": "7d2ae42a-72c3-4a5f-96f8-74be109afa23",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Assassins Creed 2 OST  Jesper Kyd - Ezios Family (Track 03).mp3",
+          "soundName": "Assassins Creed 2 OST  Jesper Kyd - Ezios Family (Track 03)",
+          "soundMomentum": 38
+        }
+      ]
+    },
+    {
+      "Key": 85,
+      "UserKeyChar": "U",
+      "SoundInfos": [
+        {
+          "uniqueId": "50bcb3bc-11e1-4383-bbda-cca7bd388af2",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/ARROW OF TIME - David Chappell [Epic Music - Epic Majestic Inspirational Orchestral Music].mp3",
+          "soundName": "ARROW OF TIME - David Chappell [Epic Music - Epic Majestic Inspirational Orchestral Music]",
+          "soundMomentum": 202
+        }
+      ]
+    },
+    {
+      "Key": 82,
+      "UserKeyChar": "R",
+      "SoundInfos": [
+        {
+          "uniqueId": "01588629-86d5-4593-b974-42f972a9e1aa",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Timothy Shortell - Until All Light Fades.mp3",
+          "soundName": "Timothy Shortell - Until All Light Fades",
+          "soundMomentum": 117
+        }
+      ]
+    },
+    {
+      "Key": 84,
+      "UserKeyChar": "T",
+      "SoundInfos": [
+        {
+          "uniqueId": "afd3b1c3-fdc9-4777-b4fc-e010ce342d70",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Our Past  - CRZYSND & Michael Yang.mp3",
+          "soundName": "Our Past  - CRZYSND & Michael Yang",
+          "soundMomentum": 177
+        }
+      ]
+    },
+    {
+      "Key": 80,
+      "UserKeyChar": "P",
+      "SoundInfos": [
+        {
+          "uniqueId": "b69e55f2-c578-4374-86d1-4e976cc4dc02",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/TELL ME HOW HE DIED by Dan Thiessen • Epic Music World  Worlds Most Emotional Music.mp3",
+          "soundName": "TELL ME HOW HE DIED by Dan Thiessen • Epic Music World  Worlds Most Emotional Music",
+          "soundMomentum": 219
+        }
+      ]
+    },
+    {
+      "Key": 221,
+      "UserKeyChar": "^",
+      "SoundInfos": [
+        {
+          "uniqueId": "c3f339c5-4aad-4b11-b09b-5ecc72bec694",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Two Steps From Hell - Archangel.mp3",
+          "soundName": "Two Steps From Hell - Archangel",
+          "soundMomentum": 0
+        }
+      ]
+    }
+  ]
+}

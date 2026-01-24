@@ -1994,6 +1994,75 @@ pub async fn import_profile(ktm_path: &Path) -> Result<ProfileId> {
 }
 ```
 
+### 11.6 Import Legacy Save (ancienne version)
+
+L'application peut importer les fichiers de sauvegarde de l'ancienne version de KeyToMusic (Unity-based). Ces fichiers sont des JSON avec un format différent.
+
+#### 11.6.1 Format Legacy
+
+```json
+{
+  "Sounds": [
+    {
+      "Key": 68,
+      "UserKeyChar": "D",
+      "SoundInfos": [
+        {
+          "uniqueId": "e6fb6419-7c99-432d-917d-ce7e7d6633a2",
+          "soundPath": "C:/Users/mehdi/AppData/LocalLow/KeyToMusicCompany/KeyToMusic/WalidPlaylist/Sound.mp3",
+          "soundName": "Sound Name",
+          "soundMomentum": 118
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### 11.6.2 Mapping des Champs
+
+| Champ Legacy | Champ Nouveau | Transformation |
+|---|---|---|
+| `Key` (u32) | `keyCode` (String) | VK code → web KeyCode (65→KeyA, 48→Digit0, 112→F1, 221→BracketRight, etc.) |
+| `SoundInfos[].uniqueId` | `sound.id` | Conservé tel quel |
+| `SoundInfos[].soundPath` | `sound.source` | `{ type: "local", path }` avec `/` → `\` sur Windows |
+| `SoundInfos[].soundName` | `sound.name` | Conservé tel quel |
+| `SoundInfos[].soundMomentum` | `sound.momentum` | Conservé (f64, secondes) |
+| (absent) | `sound.volume` | Défaut: 1.0 |
+| (absent) | `sound.duration` | Défaut: 0.0 (calculé au chargement) |
+| (absent) | `track` | Track "OST" créé par défaut |
+| (absent) | `loopMode` | Défaut: "off" |
+
+#### 11.6.3 Commandes Tauri
+
+```rust
+#[tauri::command]
+async fn pick_legacy_file() -> Result<Option<String>, String>;
+
+#[tauri::command]
+async fn import_legacy_save(path: String) -> Result<Profile, String>;
+```
+
+#### 11.6.4 Algorithme de Conversion
+
+```
+1. Ouvrir file picker (filtre: *.json)
+2. Lire et parser le JSON legacy
+3. Créer un nouveau Profile (UUID, timestamps, nom = "{filename} (Legacy)")
+4. Créer un Track "OST" par défaut
+5. Pour chaque entrée dans Sounds[]:
+   a. Convertir Key (u32) en KeyCode string via vk_to_keycode()
+   b. Si code inconnu: skip avec warning log
+   c. Pour chaque SoundInfo: créer un Sound (source Local, momentum, volume 1.0)
+   d. Créer un KeyBinding liant le keyCode aux sound IDs
+6. Sauvegarder le profil
+7. Retourner le Profile au frontend
+```
+
+#### 11.6.5 UI
+
+Bouton "Import Legacy Save" (stylé en jaune) dans la section Import/Export du Settings modal. Affiche le statut de conversion et charge automatiquement le profil importé.
+
 ---
 
 ## 12. Gestion des Erreurs

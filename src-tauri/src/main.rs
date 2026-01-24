@@ -232,6 +232,9 @@ fn main() {
             pick_ktm_file,
             cleanup_export_temp,
             cancel_export,
+            // Legacy import commands
+            pick_legacy_file,
+            import_legacy_save,
             // Error handling commands
             verify_profile_sounds,
             pick_audio_file,

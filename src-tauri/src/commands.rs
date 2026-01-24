@@ -509,6 +509,168 @@ pub async fn pick_ktm_file() -> Result<Option<String>, String> {
     Ok(result)
 }
 
+// ─── Legacy Import Commands ──────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+#[allow(non_snake_case)]
+struct LegacySoundInfo {
+    uniqueId: String,
+    soundPath: String,
+    soundName: String,
+    soundMomentum: f64,
+}
+
+#[derive(serde::Deserialize)]
+#[allow(non_snake_case)]
+struct LegacyKeyEntry {
+    Key: u32,
+    #[allow(dead_code)]
+    UserKeyChar: String,
+    SoundInfos: Vec<LegacySoundInfo>,
+}
+
+#[derive(serde::Deserialize)]
+#[allow(non_snake_case)]
+struct LegacySave {
+    Sounds: Vec<LegacyKeyEntry>,
+}
+
+/// Convert a legacy Windows virtual key code to a web KeyCode string.
+fn vk_to_keycode(vk: u32) -> Option<String> {
+    match vk {
+        65..=90 => {
+            let ch = (b'A' + (vk - 65) as u8) as char;
+            Some(format!("Key{}", ch))
+        }
+        48..=57 => {
+            let ch = (b'0' + (vk - 48) as u8) as char;
+            Some(format!("Digit{}", ch))
+        }
+        112..=123 => {
+            let num = vk - 111;
+            Some(format!("F{}", num))
+        }
+        // OEM keys (common on various keyboard layouts)
+        186 => Some("Semicolon".to_string()),
+        187 => Some("Equal".to_string()),
+        188 => Some("Comma".to_string()),
+        189 => Some("Minus".to_string()),
+        190 => Some("Period".to_string()),
+        191 => Some("Slash".to_string()),
+        192 => Some("Backquote".to_string()),
+        219 => Some("BracketLeft".to_string()),
+        220 => Some("Backslash".to_string()),
+        221 => Some("BracketRight".to_string()),
+        222 => Some("Quote".to_string()),
+        32 => Some("Space".to_string()),
+        13 => Some("Enter".to_string()),
+        _ => None,
+    }
+}
+
+/// Pick a legacy save JSON file.
+#[tauri::command]
+pub async fn pick_legacy_file() -> Result<Option<String>, String> {
+    let result = tokio::task::spawn_blocking(move || {
+        rfd::FileDialog::new()
+            .add_filter("Legacy Save", &["json"])
+            .pick_file()
+            .map(|p| p.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("File dialog failed: {}", e))?;
+
+    Ok(result)
+}
+
+/// Import a legacy KeyToMusic save file and convert it to a new profile.
+#[tauri::command]
+pub async fn import_legacy_save(path: String) -> Result<Profile, String> {
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read legacy save: {}", e))?;
+
+    let legacy: LegacySave = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse legacy save: {}", e))?;
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let profile_id = uuid::Uuid::new_v4().to_string();
+    let track_id = uuid::Uuid::new_v4().to_string();
+
+    // Create a default track
+    let track = crate::types::Track {
+        id: track_id.clone(),
+        name: "OST".to_string(),
+        volume: 1.0,
+        currently_playing: None,
+        playback_position: 0.0,
+        is_playing: false,
+    };
+
+    let mut sounds: Vec<Sound> = Vec::new();
+    let mut key_bindings: Vec<crate::types::KeyBinding> = Vec::new();
+
+    for entry in &legacy.Sounds {
+        let key_code = match vk_to_keycode(entry.Key) {
+            Some(kc) => kc,
+            None => {
+                tracing::warn!("Skipping unknown legacy key code: {}", entry.Key);
+                continue;
+            }
+        };
+
+        let mut sound_ids: Vec<String> = Vec::new();
+
+        for info in &entry.SoundInfos {
+            let sound = Sound {
+                id: info.uniqueId.clone(),
+                name: info.soundName.clone(),
+                source: SoundSource::Local {
+                    path: info.soundPath.replace('/', "\\"),
+                },
+                momentum: info.soundMomentum,
+                volume: 1.0,
+                duration: 0.0, // Will be computed on load
+            };
+            sound_ids.push(sound.id.clone());
+            sounds.push(sound);
+        }
+
+        if !sound_ids.is_empty() {
+            key_bindings.push(crate::types::KeyBinding {
+                key_code,
+                track_id: track_id.clone(),
+                sound_ids,
+                loop_mode: crate::types::LoopMode::Off,
+                current_index: 0,
+                name: None,
+            });
+        }
+    }
+
+    // Derive profile name from filename
+    let file_name = std::path::Path::new(&path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Legacy Import".to_string());
+
+    let profile = Profile {
+        id: profile_id,
+        name: format!("{} (Legacy)", file_name),
+        created_at: now.clone(),
+        updated_at: now,
+        sounds,
+        tracks: vec![track],
+        key_bindings,
+    };
+
+    storage::save_profile(&profile)?;
+
+    tracing::info!("Imported legacy save as profile '{}' with {} sounds and {} key bindings",
+        profile.name, profile.sounds.len(), profile.key_bindings.len());
+
+    Ok(profile)
+}
+
 // ─── Error Handling Commands ──────────────────────────────────────────────
 
 #[derive(serde::Serialize)]
