@@ -2,11 +2,13 @@ import { useState, useRef } from "react";
 import { useProfileStore } from "../../stores/profileStore";
 import { setTrackVolume } from "../../utils/tauriCommands";
 import { useToastStore } from "../../stores/toastStore";
+import { useConfirmStore } from "../../stores/confirmStore";
 
 export function TrackView() {
   const { currentProfile, addTrack, removeTrack, updateTrack, saveCurrentProfile } =
     useProfileStore();
   const addToast = useToastStore((s) => s.addToast);
+  const showConfirm = useConfirmStore((s) => s.confirm);
   const [isAdding, setIsAdding] = useState(false);
   const [newTrackName, setNewTrackName] = useState("");
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
@@ -53,7 +55,7 @@ export function TrackView() {
   };
 
   const handleDeleteTrack = async (trackId: string, trackName: string) => {
-    if (!confirm(`Delete track "${trackName}"?`)) return;
+    if (!await showConfirm(`Delete track "${trackName}"?`)) return;
     removeTrack(trackId);
     setTimeout(() => saveCurrentProfile(), 100);
     addToast(`Track "${trackName}" deleted`, "info");
