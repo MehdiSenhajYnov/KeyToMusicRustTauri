@@ -16,7 +16,8 @@ fn ffmpeg_download_url() -> &'static str {
     if cfg!(target_os = "windows") {
         "https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip"
     } else if cfg!(target_os = "macos") {
-        "https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-macos64-gpl.zip"
+        // yt-dlp/FFmpeg-Builds no longer provides macOS builds, use evermeet.cx instead
+        "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip"
     } else {
         "https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz"
     }
@@ -129,15 +130,22 @@ fn extract_from_zip(data: &[u8], target_path: &PathBuf) -> Result<(), String> {
 
     let ffmpeg_name = ffmpeg_binary_name();
 
-    // Find the ffmpeg binary in the archive (usually in bin/ subdirectory)
+    // Find the ffmpeg binary in the archive
+    // Try two patterns:
+    // 1. bin/ffmpeg (yt-dlp FFmpeg-Builds structure)
+    // 2. ffmpeg directly at root (evermeet.cx structure)
     let mut found = false;
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)
             .map_err(|e| format!("Failed to read archive entry: {}", e))?;
 
         let name = file.name().to_string();
-        // Look for bin/ffmpeg or bin/ffmpeg.exe
-        if name.ends_with(ffmpeg_name) && (name.contains("/bin/") || name.contains("\\bin\\")) {
+
+        // Match either: ends with bin/ffmpeg OR is exactly "ffmpeg" (or ffmpeg.exe on Windows)
+        let is_bin_path = name.ends_with(ffmpeg_name) && (name.contains("/bin/") || name.contains("\\bin\\"));
+        let is_root_path = name == ffmpeg_name;
+
+        if is_bin_path || is_root_path {
             let mut contents = Vec::new();
             file.read_to_end(&mut contents)
                 .map_err(|e| format!("Failed to extract ffmpeg: {}", e))?;
