@@ -2,12 +2,14 @@ import { useState, useRef } from "react";
 import { useProfileStore } from "../../stores/profileStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useToastStore } from "../../stores/toastStore";
+import { useConfirmStore } from "../../stores/confirmStore";
 
 export function ProfileSelector() {
   const { profiles, currentProfile, loadProfile, createProfile, deleteProfile, loadProfiles, renameProfile } =
     useProfileStore();
   const { updateConfig } = useSettingsStore();
   const addToast = useToastStore((s) => s.addToast);
+  const showConfirm = useConfirmStore((s) => s.confirm);
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export function ProfileSelector() {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete profile "${name}"?`)) return;
+    if (!await showConfirm(`Delete profile "${name}"?`)) return;
     await deleteProfile(id);
     await updateConfig({ currentProfileId: null });
     await loadProfiles();

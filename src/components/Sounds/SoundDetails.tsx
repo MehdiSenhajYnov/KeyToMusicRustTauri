@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useProfileStore } from "../../stores/profileStore";
 import { useToastStore } from "../../stores/toastStore";
+import { useConfirmStore } from "../../stores/confirmStore";
 import { keyCodeToDisplay, charToKeyCode, recordKeyLayout } from "../../utils/keyMapping";
 import { formatDuration } from "../../utils/fileHelpers";
 import { AddSoundModal } from "./AddSoundModal";
@@ -22,13 +23,14 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   const { currentProfile, updateKeyBinding, removeKeyBinding, addKeyBinding, removeSound, updateSound, saveCurrentProfile } =
     useProfileStore();
   const addToast = useToastStore((s) => s.addToast);
+  const showConfirm = useConfirmStore((s) => s.confirm);
   const [showAddModal, setShowAddModal] = useState(false);
   const [previewingSoundId, setPreviewingSoundId] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // "binding" = reassign entire key, soundId string = move that sound to another key
   const [capturingKeyFor, setCapturingKeyFor] = useState<"binding" | string | null>(null);
 
-  const handleCapturedKey = useCallback((newKeyCode: string) => {
+  const handleCapturedKey = useCallback(async (newKeyCode: string) => {
     if (!currentProfile) return;
     const binding = currentProfile.keyBindings.find((kb) => kb.keyCode === selectedKey);
     if (!binding) return;
@@ -43,7 +45,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     if (capturingKeyFor === "binding") {
       // Reassign the entire binding to a new key
       if (existingTarget) {
-        if (!confirm(`Key [${keyCodeToDisplay(newKeyCode)}] already has sounds assigned. Merge into it?`)) {
+        if (!await showConfirm(`Key [${keyCodeToDisplay(newKeyCode)}] already has sounds assigned. Merge into it?`)) {
           setCapturingKeyFor(null);
           return;
         }
@@ -94,7 +96,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     }
 
     setCapturingKeyFor(null);
-  }, [currentProfile, selectedKey, capturingKeyFor, updateKeyBinding, removeKeyBinding, addKeyBinding, saveCurrentProfile, addToast, onKeyChanged, onClose]);
+  }, [currentProfile, selectedKey, capturingKeyFor, updateKeyBinding, removeKeyBinding, addKeyBinding, saveCurrentProfile, addToast, showConfirm, onKeyChanged, onClose]);
 
   useEffect(() => {
     if (!capturingKeyFor) return;
@@ -135,8 +137,8 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     saveTimerRef.current = setTimeout(() => saveCurrentProfile(), 500);
   };
 
-  const handleDeleteKey = () => {
-    if (!confirm(`Delete key binding [${keyCodeToDisplay(selectedKey)}]?`)) return;
+  const handleDeleteKey = async () => {
+    if (!await showConfirm(`Delete key binding [${keyCodeToDisplay(selectedKey)}]?`)) return;
     removeKeyBinding(selectedKey);
     setTimeout(() => saveCurrentProfile(), 100);
     addToast(`Key [${keyCodeToDisplay(selectedKey)}] removed`, "info");
@@ -153,8 +155,8 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     setTimeout(() => saveCurrentProfile(), 100);
   };
 
-  const handleRemoveSound = (soundId: string, name: string) => {
-    if (!confirm(`Remove "${name}" from this key?`)) return;
+  const handleRemoveSound = async (soundId: string, name: string) => {
+    if (!await showConfirm(`Remove "${name}" from this key?`)) return;
     removeSound(soundId);
     setTimeout(() => saveCurrentProfile(), 100);
     addToast(`Sound "${name}" removed`, "info");

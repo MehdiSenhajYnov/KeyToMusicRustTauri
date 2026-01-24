@@ -6,6 +6,8 @@ import { MainContent } from "./components/Layout/MainContent";
 import { SettingsModal } from "./components/Settings/SettingsModal";
 import { ToastContainer } from "./components/Toast/ToastContainer";
 import { ExportProgress } from "./components/Export/ExportProgress";
+import { ConfirmDialog } from "./components/ConfirmDialog";
+import { useConfirmStore } from "./stores/confirmStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useProfileStore } from "./stores/profileStore";
 import { useExportStore } from "./stores/exportStore";
@@ -46,8 +48,8 @@ function App() {
       if (forceCloseRef.current) return;
       if (useExportStore.getState().isExporting) {
         event.preventDefault();
-        const confirmed = window.confirm(
-          "An export is in progress. If you close, the export will be cancelled and the file will be incomplete.\n\nClose anyway?"
+        const confirmed = await useConfirmStore.getState().confirm(
+          "An export is in progress. If you close, the export will be cancelled and the file will be incomplete. Close anyway?"
         );
         if (confirmed) {
           await commands.cleanupExportTemp();
@@ -73,6 +75,7 @@ function App() {
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       <ExportProgress />
       <ToastContainer />
+      <ConfirmDialog />
     </div>
   );
 }
