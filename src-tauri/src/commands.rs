@@ -141,6 +141,7 @@ pub fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), Stri
 
 #[tauri::command]
 pub fn play_sound(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     track_id: String,
     sound_id: String,
@@ -152,6 +153,15 @@ pub fn play_sound(
 
     // Check file exists
     if !std::path::Path::new(&file_path).exists() {
+        tracing::warn!("Sound file not found: {} (track: {}, sound: {})", file_path, track_id, sound_id);
+        // Play error sound
+        let _ = state.audio_engine.play_error_sound();
+        // Emit sound_not_found event
+        let _ = app.emit("sound_not_found", serde_json::json!({
+            "soundId": sound_id,
+            "path": file_path,
+            "trackId": track_id,
+        }));
         return Err(format!("Sound file not found: {}", file_path));
     }
 
@@ -353,12 +363,15 @@ pub async fn add_sound_from_youtube(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     url: String,
+    download_id: String,
 ) -> Result<Sound, String> {
     let cache = state.youtube_cache.clone();
 
     let app_handle = app.clone();
+    let did = download_id.clone();
     let on_progress: youtube::downloader::ProgressCallback = Box::new(move |status, progress| {
         let _ = app_handle.emit("youtube_download_progress", serde_json::json!({
+            "downloadId": did,
             "status": status,
             "progress": progress,
         }));
@@ -494,4 +507,116 @@ pub async fn pick_ktm_file() -> Result<Option<String>, String> {
     .map_err(|e| format!("File dialog failed: {}", e))?;
 
     Ok(result)
+}
+
+// ─── Error Handling Commands ──────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MissingSoundInfo {
+    pub sound_id: String,
+    pub sound_name: String,
+    pub file_path: String,
+    pub source_type: String,
+}
+
+/// Verify that all sound files in a profile exist on disk.
+/// Returns a list of missing sounds.
+#[tauri::command]
+pub fn verify_profile_sounds(profile: Profile) -> Vec<MissingSoundInfo> {
+    let mut missing = Vec::new();
+
+    for sound in &profile.sounds {
+        let (file_path, source_type) = match &sound.source {
+            SoundSource::Local { path } => (path.clone(), "local".to_string()),
+            SoundSource::YouTube { cached_path, .. } => (cached_path.clone(), "youtube".to_string()),
+        };
+
+        if !std::path::Path::new(&file_path).exists() {
+            missing.push(MissingSoundInfo {
+                sound_id: sound.id.clone(),
+                sound_name: sound.name.clone(),
+                file_path,
+                source_type,
+            });
+        }
+    }
+
+    missing
+}
+
+/// Open a file picker dialog for selecting an audio file.
+#[tauri::command]
+pub async fn pick_audio_file() -> Result<Option<String>, String> {
+    let result = tokio::task::spawn_blocking(move || {
+        rfd::FileDialog::new()
+            .add_filter("Audio Files", &["mp3", "wav", "ogg", "flac", "m4a", "aac"])
+            .pick_file()
+            .map(|p| p.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| format!("File dialog failed: {}", e))?;
+
+    Ok(result)
+}
+
+/// Open a file picker dialog for selecting multiple audio files.
+#[tauri::command]
+pub async fn pick_audio_files() -> Result<Vec<String>, String> {
+    let result = tokio::task::spawn_blocking(move || {
+        rfd::FileDialog::new()
+            .add_filter("Audio Files", &["mp3", "wav", "ogg", "flac", "m4a", "aac"])
+            .pick_files()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| p.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(|e| format!("File dialog failed: {}", e))?;
+
+    Ok(result)
+}
+
+/// Get the path to the logs folder.
+#[tauri::command]
+pub fn get_logs_folder() -> Result<String, String> {
+    let logs_dir = storage::get_app_data_dir().join("logs");
+    Ok(logs_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn get_data_folder() -> Result<String, String> {
+    let data_dir = storage::get_app_data_dir();
+    Ok(data_dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn open_folder(path: String) -> Result<(), String> {
+    let path = std::path::Path::new(&path);
+    if !path.exists() {
+        return Err("Folder does not exist".to_string());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }

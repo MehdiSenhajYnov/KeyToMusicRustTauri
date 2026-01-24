@@ -55,6 +55,10 @@ pub enum AudioCommand {
     SetAudioDevice {
         device_name: Option<String>,
     },
+    SetErrorSoundPath {
+        path: String,
+    },
+    PlayErrorSound,
     Shutdown,
 }
 
@@ -72,6 +76,11 @@ pub enum AudioEvent {
     PlaybackProgress {
         track_id: TrackId,
         position: f64,
+    },
+    SoundNotFound {
+        track_id: TrackId,
+        sound_id: SoundId,
+        file_path: String,
     },
     Error {
         message: String,
@@ -198,6 +207,16 @@ impl AudioEngineHandle {
         self.send_command(AudioCommand::SetAudioDevice { device_name })
     }
 
+    /// Set the path to the error sound file.
+    pub fn set_error_sound_path(&self, path: String) -> Result<(), String> {
+        self.send_command(AudioCommand::SetErrorSoundPath { path })
+    }
+
+    /// Play the error sound (fire-and-forget).
+    pub fn play_error_sound(&self) -> Result<(), String> {
+        self.send_command(AudioCommand::PlayErrorSound)
+    }
+
     /// Shutdown the audio engine.
     pub fn shutdown(&self) {
         let _ = self.send_command(AudioCommand::Shutdown);
@@ -275,6 +294,7 @@ fn audio_thread_main(
     let mut tracks: HashMap<TrackId, AudioTrack> = HashMap::new();
     let mut sound_volumes: HashMap<SoundId, f32> = HashMap::new();
     let mut track_sounds: HashMap<TrackId, SoundId> = HashMap::new();
+    let mut error_sound_path: Option<String> = None;
 
     // Device management state
     let mut current_device: Option<String> = initial_device;
@@ -500,6 +520,29 @@ fn audio_thread_main(
                     tracks.insert(info.track_id.clone(), new_track);
                     sound_volumes.insert(info.sound_id.clone(), info.sound_volume);
                     track_sounds.insert(info.track_id, info.sound_id);
+                }
+            }
+            Ok(AudioCommand::SetErrorSoundPath { path }) => {
+                error_sound_path = Some(path);
+            }
+            Ok(AudioCommand::PlayErrorSound) => {
+                if let Some(ref path) = error_sound_path {
+                    use crate::audio::symphonia_source::SymphoniaSource;
+                    match SymphoniaSource::new(path, 0.0) {
+                        Ok(source) => {
+                            if let Ok(sink) = rodio::Sink::try_new(&stream_handle) {
+                                let mv = *master_volume.lock().unwrap();
+                                sink.set_volume(mv * 0.5);
+                                sink.append(source);
+                                sink.detach(); // fire-and-forget
+                            }
+                        }
+                        Err(e) => {
+                            emit_event(&events, AudioEvent::Error {
+                                message: format!("Failed to play error sound: {}", e),
+                            });
+                        }
+                    }
                 }
             }
             Ok(AudioCommand::Shutdown) => {

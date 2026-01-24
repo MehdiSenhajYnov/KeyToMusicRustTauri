@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { open } from "@tauri-apps/plugin-shell";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useProfileStore } from "../../stores/profileStore";
 import { useExportStore } from "../../stores/exportStore";
@@ -368,10 +369,38 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
         </div>
 
         {/* About */}
-        <div className="border-t border-border-color pt-3">
+        <div className="border-t border-border-color pt-3 space-y-2">
           <p className="text-text-muted text-xs">
             KeyToMusic v1.0.0 - Soundboard for manga reading
           </p>
+          <div className="flex gap-3">
+            <button
+              onClick={async () => {
+                try {
+                  const folder = await commands.getDataFolder();
+                  await commands.openFolder(folder);
+                } catch (e) {
+                  addToast("Failed to open data folder", "error");
+                }
+              }}
+              className="text-xs text-accent-primary hover:text-accent-primary/80 underline"
+            >
+              Open Data Folder
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const folder = await commands.getLogsFolder();
+                  await open(folder);
+                } catch (e) {
+                  addToast("Failed to open logs folder", "error");
+                }
+              }}
+              className="text-xs text-accent-primary hover:text-accent-primary/80 underline"
+            >
+              Open Logs Folder
+            </button>
+          </div>
         </div>
 
         <div className="flex justify-end">

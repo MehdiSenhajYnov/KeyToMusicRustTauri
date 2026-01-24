@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Profile, KeyBinding, Sound, Track } from "../types";
 import * as commands from "../utils/tauriCommands";
 import type { ProfileSummary } from "../utils/tauriCommands";
+import { useErrorStore } from "./errorStore";
 
 function getSoundFilePath(sound: Sound): string {
   if (sound.source.type === "local") return sound.source.path;
@@ -100,6 +101,24 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         commands.saveProfile(profile).catch(() => {});
       }
       set({ currentProfile: profile });
+      // Verify sound files exist
+      try {
+        const missing = await commands.verifyProfileSounds(profile);
+        const { addMissing } = useErrorStore.getState();
+        for (const entry of missing) {
+          const sound = profile.sounds.find((s) => s.id === entry.soundId);
+          addMissing({
+            soundId: entry.soundId,
+            soundName: entry.soundName,
+            path: entry.filePath,
+            trackId: "",
+            sourceType: entry.sourceType as "local" | "youtube",
+            youtubeUrl: sound?.source.type === "youtube" ? sound.source.url : undefined,
+          });
+        }
+      } catch (e) {
+        console.error("Failed to verify profile sounds:", e);
+      }
       // Compute durations in background
       computeProfileDurations(profile, (soundId, updates) => {
         set((state) => {

@@ -123,8 +123,8 @@ export async function setKeyCooldown(cooldownMs: number): Promise<void> {
 
 // ─── YouTube ──────────────────────────────────────────────────────────────
 
-export async function addSoundFromYoutube(url: string): Promise<Sound> {
-  return invoke<Sound>("add_sound_from_youtube", { url });
+export async function addSoundFromYoutube(url: string, downloadId: string): Promise<Sound> {
+  return invoke<Sound>("add_sound_from_youtube", { url, downloadId });
 }
 
 export async function checkYtDlpInstalled(): Promise<boolean> {
@@ -184,6 +184,41 @@ export async function cleanupExportTemp(): Promise<void> {
 
 export async function cancelExport(): Promise<void> {
   return invoke("cancel_export");
+}
+
+// ─── Error Handling ───────────────────────────────────────────────────────
+
+export interface MissingSoundInfo {
+  soundId: string;
+  soundName: string;
+  filePath: string;
+  sourceType: string;
+}
+
+export async function verifyProfileSounds(
+  profile: Profile
+): Promise<MissingSoundInfo[]> {
+  return invoke<MissingSoundInfo[]>("verify_profile_sounds", { profile });
+}
+
+export async function pickAudioFile(): Promise<string | null> {
+  return invoke<string | null>("pick_audio_file");
+}
+
+export async function pickAudioFiles(): Promise<string[]> {
+  return invoke<string[]>("pick_audio_files");
+}
+
+export async function getLogsFolder(): Promise<string> {
+  return invoke<string>("get_logs_folder");
+}
+
+export async function getDataFolder(): Promise<string> {
+  return invoke<string>("get_data_folder");
+}
+
+export async function openFolder(path: string): Promise<void> {
+  return invoke<void>("open_folder", { path });
 }
 
 export { type ProfileSummary };

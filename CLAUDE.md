@@ -21,21 +21,23 @@ KeyToMusic is a Tauri-based desktop soundboard application designed for manga re
 keytomusic/
 ├── src/                          # React/TypeScript frontend
 │   ├── components/               # UI components (Layout, Tracks, Sounds, Keys, etc.)
-│   ├── stores/                   # Zustand state management
-│   ├── hooks/                    # Custom React hooks
+│   │   └── Errors/              # FileNotFoundModal
+│   ├── stores/                   # Zustand state management (profile, settings, error, export, toast)
+│   ├── hooks/                    # Custom React hooks (useAudioEvents, useKeyDetection)
 │   ├── types/                    # TypeScript type definitions
-│   └── utils/                    # Frontend utilities
+│   └── utils/                    # Frontend utilities (errorMessages, keyMapping, fileHelpers, tauriCommands)
 ├── src-tauri/                    # Rust backend
 │   ├── src/
-│   │   ├── main.rs               # Tauri entry point
+│   │   ├── main.rs               # Tauri entry point, logging init, event forwarding
 │   │   ├── commands.rs           # Tauri commands exposed to frontend
 │   │   ├── audio/                # Audio engine, tracks, crossfade, symphonia seeking
 │   │   ├── keys/                 # Global keyboard detection & mapping
 │   │   ├── youtube/              # YouTube downloader, cache, ffmpeg/yt-dlp managers
+│   │   ├── import_export/        # .ktm file handling
 │   │   └── storage/              # Profile & config persistence
 │   └── Cargo.toml
-├── data/                         # Runtime user data (profiles, cache, config)
-└── resources/                    # Static resources (icons, error sounds)
+├── data/                         # Runtime user data (profiles, cache, config, logs)
+└── resources/                    # Static resources (icons, error.mp3)
 ```
 
 ## Core Architecture Concepts
@@ -107,6 +109,8 @@ Each key binding associates:
 - `sequential`: Cycle through sounds in order, auto-play next on end
 
 ### YouTube Integration
+
+**Concurrent Downloads:** Multiple YouTube downloads can run simultaneously. Each download is identified by a unique `download_id` passed to `add_sound_from_youtube`. Progress events include this ID so the frontend can track each download independently. The UI shows individual progress bars per download and the URL input remains available during downloads.
 
 **yt-dlp:** Downloads YouTube audio as M4A (best audio quality) and stores in `data/cache/`. Uses video ID as filename (`{video_id}.m4a`) for predictable paths.
 
@@ -223,7 +227,26 @@ fn list_audio_devices() -> Vec<String>;
 fn set_audio_device(device: Option<String>) -> Result<(), String>;
 
 #[tauri::command]
-async fn add_sound_from_youtube(url: String) -> Result<Sound, String>;
+async fn add_sound_from_youtube(url: String, download_id: String) -> Result<Sound, String>;
+
+// Error handling commands
+#[tauri::command]
+fn verify_profile_sounds(profile: Profile) -> Vec<MissingSoundInfo>;
+
+#[tauri::command]
+async fn pick_audio_file() -> Result<Option<String>, String>;
+
+#[tauri::command]
+async fn pick_audio_files() -> Result<Vec<String>, String>;
+
+#[tauri::command]
+fn get_logs_folder() -> Result<String, String>;
+
+#[tauri::command]
+fn get_data_folder() -> Result<String, String>;
+
+#[tauri::command]
+fn open_folder(path: String) -> Result<(), String>;
 // ... etc
 ```
 
@@ -253,17 +276,41 @@ useEffect(() => {
 }, []);
 ```
 
-Event types: `sound_started`, `sound_ended`, `playback_progress`, `key_pressed`, `master_stop_triggered`, `download_progress`, `download_complete`, `download_error`, `sound_not_found`, `export_progress`.
+Event types: `sound_started`, `sound_ended`, `playback_progress`, `key_pressed`, `master_stop_triggered`, `youtube_download_progress` (with `downloadId`, `status`, `progress`), `sound_not_found` (with `soundId`, `path`, `trackId`), `audio_error` (with `message`), `export_progress`, `toggle_key_detection`, `toggle_auto_momentum`.
 
 ### Error Handling
 
-Use custom error types with `thiserror` crate. Key errors:
-- `SoundFileNotFound`: Show modal to update path or remove sound
-- `YouTubeDownloadFailed`: Display user-friendly message
-- `YtDlpNotFound`: Prompt user to install yt-dlp
-- `UnsupportedFormat`: Supported formats are MP3, WAV, OGG, FLAC
+**Error Sound:** When a sound file is not found during playback, the audio engine plays a short error sound (`resources/sounds/error.mp3`) at 50% master volume via a fire-and-forget sink (`sink.detach()`). The error sound path is resolved from the Tauri resource directory at startup via `SetErrorSoundPath`.
 
-When a sound fails to play, trigger error sound (`resources/sounds/error.mp3`) and emit `sound_not_found` event.
+**Sound Not Found Flow:**
+1. `play_sound` command checks file existence
+2. If missing: calls `play_error_sound()`, emits `sound_not_found` event with `{soundId, path, trackId}`, returns Err
+3. Frontend `useAudioEvents` hook receives event, adds entry to `errorStore.missingQueue`
+4. `FileNotFoundModal` displays entries one at a time from the queue
+
+**FileNotFoundModal (`src/components/Errors/FileNotFoundModal.tsx`):** Queue-based modal showing sound name, file path, and remaining error count. Actions differ by source type:
+- **Local sounds:** "Locate File" (native file picker via `pick_audio_file`) / "Remove" / "Skip"
+- **YouTube sounds:** "Re-download" (calls `addSoundFromYoutube`) / "Remove" / "Skip"
+- "Skip All" dismisses remaining queue entries
+
+**Profile Verification:** On profile load, `verifyProfileSounds(profile)` checks all sound file paths. Missing files are added to the error store queue, triggering the FileNotFoundModal.
+
+**Error Messages (`src/utils/errorMessages.ts`):** Maps raw error strings to user-friendly messages via regex patterns. Used by toast notifications for `audio_error` events.
+
+**Toast Notifications:** Non-blocking errors (audio device issues, playback failures) are shown as toast notifications via `useToastStore`. The `useKeyDetection` hook shows toasts for non-file-not-found playback errors.
+
+### Logging
+
+**Infrastructure:** Uses `tracing` + `tracing-subscriber` + `tracing-appender` crates. Daily rolling log files are written to `{app_data}/logs/keytomusic.log`. Configurable via `RUST_LOG` env var (default: `info`). The non-blocking writer guard is held for the program's lifetime.
+
+**Logged Events:**
+- App startup (info)
+- Error sound load success/failure (info/warn)
+- Sound not found (warn with file path, track ID, sound ID)
+- Audio errors (error)
+- Config/storage issues (warn)
+
+**Open Logs:** Settings modal includes an "Open Logs Folder" button that calls `get_logs_folder()` and opens the directory via `@tauri-apps/plugin-shell`.
 
 ### Thread Safety
 
@@ -293,9 +340,9 @@ Use platform-specific app data directories:
 - **Layout:** Header (logo, master volume, settings, window controls) + Sidebar (profiles, controls, now playing) + Main Content (track view, key assignments, sound details)
 - **Key Assignment Grid:** Visual representation of assigned keys with custom name (or first sound name) and total sound count. Keys can be deleted via the SoundDetails panel.
 - **Now Playing:** Seekable progress slider (drag-then-release pattern) with stop button per track. Updates position in real-time via `playback_progress` events.
-- **AddSoundModal:** Per-file momentum editors with number input, slider, and play/stop preview. Multiple sounds are grouped by key before creating bindings.
+- **AddSoundModal:** Files are added via native file picker ("Add Files" button using `pickAudioFiles`) or drag & drop. No manual path text input. Per-file momentum editors with number input, slider, and play/stop preview. Multiple sounds are grouped by key before creating bindings. Key assignment uses cycling: if fewer keys than sounds are provided (e.g., "ab" with 5 sounds), keys cycle (a,b,a,b,a). A single key assigns all sounds to that key.
 - **Resizable SoundDetails Panel:** Divider bar between KeyGrid and SoundDetails with drag-to-resize (min 120px, default 256px). Uses mousedown/mousemove/mouseup pattern with body cursor override.
-- **Drag & Drop:** Support for adding multiple audio files at once with bulk assignment to specified keys
+- **Drag & Drop:** Support for adding multiple audio files at once with bulk assignment to specified keys. Dropping files while AddSoundModal is open appends them to the existing file list (uses `processedFilesRef` to distinguish mount vs. subsequent prop changes, React StrictMode safe).
 
 ## Technical Limits
 
@@ -322,6 +369,15 @@ uuid = { version = "1", features = ["v4"] }
 walkdir = "2"          # File traversal
 sanitize-filename = "0.5"
 zip = { version = "2", default-features = false, features = ["deflate"] }  # ffmpeg ZIP extraction
+tracing = "0.1"        # Structured logging
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }  # Log formatting
+tracing-appender = "0.2"  # Daily rolling log files
+```
+
+### Frontend Dependencies (npm)
+
+```json
+"@tauri-apps/plugin-shell": "^2.0.0"  // Opening folders (logs, data)
 ```
 
 ## External Requirements

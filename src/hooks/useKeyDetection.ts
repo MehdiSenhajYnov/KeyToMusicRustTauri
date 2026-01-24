@@ -3,8 +3,10 @@ import { listen } from "@tauri-apps/api/event";
 import { useAudioStore } from "../stores/audioStore";
 import { useProfileStore } from "../stores/profileStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useToastStore } from "../stores/toastStore";
 import * as commands from "../utils/tauriCommands";
 import { charToKeyCode, recordKeyLayout } from "../utils/keyMapping";
+import { formatErrorMessage } from "../utils/errorMessages";
 import type { LoopMode, Sound } from "../types";
 
 interface KeyPressedPayload {
@@ -116,7 +118,11 @@ export function useKeyDetection() {
         // Cooldown starts only on successful play
         lastTriggerTime.current = Date.now();
       } catch (e) {
-        console.error("[useKeyDetection] Play error:", e);
+        // File-not-found errors are handled by the sound_not_found event listener
+        const errMsg = String(e);
+        if (!errMsg.includes("not found")) {
+          useToastStore.getState().addToast(formatErrorMessage(errMsg), "error");
+        }
       }
     },
     [currentProfile, config.autoMomentum, config.keyCooldown, config.keyDetectionEnabled, setLastKeyPressed, updateKeyBinding]

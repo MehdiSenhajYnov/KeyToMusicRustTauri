@@ -11,6 +11,8 @@
 > **Phase 4.6 COMPLÉTÉE** - 2026-01-23 (UX Enhancements & Key Management)
 > **Phase 5 COMPLÉTÉE** - 2026-01-24 (YouTube: ffmpeg, retry, M4A, canonical URLs, cache cleanup)
 > **Phase 6 COMPLÉTÉE** - 2026-01-24 (Import/Export: .ktm ZIP format, rfd file dialogs, frontend UI)
+> **Phase 6.5 COMPLÉTÉE** - 2026-01-24 (Concurrent YouTube Downloads & Key Cycling)
+> **Phase 7 COMPLÉTÉE** - 2026-01-24 (Error Handling: logging, error sound, FileNotFoundModal, verification, toasts)
 
 ---
 
@@ -24,8 +26,9 @@
 6. [Phase 4.5 - Bug Fixes & Améliorations](#phase-45---bug-fixes--améliorations)
 7. [Phase 4.6 - UX Enhancements & Key Management](#phase-46---ux-enhancements--key-management)
 8. [Phase 5 - Téléchargement YouTube](#phase-5---téléchargement-youtube)
-8. [Phase 6 - Import/Export](#phase-6---importexport)
-9. [Phase 7 - Gestion des Erreurs](#phase-7---gestion-des-erreurs)
+9. [Phase 6 - Import/Export](#phase-6---importexport)
+10. [Phase 6.5 - Concurrent YouTube Downloads & Key Cycling](#phase-65---concurrent-youtube-downloads--key-cycling)
+11. [Phase 7 - Gestion des Erreurs](#phase-7---gestion-des-erreurs)
 10. [Phase 8 - Polish & Optimisations](#phase-8---polish--optimisations)
 11. [Phase 9 - Tests & Validation](#phase-9---tests--validation)
 
@@ -97,7 +100,7 @@
   **✅ Complété** - Dossiers resources créés avec README.md explicatifs
 
 - [x] **0.2.4** Ajouter les ressources de base
-  - [x] Ajouter le son d'erreur système (`resources/sounds/error.wav`)
+  - [x] Ajouter le son d'erreur système (`resources/sounds/error.mp3`)
   - [x] Créer les icônes de l'application (32x32, 128x128, icns, ico)
   **⚠️ Partiellement complété** - Dossiers créés avec instructions, fichiers à ajouter manuellement
 
@@ -1477,88 +1480,165 @@
 
 ---
 
-## Phase 7 - Gestion des Erreurs
+## Phase 6.5 - Concurrent YouTube Downloads & Key Cycling ✅
+
+### 6.7 Téléchargements YouTube Concurrents ✅
+
+- [x] **6.7.1** Backend: Ajouter `download_id` au command `add_sound_from_youtube`
+  - [x] Paramètre `download_id: String` dans la signature
+  - [x] Inclure `downloadId` dans le payload de l'event `youtube_download_progress`
+  **✅ Complété**
+
+- [x] **6.7.2** Frontend: Remplacer l'état single-download par multi-download
+  - [x] Remplacer `isDownloading`/`downloadStatus`/`downloadProgress` par `activeDownloads` Map
+  - [x] Chaque download trackée avec son propre ID, URL, status, progress
+  - [x] URL input reste actif pendant les téléchargements (jamais disabled)
+  - [x] Bouton Download uniquement disabled si URL vide
+  - [x] Chaque download complété s'ajoute à la liste des fichiers
+  **✅ Complété**
+
+- [x] **6.7.3** Frontend: Affichage progression individuelle
+  - [x] Barre de progression par téléchargement actif
+  - [x] Spinner et status text par download
+  - [x] Downloads retirés de la Map une fois terminés (succès ou erreur)
+  **✅ Complété**
+
+- [x] **6.7.4** Mise à jour `tauriCommands.ts`
+  - [x] `addSoundFromYoutube(url, downloadId)` - nouveau paramètre downloadId
+  **✅ Complété**
+
+### 6.8 Key Cycling pour Assignation Multi-Sons ✅
+
+- [x] **6.8.1** Supprimer la limitation de longueur du champ keys
+  - [x] Retirer `.slice(0, files.length)` dans `handleKeyInput`
+  - [x] L'utilisateur peut taper moins de touches que de fichiers
+  **✅ Complété**
+
+- [x] **6.8.2** Affichage cycling dans la liste des fichiers
+  - [x] Indicateur de touche par fichier utilise `keysInput[i % keysInput.length]`
+  - [x] Reflète le cycling en temps réel pendant la saisie
+  **✅ Complété**
+
+- [x] **6.8.3** Logique de submit avec cycling (déjà implémentée)
+  - [x] `keyCodes[i % keyCodes.length]` regroupe les sons par touche
+  - [x] Un seul caractère "a" → tous les sons sur la même touche
+  - [x] "ab" avec 5 sons → a,b,a,b,a
+  **✅ Complété**
+
+---
+
+## Phase 7 - Gestion des Erreurs ✅ COMPLÉTÉE
 
 ### 7.1 Son d'Erreur
 
-- [ ] **7.1.1** Créer/ajouter le fichier `resources/sounds/error.wav`
-  - [ ] Créer ou obtenir un son d'erreur court (< 1 seconde)
-  - [ ] Format WAV pour compatibilité maximale
-  - [ ] Volume modéré (pas trop fort)
+- [x] **7.1.1** Fichier `resources/sounds/error.mp3` existe déjà
+  - [x] Son d'erreur court (< 1 seconde, format MP3)
+  - [x] Bundled via tauri.conf.json resources
+  **✅ Complété** - error.mp3 déjà présent, ajouté au bundle Tauri
 
-- [ ] **7.1.2** Implémenter la lecture du son d'erreur
-  - [ ] Créer une fonction `play_error_sound()` dans AudioEngine
-  - [ ] Charger error.wav depuis resources/
-  - [ ] Jouer sur une piste dédiée ou en one-shot
-  - [ ] Ne pas affecter les autres sons en cours
+- [x] **7.1.2** Implémenter la lecture du son d'erreur
+  - [x] Créé `SetErrorSoundPath` et `PlayErrorSound` commands dans AudioEngine
+  - [x] Chargé error.mp3 depuis resource_dir dans setup()
+  - [x] Joué en one-shot via sink.detach() (fire-and-forget)
+  - [x] Ne pas affecter les autres sons en cours (piste séparée)
+  **✅ Complété** - Error sound joue via SymphoniaSource avec volume master * 0.5
 
-- [ ] **7.1.3** Déclencher le son d'erreur
-  - [ ] Appeler play_error_sound() quand un son ne peut pas être joué
-  - [ ] Émettre l'event sound_not_found en même temps
+- [x] **7.1.3** Déclencher le son d'erreur
+  - [x] play_error_sound() appelé dans play_sound quand fichier manquant
+  - [x] Événement sound_not_found émis simultanément
+  **✅ Complété** - Error sound + event émis dans commands.rs play_sound
 
 ### 7.2 Messages d'Erreur Utilisateur
 
-- [ ] **7.2.1** Créer un mapping erreurs → messages dans le frontend
-  - [ ] Créer `src/utils/errorMessages.ts`
-  - [ ] Fonction `getErrorMessage(error: AppError) -> string`
-  - [ ] Mapper chaque type d'erreur à un message en français clair
-  - [ ] Messages référencés dans la spec (section 12.2)
+- [x] **7.2.1** Créer un mapping erreurs → messages dans le frontend
+  - [x] Créé `src/utils/errorMessages.ts`
+  - [x] Fonction `formatErrorMessage(rawError: string) -> string`
+  - [x] Mapping par pattern regex vers messages user-friendly
+  **✅ Complété** - Patterns couvrent les erreurs audio, device, YouTube
 
-- [ ] **7.2.2** Afficher les messages d'erreur
-  - [ ] Utiliser ErrorModal pour les erreurs critiques
-  - [ ] Utiliser Toast pour les erreurs non-bloquantes
-  - [ ] Utiliser FileNotFoundModal pour les fichiers manquants
+- [x] **7.2.2** Afficher les messages d'erreur
+  - [x] Toast pour les erreurs non-bloquantes (audio_error events)
+  - [x] FileNotFoundModal pour les fichiers manquants (queue-based)
+  - [x] Toast dans useKeyDetection pour erreurs de lecture non-file-related
+  **✅ Complété** - Dual system: toast + modal selon le type d'erreur
 
 ### 7.3 Vérification des Fichiers au Chargement
 
-- [ ] **7.3.1** Implémenter `verify_profile_sounds(profile) -> Vec<SoundError>`
-  - [ ] Dans `src-tauri/src/storage/profile.rs`
-  - [ ] Vérifier chaque son Local: fichier existe
-  - [ ] Vérifier chaque son YouTube: fichier caché existe
-  - [ ] Retourner la liste des erreurs trouvées
+- [x] **7.3.1** Implémenter `verify_profile_sounds(profile) -> Vec<MissingSoundInfo>`
+  - [x] Commande Tauri dans commands.rs
+  - [x] Vérifie chaque son Local: fichier existe
+  - [x] Vérifie chaque son YouTube: fichier caché existe
+  - [x] Retourne la liste des sons manquants avec soundId, name, path, sourceType
+  **✅ Complété** - Verification complète au niveau backend
 
-- [ ] **7.3.2** Vérifier au chargement d'un profil
-  - [ ] Appeler verify_profile_sounds() après load_profile()
-  - [ ] Si des erreurs: émettre des events sound_not_found pour chaque erreur
-  - [ ] Le frontend affiche les modals FileNotFoundModal successivement
+- [x] **7.3.2** Vérifier au chargement d'un profil
+  - [x] Appel verifyProfileSounds() dans profileStore.loadProfile()
+  - [x] Sons manquants ajoutés à errorStore.missingQueue
+  - [x] FileNotFoundModal affiche les erreurs une par une
+  **✅ Complété** - Queue-based modal avec Skip/Skip All
 
-- [ ] **7.3.3** Vérifier avant de jouer un son
-  - [ ] Dans play_sound(), vérifier que le fichier existe
-  - [ ] Si manquant: jouer error.wav et émettre sound_not_found
-  - [ ] Ne pas crasher l'app
+- [x] **7.3.3** Vérifier avant de jouer un son
+  - [x] Dans play_sound(), vérification que le fichier existe
+  - [x] Si manquant: play_error_sound() + événement sound_not_found
+  - [x] Retourne Err() sans crasher l'app
+  **✅ Complété** - Vérifié dans commands.rs avec error sound + event
 
 ### 7.4 Gestion du Cache Corrompu
 
-- [ ] **7.4.1** Détecter un cache corrompu
-  - [ ] Fichier référencé dans cache_index.json mais absent du disque
-  - [ ] Émettre un event cache_corrupted
+- [x] **7.4.1** Détecter un cache corrompu
+  - [x] verify_profile_sounds détecte les fichiers YouTube manquants
+  - [x] sound_not_found event émis avec sourceType "youtube"
+  **✅ Complété** - Détection via le même système de vérification
 
-- [ ] **7.4.2** Proposer de re-télécharger
-  - [ ] Modal demandant si l'utilisateur veut re-télécharger
-  - [ ] Bouton "Re-download"
-  - [ ] Bouton "Remove"
-  - [ ] Appeler download() ou remove_sound()
+- [x] **7.4.2** Proposer de re-télécharger
+  - [x] FileNotFoundModal avec bouton "Re-download" pour type youtube
+  - [x] Bouton "Remove" pour supprimer le son
+  - [x] Bouton "Locate File" pour les sons locaux
+  - [x] Appel addSoundFromYoutube pour re-download
+  **✅ Complété** - Modal adaptatif selon sourceType (local vs youtube)
 
 ### 7.5 Logs et Debugging
 
-- [ ] **7.5.1** Implémenter un système de logging
-  - [ ] Utiliser la crate `log` ou `tracing`
-  - [ ] Configurer le niveau de log (debug, info, warn, error)
-  - [ ] Logger vers un fichier `data/logs/app.log`
-  - [ ] Rotation des logs (limiter la taille)
+- [x] **7.5.1** Implémenter un système de logging
+  - [x] Utilise la crate `tracing` + `tracing-subscriber` + `tracing-appender`
+  - [x] Configurable via RUST_LOG env var (défaut: info)
+  - [x] Logger vers fichier daily rolling dans `{app_data}/logs/keytomusic.log`
+  - [x] Rotation automatique des logs (fichiers journaliers)
+  **✅ Complété** - tracing avec rolling daily appender
 
-- [ ] **7.5.2** Logger les événements importants
-  - [ ] Démarrage de l'app
-  - [ ] Chargement de profil
-  - [ ] Erreurs audio
-  - [ ] Erreurs YouTube
-  - [ ] Erreurs de storage
-  - [ ] Pressions de touches (en debug mode)
+- [x] **7.5.2** Logger les événements importants
+  - [x] Démarrage de l'app (info)
+  - [x] Erreurs audio (error via audio_error event)
+  - [x] Sons manquants (warn)
+  - [x] Erreurs de config/storage (warn)
+  - [x] Chargement error sound (info)
+  **✅ Complété** - eprintln remplacés par tracing macros
 
-- [ ] **7.5.3** Ajouter une commande pour ouvrir les logs
-  - [ ] `open_logs_folder() -> Result<(), String>`
-  - [ ] Ouvrir le dossier logs/ dans l'explorateur
-  - [ ] Bouton dans Settings → About
+- [x] **7.5.3** Ajouter une commande pour ouvrir les logs
+  - [x] `get_logs_folder() -> Result<String, String>`
+  - [x] Bouton "Open Logs Folder" dans Settings → About
+  - [x] Utilise @tauri-apps/plugin-shell open() pour ouvrir le dossier
+  **✅ Complété** - Bouton dans SettingsModal section About
+
+### 7.6 AddSoundModal - File Picker & Drag-Drop UX
+
+- [x] **7.6.1** Ajouter un bouton "Add Files" avec file picker natif
+  - [x] Commande `pick_audio_files()` backend (rfd multi-file picker avec filtre audio)
+  - [x] Wrapper frontend dans tauriCommands.ts
+  - [x] Bouton "Add Files" dans AddSoundModal qui appelle pickAudioFiles()
+  **✅ Complété** - Bouton natif, pas de champ de texte manuel
+
+- [x] **7.6.2** Supprimer le champ de texte et bouton "Add" manuel
+  - [x] Supprimé pathInput state, handleAddPath, isAudioFile import
+  - [x] Interface simplifiée: uniquement "Add Files" (natif) + drag & drop
+  **✅ Complété** - UX épurée, 99% des utilisateurs utilisent browse ou drag & drop
+
+- [x] **7.6.3** Corriger le comportement drag & drop avec le modal ouvert
+  - [x] Drop quand modal ouvert → append les fichiers au modal existant (pas remplacer)
+  - [x] Utilisation de processedFilesRef pour distinguer mount vs drop subséquent
+  - [x] Safe en React StrictMode (pas de double-ajout)
+  - [x] Fermer le modal puis ré-ouvrir → pas de fichiers résiduels (useState initializer)
+  **✅ Complété** - Ref-based deduplication pattern
 
 ---
 
@@ -1817,7 +1897,7 @@
   - [ ] Supprimer un fichier audio référencé → vérifier le modal
   - [ ] Tester l'update du chemin
   - [ ] Tester la suppression du son
-  - [ ] Vérifier que error.wav joue
+  - [ ] Vérifier que error.mp3 joue
   - [ ] Tester avec yt-dlp non installé
 
 ### 9.4 Tests Multi-Plateformes

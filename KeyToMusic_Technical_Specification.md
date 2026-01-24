@@ -74,6 +74,9 @@ uuid = { version = "1", features = ["v4"] }
 walkdir = "2"   # Parcours de fichiers
 sanitize-filename = "0.5"  # Nettoyage noms de fichiers
 zip = { version = "2", default-features = false, features = ["deflate"] }  # Extraction ZIP ffmpeg
+tracing = "0.1"        # Structured logging
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }  # Log formatting
+tracing-appender = "0.2"  # Daily rolling log files
 ```
 
 ### 2.3 Dépendances npm (package.json)
@@ -84,7 +87,8 @@ zip = { version = "2", default-features = false, features = ["deflate"] }  # Ext
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zustand": "^4.5.0",
-    "@tauri-apps/api": "^2.0.0"
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-shell": "^2.0.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0",
@@ -180,7 +184,7 @@ keytomusic/
 │   └── config.json               # Configuration globale
 └── resources/                    # Ressources statiques
     ├── sounds/
-    │   └── error.wav             # Son d'erreur système
+    │   └── error.mp3             # Son d'erreur système
     └── icons/
 ```
 
@@ -318,11 +322,14 @@ type BackendEvent =
   | { type: "sound_started"; trackId: TrackId; soundId: SoundId }
   | { type: "sound_ended"; trackId: TrackId; soundId: SoundId }
   | { type: "playback_progress"; trackId: TrackId; position: number }
-  | { type: "key_pressed"; keyCode: KeyCode }
-  | { type: "download_progress"; url: string; progress: number }
-  | { type: "download_complete"; url: string; cachedPath: string }
-  | { type: "download_error"; url: string; error: string }
-  | { type: "sound_not_found"; soundId: SoundId; path: string };
+  | { type: "key_pressed"; keyCode: KeyCode; withShift: boolean }
+  | { type: "master_stop_triggered" }
+  | { type: "toggle_key_detection" }
+  | { type: "toggle_auto_momentum" }
+  | { type: "youtube_download_progress"; downloadId: string; status: string; progress: number | null }
+  | { type: "sound_not_found"; soundId: SoundId; path: string; trackId: TrackId }
+  | { type: "audio_error"; message: string }
+  | { type: "export_progress"; current: number; total: number; fileName: string };
 ```
 
 ### 4.2 Structures Rust (Backend)
@@ -1199,6 +1206,20 @@ Résultat:
 └────────────────────────────────────────────────────────────────┘
 ```
 
+### 8.1.1 Téléchargements Concurrents
+
+Le système supporte les téléchargements simultanés. Chaque appel à `add_sound_from_youtube` reçoit un `download_id` unique généré par le frontend. Les events de progression incluent ce `download_id` pour permettre au frontend de distinguer les téléchargements :
+
+```rust
+#[tauri::command]
+pub async fn add_sound_from_youtube(url: String, download_id: String) -> Result<Sound, String>;
+
+// Progress event payload:
+{ "downloadId": "dl_1706000000_0", "status": "Downloading...", "progress": 45.0 }
+```
+
+Le frontend maintient une `Map<downloadId, { url, status, progress }>` pour afficher les barres de progression individuelles. L'input URL reste disponible pendant les téléchargements, permettant d'en lancer plusieurs à la suite.
+
 ### 8.2 Système de Cache
 
 Le cache évite de re-télécharger un son déjà présent.
@@ -1561,29 +1582,40 @@ interface SoundDetailsProps {
 
 ```tsx
 interface AddSoundModalProps {
-  isOpen: boolean;
+  initialFiles?: string[];  // Pre-populated files (from drag & drop)
   onClose: () => void;
-  onAddFromFile: (files: File[]) => void;
-  onAddFromYouTube: (url: string) => void;
-  existingTracks: Track[];
-  onTrackSelect: (trackId: string) => void;
-  onNewTrack: (name: string) => void;
 }
 
-// Étapes:
-// 1. Choix de la source: [Fichier Local] ou [YouTube URL]
-// 2. Si fichier: Drag & Drop zone ou bouton "Parcourir"
-// 3. Si YouTube: Champ URL + bouton "Télécharger"
-// 4. Configuration:
-//    - Touche(s) à assigner (champ texte pour plusieurs: "adgk")
+// Ajout de fichiers:
+// - Bouton "Add Files": ouvre le file picker natif (pick_audio_files, multi-select)
+// - Drag & Drop: depuis l'OS directement dans le modal ou la fenêtre
+//   - Si modal ouvert: les fichiers droppés s'ajoutent à la liste existante
+//   - Utilise processedFilesRef pour distinguer mount vs drop subséquent
+//   - Safe en React StrictMode (pas de double-ajout)
+// - Pas de champ de texte manuel (UX simplifiée)
+//
+// Sources:
+// - Tab "Local": Fichiers locaux via Add Files ou drag & drop
+// - Tab "YouTube": Champ URL + bouton "Télécharger"
+//   - Téléchargements concurrents supportés (input reste actif)
+//   - Chaque download a sa propre barre de progression
+//   - Les sons téléchargés s'ajoutent à la liste au fur et à mesure
+//
+// Configuration:
+//    - Touche(s) à assigner (champ texte, ex: "ab")
+//      - Les touches cyclent si moins de touches que de sons:
+//        "ab" avec 5 sons → a,b,a,b,a
+//        "a" avec 5 sons → a,a,a,a,a (tous sur la même touche)
+//      - L'indicateur par fichier reflète le cycling en temps réel
 //    - Piste (dropdown existantes + "Nouvelle piste")
 //    - Per-file momentum editors:
 //      - Number input + range slider + play/stop preview per file
 //      - Duration auto-fetched via getAudioDuration (symphonia)
 //      - Playing one preview auto-stops any other playing preview
 //    - Volume individuel (slider)
-// 5. Bouton "Ajouter"
-//    - Sounds are grouped by key before creating bindings
+//
+// Bouton "Add All":
+//    - Sounds are grouped by key (with cycling) before creating bindings
 //    - Multiple sounds on same key → single binding with all sound IDs
 ```
 
@@ -1608,25 +1640,40 @@ interface SettingsModalProps {
 // - Audio Device: Dropdown (system default + available devices)
 //   -> Seamless switch: playing sounds resume on new device
 // - Export/Import buttons
-// - À propos (version, liens)
+// - À propos (version, liens, "Open Data Folder", "Open Logs Folder")
 ```
 
 #### 9.4.2 Error Modal (Fichier Introuvable)
 
 ```tsx
-interface FileNotFoundModalProps {
+// FileNotFoundModal (src/components/Errors/FileNotFoundModal.tsx)
+// Utilise errorStore (Zustand) avec une queue d'entrées:
+interface SoundNotFoundEntry {
+  soundId: string;
   soundName: string;
-  expectedPath: string;
-  onUpdatePath: (newPath: string) => void;
-  onRemoveSound: () => void;
-  onCancel: () => void;
+  path: string;
+  trackId: string;
+  sourceType: "local" | "youtube";
 }
 
-// Apparaît quand un fichier local n'est plus trouvé
-// Options:
-// - "Mettre à jour le chemin" -> ouvre explorateur de fichiers
-// - "Supprimer ce son" -> retire du profil
-// - "Annuler" -> ignore pour cette session
+// Affichage queue-based: une erreur à la fois
+// - Nom du son + chemin attendu
+// - Compteur: "(1 of N)" si plusieurs erreurs
+//
+// Actions selon sourceType:
+// - Local:
+//   - "Locate File" → pick_audio_file() → met à jour le chemin du son
+//   - "Remove" → supprime le son du profil
+//   - "Skip" → passe à l'erreur suivante
+// - YouTube:
+//   - "Re-download" → appelle addSoundFromYoutube avec l'URL originale
+//   - "Remove" → supprime le son du profil
+//   - "Skip" → passe à l'erreur suivante
+// - "Skip All" (si queue > 1) → dismiss toutes les erreurs restantes
+//
+// Alimenté par:
+// 1. verify_profile_sounds() au chargement du profil
+// 2. sound_not_found events pendant la lecture
 ```
 
 ### 9.5 Interactions Drag & Drop
@@ -1635,20 +1682,23 @@ interface FileNotFoundModalProps {
 
 ```tsx
 // Comportement:
-// 1. L'utilisateur fait glisser des fichiers audio
-// 2. La zone s'illumine pour indiquer qu'elle accepte le drop
+// 1. L'utilisateur fait glisser des fichiers audio (Tauri onDragDropEvent)
+// 2. La zone s'illumine (overlay) pour indiquer qu'elle accepte le drop
 // 3. Au drop:
-//    - Si 1 fichier: ouvre le modal de configuration
-//    - Si plusieurs fichiers: ouvre le modal avec option d'assignation
+//    - Si AddSoundModal fermé: ouvre le modal avec les fichiers droppés (initialFiles)
+//    - Si AddSoundModal déjà ouvert: append les fichiers à la liste existante
+//      (MainContent met à jour droppedFiles → modal détecte new ref via processedFilesRef)
+// 4. Seuls les fichiers audio sont acceptés (filtrés via isAudioFile)
 
-// Assignation multiple (champ "adgk"):
+// Assignation multiple avec cycling (champ "ad"):
 // - Son 1 -> A
-// - Son 2 -> D  
-// - Son 3 -> G
-// - Son 4 -> K
+// - Son 2 -> D
+// - Son 3 -> A (cycle)
+// - Son 4 -> D (cycle)
 // - Son 5 -> A (cycle)
-// - Son 6 -> D (cycle)
 // etc.
+// Avec un seul caractère "a":
+// - Tous les sons sont assignés à la touche A
 ```
 
 ### 9.6 Responsive Design
@@ -1682,8 +1732,11 @@ L'application a une taille minimale de 800x600 pixels. Elle peut être redimensi
 ├── bin/
 │   ├── yt-dlp.exe           # Auto-downloaded yt-dlp binary
 │   └── ffmpeg.exe           # Auto-downloaded ffmpeg binary
+├── imported_sounds/        # Sons importés depuis .ktm
+│   └── {profile_uuid}/    # Dossier par profil importé
 └── logs/
-    └── app.log              # Logs de l'application
+    ├── keytomusic.log.2026-01-24  # Daily rolling log files
+    └── ...
 ```
 
 ### 10.2 Chemins par Plateforme
@@ -1733,7 +1786,7 @@ Quand un fichier son local n'est plus trouvé:
 
 1. **À l'ouverture du profil** : Vérifier tous les fichiers locaux
 2. **Au déclenchement** : Vérifier juste avant de jouer
-3. **Notification** : Jouer un son d'erreur (`resources/sounds/error.wav`) et afficher le modal
+3. **Notification** : Jouer un son d'erreur (`resources/sounds/error.mp3`) et afficher le modal
 
 ```rust
 impl SoundManager {
@@ -2009,7 +2062,77 @@ pub enum AppError {
 
 ### 12.3 Son d'Erreur
 
-Quand une erreur se produit lors du déclenchement d'un son, jouer un bref son d'erreur (`resources/sounds/error.wav`) pour notifier l'utilisateur sans interrompre sa lecture.
+Quand une erreur se produit lors du déclenchement d'un son, jouer un bref son d'erreur (`resources/sounds/error.mp3`) pour notifier l'utilisateur sans interrompre sa lecture.
+
+**Implémentation:**
+- `SetErrorSoundPath { path }`: Stocke le chemin du son d'erreur dans l'audio thread
+- `PlayErrorSound`: Crée un sink one-shot via `SymphoniaSource::new(path, 0.0)`, volume = master * 0.5, `sink.detach()` (fire-and-forget)
+- Le chemin est résolu depuis le resource_dir Tauri au démarrage (setup)
+- Bundled via `tauri.conf.json` → `bundle.resources: ["../resources/sounds/error.mp3"]`
+
+### 12.4 Logging
+
+**Infrastructure:** Crates `tracing`, `tracing-subscriber`, `tracing-appender`.
+
+```rust
+fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
+    let logs_dir = storage::get_app_data_dir().join("logs");
+    let file_appender = tracing_appender::rolling::daily(&logs_dir, "keytomusic.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+    tracing_subscriber::fmt()
+        .with_writer(non_blocking)
+        .with_env_filter(EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| EnvFilter::new("info")))
+        .with_ansi(false)
+        .init();
+    guard
+}
+```
+
+- Logs écrits dans `{app_data}/logs/keytomusic.log` (rotation journalière)
+- Configurable via `RUST_LOG` (défaut: `info`)
+- Guard maintenu pour toute la durée du programme
+
+**Commande Open Logs:**
+```rust
+#[tauri::command]
+fn get_logs_folder() -> Result<String, String>;
+```
+Le frontend utilise `@tauri-apps/plugin-shell` → `open(folder)` pour ouvrir le dossier dans l'explorateur.
+
+### 12.5 Vérification des Fichiers au Chargement
+
+```rust
+#[tauri::command]
+fn verify_profile_sounds(profile: Profile) -> Vec<MissingSoundInfo> {
+    // Pour chaque son du profil:
+    // - Local: vérifie que file_path existe sur le disque
+    // - YouTube: vérifie que cached_path existe
+    // Retourne la liste des sons manquants
+}
+
+#[derive(Serialize)]
+struct MissingSoundInfo {
+    sound_id: String,
+    sound_name: String,
+    file_path: String,
+    source_type: String,  // "local" ou "youtube"
+}
+```
+
+Appelé dans `profileStore.loadProfile()` après chargement. Les résultats alimentent `errorStore.missingQueue` → affichage dans `FileNotFoundModal`.
+
+### 12.6 Commandes File Picker
+
+```rust
+#[tauri::command]
+async fn pick_audio_file() -> Result<Option<String>, String>;  // Single file (pour "Locate File")
+
+#[tauri::command]
+async fn pick_audio_files() -> Result<Vec<String>, String>;   // Multi-file (pour "Add Files")
+```
+
+Utilisent `rfd::FileDialog` avec filtre extensions audio (mp3, wav, ogg, flac, m4a, aac).
 
 ---
 

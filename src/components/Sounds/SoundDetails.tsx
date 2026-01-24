@@ -25,6 +25,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   const [showAddModal, setShowAddModal] = useState(false);
   const [previewingSoundId, setPreviewingSoundId] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // "binding" = reassign entire key, soundId string = move that sound to another key
   const [capturingKeyFor, setCapturingKeyFor] = useState<"binding" | string | null>(null);
 
@@ -171,6 +172,15 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     updateSound(soundId, { momentum });
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => saveCurrentProfile(), 500);
+    if (previewingSoundId === soundId && binding) {
+      if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+      const sound = currentProfile!.sounds.find((s) => s.id === soundId);
+      if (sound) {
+        seekTimerRef.current = setTimeout(() => {
+          commands.playSound(binding.trackId, sound.id, getSoundFilePath(sound), momentum, sound.volume).catch(() => {});
+        }, 150);
+      }
+    }
   };
 
   const handlePreviewToggle = async (sound: Sound) => {

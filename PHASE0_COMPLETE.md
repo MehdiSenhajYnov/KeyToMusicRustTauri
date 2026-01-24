@@ -88,7 +88,7 @@ src-tauri/src/
 ```
 resources/
 ├── sounds/
-│   └── README.md        ✅ Instructions pour error.wav
+│   └── README.md        ✅ Instructions pour error.mp3
 └── icons/
     └── README.md        ✅ Instructions pour les icônes
 ```
@@ -181,7 +181,7 @@ npm run tauri:build
 ## Notes Importantes
 
 ⚠️ **Ressources Manquantes** (à ajouter manuellement):
-- `resources/sounds/error.wav` - Son d'erreur système (< 1 seconde, format WAV)
+- `resources/sounds/error.mp3` - Son d'erreur système (< 1 seconde, format WAV)
 - `resources/icons/*.png` - Icônes de l'application (utiliser `npm run tauri icon`)
 
 ⚠️ **Prérequis Système**:

@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useProfileStore } from "../../stores/profileStore";
 import { useToastStore } from "../../stores/toastStore";
 import { parseKeyCombination } from "../../utils/keyMapping";
-import { isAudioFile, formatDuration } from "../../utils/fileHelpers";
+import { formatDuration } from "../../utils/fileHelpers";
 import * as commands from "../../utils/tauriCommands";
 import type { LoopMode, SoundSource } from "../../types";
 
@@ -29,15 +29,22 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   const addToast = useToastStore((s) => s.addToast);
 
   const [sourceMode, setSourceMode] = useState<SourceMode>("local");
-  const [files, setFiles] = useState<FileEntry[]>([]);
-  const [pathInput, setPathInput] = useState("");
+  const [files, setFiles] = useState<FileEntry[]>(() => {
+    if (initialFiles && initialFiles.length > 0) {
+      return initialFiles.map((path) => ({ path, momentum: 0, duration: 0 }));
+    }
+    return [];
+  });
+  const processedFilesRef = useRef<string[] | undefined>(initialFiles);
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadStatus, setDownloadStatus] = useState("");
-  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  const [activeDownloads, setActiveDownloads] = useState<
+    Map<string, { url: string; status: string; progress: number | null }>
+  >(new Map());
   const [isInstallingYtDlp, setIsInstallingYtDlp] = useState(false);
   const [ytDlpInstalled, setYtDlpInstalled] = useState<boolean | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
+  const downloadIdCounter = useRef(0);
+  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [keysInput, setKeysInput] = useState(targetKey || "");
   const [selectedTrackId, setSelectedTrackId] = useState(
     currentProfile?.tracks[0]?.id || ""
@@ -50,19 +57,30 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   const tracks = currentProfile?.tracks || [];
   const isSingleFile = files.length <= 1;
 
-  // Initialize from initialFiles
+  // Handle initialFiles: on mount just fetch durations, on subsequent changes append files
   useEffect(() => {
-    if (initialFiles && initialFiles.length > 0) {
-      const entries = initialFiles.map((path) => ({ path, momentum: 0, duration: 0 }));
-      setFiles(entries);
-      // Fetch durations
-      initialFiles.forEach((path, i) => {
+    if (!initialFiles || initialFiles.length === 0) return;
+    if (processedFilesRef.current === initialFiles) {
+      // Same reference (mount or StrictMode re-run): just fetch durations
+      for (const path of initialFiles) {
         commands.getAudioDuration(path).then((duration) => {
           setFiles((prev) =>
-            prev.map((f, idx) => (idx === i ? { ...f, duration } : f))
+            prev.map((f) => (f.path === path && f.duration === 0 ? { ...f, duration } : f))
           );
         }).catch(() => {});
-      });
+      }
+      return;
+    }
+    // New reference = new drop while modal is open: append files
+    processedFilesRef.current = initialFiles;
+    const entries: FileEntry[] = initialFiles.map((path) => ({ path, momentum: 0, duration: 0 }));
+    setFiles((prev) => [...prev, ...entries]);
+    for (const path of initialFiles) {
+      commands.getAudioDuration(path).then((duration) => {
+        setFiles((prev) =>
+          prev.map((f) => (f.path === path && f.duration === 0 ? { ...f, duration } : f))
+        );
+      }).catch(() => {});
     }
   }, [initialFiles]);
 
@@ -90,10 +108,17 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   // Listen for download progress events
   useEffect(() => {
     let cancelled = false;
-    listen<{ status: string; progress: number | null }>("youtube_download_progress", (event) => {
+    listen<{ downloadId: string; status: string; progress: number | null }>("youtube_download_progress", (event) => {
       if (cancelled) return;
-      setDownloadStatus(event.payload.status);
-      setDownloadProgress(event.payload.progress);
+      const { downloadId, status, progress } = event.payload;
+      setActiveDownloads((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(downloadId);
+        if (existing) {
+          next.set(downloadId, { ...existing, status, progress });
+        }
+        return next;
+      });
     }).then((unlisten) => {
       if (cancelled) {
         unlisten();
@@ -132,11 +157,16 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     const url = youtubeUrl.trim();
     if (!url) return;
 
-    setIsDownloading(true);
-    setDownloadStatus("Starting...");
-    setDownloadProgress(null);
+    const downloadId = `dl_${Date.now()}_${downloadIdCounter.current++}`;
+    setActiveDownloads((prev) => {
+      const next = new Map(prev);
+      next.set(downloadId, { url, status: "Starting...", progress: null });
+      return next;
+    });
+    setYoutubeUrl("");
+
     try {
-      const sound = await commands.addSoundFromYoutube(url);
+      const sound = await commands.addSoundFromYoutube(url, downloadId);
       const entry: FileEntry = {
         path: sound.source.type === "youtube" ? sound.source.cachedPath : "",
         momentum: 0,
@@ -145,36 +175,42 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
         source: sound.source,
       };
       setFiles((prev) => [...prev, entry]);
-      setYoutubeUrl("");
       addToast(`Downloaded: ${sound.name}`, "success");
     } catch (e) {
       addToast(String(e), "error");
     } finally {
-      setIsDownloading(false);
-      setDownloadStatus("");
-      setDownloadProgress(null);
+      setActiveDownloads((prev) => {
+        const next = new Map(prev);
+        next.delete(downloadId);
+        return next;
+      });
     }
   };
 
-  const handleAddPath = async () => {
-    const path = pathInput.trim();
-    if (!path) return;
-    if (!isAudioFile(path)) {
-      addToast("Unsupported format. Use MP3, WAV, OGG, or FLAC.", "error");
-      return;
-    }
-    const entry: FileEntry = { path, momentum: 0, duration: 0 };
-    setFiles((prev) => [...prev, entry]);
-    setPathInput("");
-
-    // Fetch duration in background
+  const handleBrowseFiles = async () => {
     try {
-      const duration = await commands.getAudioDuration(path);
-      setFiles((prev) =>
-        prev.map((f) => (f.path === path && f.duration === 0 ? { ...f, duration } : f))
-      );
-    } catch {
-      // Duration will stay 0
+      const paths = await commands.pickAudioFiles();
+      if (paths.length === 0) return;
+
+      const newEntries: FileEntry[] = paths.map((path) => ({
+        path,
+        momentum: 0,
+        duration: 0,
+      }));
+      setFiles((prev) => [...prev, ...newEntries]);
+
+      // Fetch durations in background
+      for (const path of paths) {
+        commands.getAudioDuration(path).then((duration) => {
+          setFiles((prev) =>
+            prev.map((f) =>
+              f.path === path && f.duration === 0 ? { ...f, duration } : f
+            )
+          );
+        }).catch(() => {});
+      }
+    } catch (e) {
+      addToast("Failed to open file picker", "error");
     }
   };
 
@@ -191,6 +227,13 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     setFiles((prev) =>
       prev.map((f, i) => (i === index ? { ...f, momentum } : f))
     );
+    if (previewingIndex === index && selectedTrackId) {
+      if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+      const file = files[index];
+      seekTimerRef.current = setTimeout(() => {
+        commands.playSound(selectedTrackId, `preview-${index}`, file.path, momentum, volume / 100).catch(() => {});
+      }, 150);
+    }
   };
 
   const handleStopPreview = useCallback(() => {
@@ -234,7 +277,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     }
   };
 
-  // Key input behavior: single file = replace, multiple = build up
+  // Key input behavior: single file = replace, multiple = keep all typed keys
   const handleKeyInput = (value: string) => {
     if (targetKey) return;
 
@@ -242,8 +285,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
       const lastChar = value.slice(-1).toLowerCase();
       setKeysInput(lastChar);
     } else {
-      const limited = value.toLowerCase().slice(0, files.length);
-      setKeysInput(limited);
+      setKeysInput(value.toLowerCase());
     }
   };
 
@@ -385,24 +427,12 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
         {sourceMode === "local" && (
           <div className="space-y-2">
             <label className="text-text-secondary text-sm">Audio Files</label>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={pathInput}
-                onChange={(e) => setPathInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleAddPath();
-                }}
-                placeholder="C:\path\to\audio.mp3"
-                className="flex-1 bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary focus:border-border-focus outline-none"
-              />
-              <button
-                onClick={handleAddPath}
-                className="px-3 py-1.5 bg-accent-primary/20 text-accent-primary rounded text-sm hover:bg-accent-primary/30"
-              >
-                Add
-              </button>
-            </div>
+            <button
+              onClick={handleBrowseFiles}
+              className="w-full px-3 py-2 bg-accent-primary/20 text-accent-primary rounded text-sm hover:bg-accent-primary/30 transition-colors"
+            >
+              Add Files
+            </button>
           </div>
         )}
 
@@ -432,37 +462,40 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                     value={youtubeUrl}
                     onChange={(e) => setYoutubeUrl(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && !isDownloading) handleYoutubeDownload();
+                      if (e.key === "Enter" && youtubeUrl.trim()) handleYoutubeDownload();
                     }}
                     placeholder="https://youtube.com/watch?v=..."
-                    disabled={isDownloading}
-                    className="flex-1 bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary focus:border-border-focus outline-none disabled:opacity-50"
+                    className="flex-1 bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary focus:border-border-focus outline-none"
                   />
                   <button
                     onClick={handleYoutubeDownload}
-                    disabled={isDownloading || !youtubeUrl.trim()}
+                    disabled={!youtubeUrl.trim()}
                     className="px-3 py-1.5 bg-accent-primary/20 text-accent-primary rounded text-sm hover:bg-accent-primary/30 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                   >
-                    {isDownloading ? "..." : "Download"}
+                    Download
                   </button>
                 </div>
-                {isDownloading && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
-                      <span className="text-text-secondary text-xs">
-                        {downloadStatus}
-                        {downloadProgress != null && ` ${Math.round(downloadProgress)}%`}
-                      </span>
-                    </div>
-                    {downloadProgress != null && (
-                      <div className="w-full bg-bg-tertiary rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="bg-accent-primary h-full rounded-full transition-all duration-300"
-                          style={{ width: `${Math.min(100, downloadProgress)}%` }}
-                        />
+                {activeDownloads.size > 0 && (
+                  <div className="space-y-2">
+                    {[...activeDownloads.entries()].map(([id, dl]) => (
+                      <div key={id} className="space-y-1.5 bg-bg-tertiary rounded p-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin shrink-0" />
+                          <span className="text-text-secondary text-xs truncate flex-1">
+                            {dl.status}
+                            {dl.progress != null && ` ${Math.round(dl.progress)}%`}
+                          </span>
+                        </div>
+                        {dl.progress != null && (
+                          <div className="w-full bg-bg-secondary rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-accent-primary h-full rounded-full transition-all duration-300"
+                              style={{ width: `${Math.min(100, dl.progress)}%` }}
+                            />
+                          </div>
+                        )}
                       </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </>
@@ -482,7 +515,9 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                   <div className="flex items-center gap-2">
                     {!isSingleFile && (
                       <span className="text-accent-primary font-mono text-xs font-bold bg-bg-secondary px-1.5 py-0.5 rounded shrink-0">
-                        {keysInput[i]?.toUpperCase() || "-"}
+                          {keysInput.length > 0
+                          ? keysInput[i % keysInput.length].toUpperCase()
+                          : "-"}
                       </span>
                     )}
                     <span className="text-text-primary text-xs flex-1 truncate">

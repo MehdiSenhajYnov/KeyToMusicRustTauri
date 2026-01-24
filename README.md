@@ -47,7 +47,7 @@ npm install
 ```
 
 3. Ajouter les ressources (optionnel pour Phase 0)
-   - Placer un fichier `error.wav` dans `resources/sounds/`
+   - Placer un fichier `error.mp3` dans `resources/sounds/`
    - Générer les icônes ou placer des icônes dans `resources/icons/`
 
 4. Lancer en mode développement

@@ -6,6 +6,7 @@ import { MainContent } from "./components/Layout/MainContent";
 import { SettingsModal } from "./components/Settings/SettingsModal";
 import { ToastContainer } from "./components/Toast/ToastContainer";
 import { ExportProgress } from "./components/Export/ExportProgress";
+import { FileNotFoundModal } from "./components/Errors/FileNotFoundModal";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useProfileStore } from "./stores/profileStore";
 import { useExportStore } from "./stores/exportStore";
@@ -72,6 +73,7 @@ function App() {
 
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
       <ExportProgress />
+      <FileNotFoundModal />
       <ToastContainer />
     </div>
   );
