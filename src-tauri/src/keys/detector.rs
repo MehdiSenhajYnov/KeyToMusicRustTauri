@@ -1,11 +1,21 @@
-use rdev::{listen, EventType};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use crate::keys::mapping::{is_modifier, key_to_code, KeyEvent};
+use crate::keys::mapping::KeyEvent;
 
-/// Global keyboard detector using rdev.
+/// Check if a key code string represents a modifier key.
+fn is_modifier_code(code: &str) -> bool {
+    matches!(
+        code,
+        "ShiftLeft" | "ShiftRight" | "ControlLeft" | "ControlRight"
+            | "AltLeft" | "AltRight" | "MetaLeft" | "MetaRight"
+    )
+}
+
+/// Global keyboard detector.
 /// Runs in a separate thread and invokes a callback on key events.
+/// On macOS: uses a custom CGEventTap (avoids rdev crash on macOS 13+).
+/// On other platforms: uses rdev::listen.
 #[derive(Clone)]
 pub struct KeyDetector {
     enabled: Arc<Mutex<bool>>,
@@ -40,82 +50,104 @@ impl KeyDetector {
         let key_detection_shortcut = self.key_detection_shortcut.clone();
         let auto_momentum_shortcut = self.auto_momentum_shortcut.clone();
 
+        let callback = Arc::new(callback);
+
         std::thread::spawn(move || {
-            let callback = Arc::new(callback);
+            let cb = callback.clone();
+            let handle_key_event = move |code: String, is_press: bool| {
+                if is_press {
+                    let mut pressed = pressed_keys.lock().unwrap();
 
-            listen(move |event| {
-                match event.event_type {
-                    EventType::KeyPress(key) => {
-                        let code = key_to_code(key);
+                    // Avoid key repeat (key held down)
+                    if pressed.contains(&code) {
+                        return;
+                    }
+                    pressed.insert(code.clone());
 
-                        let mut pressed = pressed_keys.lock().unwrap();
-
-                        // Avoid key repeat (key held down)
-                        if pressed.contains(&code) {
-                            return;
-                        }
-                        pressed.insert(code.clone());
-
-                        // Global shortcuts: work even when key detection is disabled
-                        let kd_keys = key_detection_shortcut.lock().unwrap();
-                        if !kd_keys.is_empty()
-                            && is_shortcut_pressed(&pressed, &kd_keys)
-                        {
-                            drop(pressed);
-                            drop(kd_keys);
-                            callback(KeyEvent::ToggleKeyDetection);
-                            return;
-                        }
-                        drop(kd_keys);
-
-                        let stop_keys = master_stop_shortcut.lock().unwrap();
-                        if !stop_keys.is_empty()
-                            && is_shortcut_pressed(&pressed, &stop_keys)
-                        {
-                            drop(pressed);
-                            drop(stop_keys);
-                            callback(KeyEvent::MasterStop);
-                            return;
-                        }
-                        drop(stop_keys);
-
-                        let am_keys = auto_momentum_shortcut.lock().unwrap();
-                        if !am_keys.is_empty()
-                            && is_shortcut_pressed(&pressed, &am_keys)
-                        {
-                            drop(pressed);
-                            drop(am_keys);
-                            callback(KeyEvent::ToggleAutoMomentum);
-                            return;
-                        }
-                        drop(am_keys);
-
-                        // If detection is disabled, don't trigger sound key presses
-                        if !*enabled.lock().unwrap() {
-                            return;
-                        }
-
-                        // Skip modifier-only presses (don't trigger sounds)
-                        if is_modifier(&key) {
-                            return;
-                        }
-
-                        // Detect if Shift is pressed
-                        let with_shift = pressed.contains("ShiftLeft")
-                            || pressed.contains("ShiftRight");
-
+                    // Global shortcuts: work even when key detection is disabled
+                    let kd_keys = key_detection_shortcut.lock().unwrap();
+                    if !kd_keys.is_empty() && is_shortcut_pressed(&pressed, &kd_keys) {
                         drop(pressed);
+                        drop(kd_keys);
+                        cb(KeyEvent::ToggleKeyDetection);
+                        return;
+                    }
+                    drop(kd_keys);
 
-                        callback(KeyEvent::KeyPressed { key_code: code, with_shift });
+                    let stop_keys = master_stop_shortcut.lock().unwrap();
+                    if !stop_keys.is_empty() && is_shortcut_pressed(&pressed, &stop_keys) {
+                        drop(pressed);
+                        drop(stop_keys);
+                        cb(KeyEvent::MasterStop);
+                        return;
                     }
-                    EventType::KeyRelease(key) => {
-                        let code = key_to_code(key);
-                        pressed_keys.lock().unwrap().remove(&code);
+                    drop(stop_keys);
+
+                    let am_keys = auto_momentum_shortcut.lock().unwrap();
+                    if !am_keys.is_empty() && is_shortcut_pressed(&pressed, &am_keys) {
+                        drop(pressed);
+                        drop(am_keys);
+                        cb(KeyEvent::ToggleAutoMomentum);
+                        return;
                     }
-                    _ => {}
+                    drop(am_keys);
+
+                    // If detection is disabled, don't trigger sound key presses
+                    if !*enabled.lock().unwrap() {
+                        return;
+                    }
+
+                    // Skip modifier-only presses (don't trigger sounds)
+                    if is_modifier_code(&code) {
+                        return;
+                    }
+
+                    // Detect if Shift is pressed
+                    let with_shift = pressed.contains("ShiftLeft")
+                        || pressed.contains("ShiftRight");
+
+                    drop(pressed);
+
+                    cb(KeyEvent::KeyPressed { key_code: code, with_shift });
+                } else {
+                    // Key release
+                    pressed_keys.lock().unwrap().remove(&code);
                 }
-            })
-            .expect("Failed to listen to keyboard events");
+            };
+
+            #[cfg(target_os = "macos")]
+            {
+                use crate::keys::macos_listener::{listen_macos, MacKeyEvent};
+                let handler = handle_key_event;
+                listen_macos(move |event| {
+                    match event {
+                        MacKeyEvent::Press(code) => handler(code, true),
+                        MacKeyEvent::Release(code) => handler(code, false),
+                    }
+                });
+            }
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                use rdev::{listen, EventType};
+                use crate::keys::mapping::key_to_code;
+
+                let handler = handle_key_event;
+                listen(move |event| {
+                    match event.event_type {
+                        EventType::KeyPress(key) => {
+                            let code = key_to_code(key);
+                            handler(code, true);
+                        }
+                        EventType::KeyRelease(key) => {
+                            let code = key_to_code(key);
+                            handler(code, false);
+                        }
+                        _ => {}
+                    }
+                })
+                .expect("Failed to listen to keyboard events");
+            }
         });
     }
 

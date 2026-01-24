@@ -1,3 +1,4 @@
+#[cfg(not(target_os = "macos"))]
 use rdev::Key;
 
 /// Events emitted by the key detection system.
@@ -10,6 +11,7 @@ pub enum KeyEvent {
 }
 
 /// Convert an rdev::Key to a string key code matching Web KeyboardEvent.code format.
+#[cfg(not(target_os = "macos"))]
 pub fn key_to_code(key: Key) -> String {
     match key {
         // Letters A-Z
@@ -139,6 +141,7 @@ pub fn key_to_code(key: Key) -> String {
 }
 
 /// Convert a string key code back to an rdev::Key.
+#[cfg(not(target_os = "macos"))]
 pub fn code_to_key(code: &str) -> Option<Key> {
     match code {
         // Letters
@@ -266,6 +269,7 @@ pub fn code_to_key(code: &str) -> Option<Key> {
 }
 
 /// Check if a key is a modifier key (Shift, Ctrl, Alt, Meta).
+#[cfg(not(target_os = "macos"))]
 pub fn is_modifier(key: &Key) -> bool {
     matches!(
         key,
