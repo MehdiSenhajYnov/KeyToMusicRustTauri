@@ -408,14 +408,11 @@ Use platform-specific app data directories:
 - History cleared on profile switch
 - `useUndoRedo.ts` hook integrated in `App.tsx`
 
-## Planned Features (Future Phases)
-
-### Multi-Key Chords (Phase 8.4) - Fighting Game Combo System
+### Multi-Key Chords ✅ (Phase 8.4)
 
 Support pressing multiple non-modifier keys simultaneously (like piano chords), using a combo detection system inspired by fighting games (Street Fighter, Tekken).
 
-**Concept:**
-- `KeyA+KeyZ` = A and Z pressed "simultaneously"
+**How it works:**
 - Uses a Trie (prefix tree) structure for optimal detection
 - Trigger immediately when combo reaches a "leaf" (no further extensions possible)
 - Timer only when extensions exist (conditional latency)
@@ -433,15 +430,17 @@ E pressed → Leaf node (no A+Z+E+*) → TRIGGER IMMEDIATELY "A+Z+E"
 - 30-50ms only when extensions are possible
 
 **Configuration:**
-- `config.chordWindowMs`: 20-100ms (configurable in Settings)
+- `config.chordWindowMs`: 20-100ms (configurable in Settings, default: 30ms)
 
 **Format:** Modifiers first (Ctrl > Shift > Alt), then base keys sorted alphabetically.
 - `"KeyZ+KeyA"` → normalized to `"KeyA+KeyZ"`
-- `"Ctrl+KeyZ+KeyA"` → `"Ctrl+KeyA+KeyZ"`
 
-**See:** `docs/PHASE_8_COMBINED_SHORTCUTS_PLAN.md` section 3 for full details.
+**Key files:**
+- `src-tauri/src/keys/chord.rs` - ComboTrie and ChordDetector
+- `src-tauri/src/keys/detector.rs` - Integration with global key detection
+- `src/utils/keyMapping.ts` - `normalizeCombo()`, `buildComboFromPressedKeys()`
 
-**Status:** Planned
+## Planned Features (Future Phases)
 
 ### Configurable Momentum Modifier (Phase 8.5)
 - Let user choose momentum trigger: Shift (default), Alt, Ctrl, or None

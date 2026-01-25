@@ -36,7 +36,7 @@
     - [8.1 Duplication de Profil](#81-duplication-de-profil-) ✅
     - [8.2 Raccourcis Combinés](#82-raccourcis-clavier-combinés-modificateurs--partiellement-complété) 🔄
     - [8.3 Undo/Redo](#83-système-undoredo-) ✅
-    - [8.4 Multi-Key Chords](#84-multi-key-chords-future--planifié) ⏳
+    - [8.4 Multi-Key Chords](#84-multi-key-chords--complete) ✅
     - [8.5 Momentum Modifier](#85-modificateur-momentum-configurable--en-discussion) ⏳
 14. [Phase 9 - Polish & Optimisations](#phase-9---polish--optimisations)
 15. [Phase 10 - Tests & Validation](#phase-10---tests--validation)
@@ -1855,7 +1855,7 @@ Implémenter Ctrl+Z (Undo) et Ctrl+Y (Redo) pour les modifications de profil.
   - [ ] Possibilité d'afficher le nom de la prochaine action annulable dans un tooltip
   **⏳ Optionnel** - Non implémenté (UI non alourdie)
 
-### 8.4 Multi-Key Chords ⏳ PLANIFIÉ
+### 8.4 Multi-Key Chords ✅ COMPLETE
 
 Permettre des combinaisons de touches non-modifier pressées simultanément (comme un accord de piano).
 Système inspiré des combos de jeux de combat (Street Fighter, Tekken).
@@ -1874,40 +1874,40 @@ Z pressé → Extensions possibles (A+Z+E) → Timer continue
 E pressé → Feuille (pas de A+Z+E+*) → TRIGGER IMMÉDIAT "A+Z+E"
 ```
 
-- [ ] **8.4.1** Implémenter la structure Trie (arbre préfixe)
-  - [ ] Construire le Trie à partir des keyBindings du profil
-  - [ ] Reconstruire le Trie quand le profil change
-  - [ ] Méthodes: `find(combo)`, `is_leaf(combo)`, `has_extensions(combo)`
+- [x] **8.4.1** Implémenter la structure Trie (arbre préfixe)
+  - [x] Construire le Trie à partir des keyBindings du profil
+  - [x] Reconstruire le Trie quand le profil change
+  - [x] Méthodes: `find(combo)`, `is_leaf(combo)`, `has_extensions(combo)`
 
-- [ ] **8.4.2** Implémenter le ChordDetector dans `detector.rs`
-  - [ ] Tracker `current_combo: Vec<String>` (touches pressées, triées)
-  - [ ] Sur key press: ajouter à combo, vérifier si feuille → trigger ou timer
-  - [ ] Sur timer expire: trigger le meilleur match actuel
-  - [ ] Sur key release: retirer de combo
+- [x] **8.4.2** Implémenter le ChordDetector dans `detector.rs`
+  - [x] Tracker `current_combo: Vec<String>` (touches pressées, triées)
+  - [x] Sur key press: ajouter à combo, vérifier si feuille → trigger ou timer
+  - [x] Sur timer expire: trigger le meilleur match actuel
+  - [x] Sur key release: retirer de combo
 
-- [ ] **8.4.3** Fenêtre de détection configurable
-  - [ ] Nouveau champ `config.chordWindowMs: u32` (défaut: 30ms)
-  - [ ] Range: 20-100ms dans les Settings
-  - [ ] Timer reset à chaque nouvelle touche pressée
+- [x] **8.4.3** Fenêtre de détection configurable
+  - [x] Nouveau champ `config.chordWindowMs: u32` (défaut: 30ms)
+  - [x] Range: 20-100ms dans les Settings
+  - [x] Timer reset à chaque nouvelle touche pressée
 
-- [ ] **8.4.4** Optimisation latence conditionnelle
-  - [ ] 0ms si la touche est une feuille (pas d'extensions dans le profil)
-  - [ ] 0ms si le combo actuel est une feuille (trigger immédiat)
-  - [ ] Timer seulement si des extensions sont possibles
+- [x] **8.4.4** Optimisation latence conditionnelle
+  - [x] 0ms si la touche est une feuille (pas d'extensions dans le profil)
+  - [x] 0ms si le combo actuel est une feuille (trigger immédiat)
+  - [x] Timer seulement si des extensions sont possibles
 
-- [ ] **8.4.5** Format et normalisation des combos
-  - [ ] Ordre: Modifiers d'abord (Ctrl > Shift > Alt), puis base keys alphabétiques
-  - [ ] "KeyZ+KeyA" → normalisé en "KeyA+KeyZ"
-  - [ ] "Ctrl+KeyZ+KeyA" → "Ctrl+KeyA+KeyZ"
+- [x] **8.4.5** Format et normalisation des combos
+  - [x] Ordre: Modifiers d'abord (Ctrl > Shift > Alt), puis base keys alphabétiques
+  - [x] "KeyZ+KeyA" → normalisé en "KeyA+KeyZ"
+  - [x] "Ctrl+KeyZ+KeyA" → "Ctrl+KeyA+KeyZ"
 
-- [ ] **8.4.6** UI pour capturer les multi-key chords
-  - [ ] KeyCaptureSlot: déjà supporte multi-key via pressedKeysRef
-  - [ ] Afficher preview: "A + Z" pendant la capture
-  - [ ] `keyCodeToDisplay("KeyA+KeyZ")` → "A+Z"
+- [x] **8.4.6** UI pour capturer les multi-key chords
+  - [x] KeyCaptureSlot: déjà supporte multi-key via pressedKeysRef
+  - [x] Afficher preview: "A + Z" pendant la capture
+  - [x] `keyCodeToDisplay("KeyA+KeyZ")` → "A+Z"
 
-- [ ] **8.4.7** Frontend `useKeyDetection.ts`
-  - [ ] Parser les combos multi-key reçus du backend
-  - [ ] Chercher le binding correspondant dans le profil
+- [x] **8.4.7** Frontend `useKeyDetection.ts`
+  - [x] Parser les combos multi-key reçus du backend
+  - [x] Chercher le binding correspondant dans le profil
 
 **Avantage combinatoire:**
 | Type | Combinaisons (~50 touches) |

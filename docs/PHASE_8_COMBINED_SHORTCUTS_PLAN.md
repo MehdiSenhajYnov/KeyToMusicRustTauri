@@ -239,7 +239,17 @@ impl ChordDetector {
 **Affichage :** `keyCodeToDisplay("KeyA+KeyZ")` → "A+Z"
 
 ### 3.10 Status
-⏳ **Phase 8.4** - À implémenter après validation de l'approche
+✅ **Phase 8.4** - IMPLÉMENTÉ
+
+**Fichiers créés/modifiés:**
+- `src-tauri/src/keys/chord.rs` - ComboTrie et ChordDetector
+- `src-tauri/src/keys/detector.rs` - Intégration du ChordDetector
+- `src-tauri/src/types.rs` - Ajout de `chord_window_ms`
+- `src-tauri/src/commands.rs` - Commande `set_profile_bindings`
+- `src/utils/keyMapping.ts` - Fonctions `normalizeCombo`, `isMultiKeyChord`, mise à jour de `buildComboFromPressedKeys`
+- `src/stores/settingsStore.ts` - Ajout de `setChordWindowMs`
+- `src/components/Settings/SettingsModal.tsx` - Slider pour Chord Window
+- `src/App.tsx` - Sync des bindings au backend
 
 ---
 
