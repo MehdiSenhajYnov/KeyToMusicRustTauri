@@ -65,6 +65,7 @@ export interface AppConfig {
   keyCooldown: number;            // Cooldown global entre pressions en millisecondes (défaut: 1500)
   currentProfileId: ProfileId | null;
   audioDevice: string | null;     // null = follow system default, string = force specific device
+  chordWindowMs: number;          // Multi-key chord detection window in ms (default: 30, range: 20-100)
 }
 
 // État "Now Playing" pour l'affichage

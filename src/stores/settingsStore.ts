@@ -15,6 +15,7 @@ interface SettingsState {
   setCrossfadeDuration: (duration: number) => Promise<void>;
   setKeyCooldown: (cooldown: number) => Promise<void>;
   setAudioDevice: (device: string | null) => Promise<void>;
+  setChordWindowMs: (ms: number) => Promise<void>;
   loadConfig: () => Promise<void>;
 }
 
@@ -29,6 +30,7 @@ const defaultConfig: AppConfig = {
   keyCooldown: 200,
   currentProfileId: null,
   audioDevice: null,
+  chordWindowMs: 30,
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -151,6 +153,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await commands.setAudioDevice(device);
     } catch (e) {
       console.error("Failed to set audio device:", e);
+    }
+  },
+
+  setChordWindowMs: async (ms) => {
+    set((state) => ({
+      config: { ...state.config, chordWindowMs: ms },
+    }));
+    try {
+      await commands.updateConfig({ chordWindowMs: ms });
+    } catch (e) {
+      console.error("Failed to set chord window:", e);
     }
   },
 }));

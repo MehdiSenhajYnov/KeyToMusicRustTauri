@@ -1,6 +1,9 @@
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use crate::keys::chord::{ChordDetectorHandle, ChordResult};
 use crate::keys::mapping::KeyEvent;
 
 /// Check if a key code string represents a modifier key.
@@ -24,10 +27,13 @@ pub struct KeyDetector {
     master_stop_shortcut: Arc<Mutex<Vec<String>>>,
     key_detection_shortcut: Arc<Mutex<Vec<String>>>,
     auto_momentum_shortcut: Arc<Mutex<Vec<String>>>,
+    chord_detector: ChordDetectorHandle,
+    /// Flag to signal the timer thread to stop
+    timer_running: Arc<AtomicBool>,
 }
 
 impl KeyDetector {
-    pub fn new(cooldown_ms: u32, master_stop_shortcut: Vec<String>) -> Self {
+    pub fn new(cooldown_ms: u32, master_stop_shortcut: Vec<String>, chord_window_ms: u32) -> Self {
         Self {
             enabled: Arc::new(Mutex::new(true)),
             cooldown_ms: Arc::new(Mutex::new(cooldown_ms)),
@@ -35,6 +41,8 @@ impl KeyDetector {
             master_stop_shortcut: Arc::new(Mutex::new(master_stop_shortcut)),
             key_detection_shortcut: Arc::new(Mutex::new(Vec::new())),
             auto_momentum_shortcut: Arc::new(Mutex::new(Vec::new())),
+            chord_detector: ChordDetectorHandle::new(chord_window_ms),
+            timer_running: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -49,8 +57,13 @@ impl KeyDetector {
         let master_stop_shortcut = self.master_stop_shortcut.clone();
         let key_detection_shortcut = self.key_detection_shortcut.clone();
         let auto_momentum_shortcut = self.auto_momentum_shortcut.clone();
+        let chord_detector = self.chord_detector.clone();
+        let timer_running = self.timer_running.clone();
 
         let callback = Arc::new(callback);
+
+        // Start the timer polling thread
+        self.start_timer_thread(callback.clone());
 
         std::thread::spawn(move || {
             let cb = callback.clone();
@@ -97,39 +110,59 @@ impl KeyDetector {
                         return;
                     }
 
-                    // Skip modifier-only presses (don't trigger sounds)
-                    if is_modifier_code(&code) {
-                        return;
-                    }
-
-                    // Build combined key code with modifiers (Ctrl, Alt, Shift)
-                    let has_ctrl = pressed.contains("ControlLeft") || pressed.contains("ControlRight");
-                    let has_alt = pressed.contains("AltLeft") || pressed.contains("AltRight");
+                    // Track pressed modifiers for the with_shift flag
                     let has_shift = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
-
-                    // Build combo string in consistent order: Ctrl > Shift > Alt > Key
-                    let mut combo = String::new();
-                    if has_ctrl {
-                        combo.push_str("Ctrl+");
-                    }
-                    if has_shift {
-                        combo.push_str("Shift+");
-                    }
-                    if has_alt {
-                        combo.push_str("Alt+");
-                    }
-                    combo.push_str(&code);
-
                     drop(pressed);
 
-                    // Emit both the combined code and whether shift is pressed
-                    // (withShift is still used for momentum on non-combined bindings)
-                    cb(KeyEvent::KeyPressed { key_code: combo, with_shift: has_shift });
+                    // Use chord detector for key press
+                    match chord_detector.on_key_press(&code) {
+                        ChordResult::Trigger(combo) => {
+                            cb(KeyEvent::KeyPressed {
+                                key_code: combo,
+                                with_shift: has_shift,
+                            });
+                        }
+                        ChordResult::Pending => {
+                            // Timer thread will handle it
+                        }
+                        ChordResult::NoMatch => {
+                            // No binding matches - if it's a modifier-only press, ignore
+                            // Otherwise, we could still emit for fallback handling
+                            if !is_modifier_code(&code) {
+                                // Build old-style combo for backwards compatibility
+                                let pressed = pressed_keys.lock().unwrap();
+                                let has_ctrl = pressed.contains("ControlLeft") || pressed.contains("ControlRight");
+                                let has_alt = pressed.contains("AltLeft") || pressed.contains("AltRight");
+                                let has_shift_now = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
+                                drop(pressed);
+
+                                let mut combo = String::new();
+                                if has_ctrl {
+                                    combo.push_str("Ctrl+");
+                                }
+                                if has_shift_now {
+                                    combo.push_str("Shift+");
+                                }
+                                if has_alt {
+                                    combo.push_str("Alt+");
+                                }
+                                combo.push_str(&code);
+
+                                cb(KeyEvent::KeyPressed {
+                                    key_code: combo,
+                                    with_shift: has_shift_now,
+                                });
+                            }
+                        }
+                    }
                 } else {
                     // Key release
                     pressed_keys.lock().unwrap().remove(&code);
+                    chord_detector.on_key_release(&code);
                 }
             };
+
+            timer_running.store(true, Ordering::SeqCst);
 
             #[cfg(target_os = "macos")]
             {
@@ -167,9 +200,53 @@ impl KeyDetector {
         });
     }
 
+    /// Start a thread that polls for pending chord timer expiration
+    fn start_timer_thread<F>(&self, callback: Arc<F>)
+    where
+        F: Fn(KeyEvent) + Send + Sync + 'static,
+    {
+        let chord_detector = self.chord_detector.clone();
+        let enabled = self.enabled.clone();
+        let pressed_keys = self.pressed_keys.clone();
+        let timer_running = self.timer_running.clone();
+
+        std::thread::spawn(move || {
+            // Wait for the main detector to start
+            while !timer_running.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+
+            loop {
+                // Poll every 5ms for responsive timing
+                std::thread::sleep(Duration::from_millis(5));
+
+                // Check if detection is enabled
+                if !*enabled.lock().unwrap() {
+                    continue;
+                }
+
+                // Check if timer has expired
+                if let Some(combo) = chord_detector.check_timer() {
+                    let pressed = pressed_keys.lock().unwrap();
+                    let has_shift = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
+                    drop(pressed);
+
+                    callback(KeyEvent::KeyPressed {
+                        key_code: combo,
+                        with_shift: has_shift,
+                    });
+                }
+            }
+        });
+    }
+
     /// Enable or disable key detection.
     pub fn set_enabled(&self, enabled: bool) {
         *self.enabled.lock().unwrap() = enabled;
+        if !enabled {
+            // Clear chord detector state when disabled
+            self.chord_detector.clear();
+        }
     }
 
     /// Check if key detection is enabled.
@@ -195,6 +272,17 @@ impl KeyDetector {
     /// Update the auto momentum toggle shortcut.
     pub fn set_auto_momentum_shortcut(&self, keys: Vec<String>) {
         *self.auto_momentum_shortcut.lock().unwrap() = keys;
+    }
+
+    /// Update the profile bindings for chord detection.
+    /// This rebuilds the Trie used for multi-key chord detection.
+    pub fn set_profile_bindings(&self, bindings: &[String]) {
+        self.chord_detector.set_bindings(bindings);
+    }
+
+    /// Update the chord window duration.
+    pub fn set_chord_window(&self, ms: u32) {
+        self.chord_detector.set_chord_window(ms);
     }
 }
 

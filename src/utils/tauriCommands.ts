@@ -128,6 +128,10 @@ export async function setKeyCooldown(cooldownMs: number): Promise<void> {
   return invoke("set_key_cooldown", { cooldownMs });
 }
 
+export async function setProfileBindings(bindings: string[]): Promise<void> {
+  return invoke("set_profile_bindings", { bindings });
+}
+
 // ─── YouTube ──────────────────────────────────────────────────────────────
 
 export async function addSoundFromYoutube(url: string, downloadId: string): Promise<Sound> {

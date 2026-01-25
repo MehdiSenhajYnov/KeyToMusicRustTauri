@@ -69,7 +69,11 @@ fn main() {
     let _ = audio_engine.set_master_volume(config.master_volume);
 
     // Initialize key detector
-    let key_detector = KeyDetector::new(config.key_cooldown, config.master_stop_shortcut.clone());
+    let key_detector = KeyDetector::new(
+        config.key_cooldown,
+        config.master_stop_shortcut.clone(),
+        config.chord_window_ms,
+    );
 
     // Set initial enabled state from config
     key_detector.set_enabled(config.key_detection_enabled);
@@ -217,6 +221,7 @@ fn main() {
             set_key_detection,
             set_master_stop_shortcut,
             set_key_cooldown,
+            set_profile_bindings,
             // YouTube commands
             add_sound_from_youtube,
             check_yt_dlp_installed,

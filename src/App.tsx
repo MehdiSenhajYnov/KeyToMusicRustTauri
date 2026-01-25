@@ -22,7 +22,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const loadConfig = useSettingsStore((s) => s.loadConfig);
   const currentProfileId = useSettingsStore((s) => s.config.currentProfileId);
-  const { loadProfiles, loadProfile } = useProfileStore();
+  const { loadProfiles, loadProfile, currentProfile } = useProfileStore();
 
   // Initialize hooks
   useAudioEvents();
@@ -42,6 +42,16 @@ function App() {
       loadProfile(currentProfileId);
     }
   }, [currentProfileId, loadProfile]);
+
+  // Sync profile bindings to backend for multi-key chord detection
+  useEffect(() => {
+    if (currentProfile) {
+      const bindings = currentProfile.keyBindings.map((kb) => kb.keyCode);
+      commands.setProfileBindings(bindings).catch(console.error);
+    } else {
+      commands.setProfileBindings([]).catch(console.error);
+    }
+  }, [currentProfile?.keyBindings]);
 
   // Intercept window close during export
   const forceCloseRef = useRef(false);

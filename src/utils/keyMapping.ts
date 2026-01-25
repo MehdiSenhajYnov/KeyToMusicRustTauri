@@ -319,12 +319,14 @@ export function checkShortcutConflicts(
 /**
  * Build a combined key code from pressed keys Set.
  * Used during key capture to create the combo string.
+ * Supports multi-key chords: multiple base keys are sorted alphabetically.
+ * Format: Ctrl+Shift+Alt+KeyA+KeyB+KeyZ (modifiers first, then sorted base keys)
  */
 export function buildComboFromPressedKeys(pressedKeys: Set<string>): string {
   let hasCtrl = false;
   let hasShift = false;
   let hasAlt = false;
-  let baseKey = "";
+  const baseKeys: string[] = [];
 
   for (const key of pressedKeys) {
     if (key === "ControlLeft" || key === "ControlRight") {
@@ -333,19 +335,66 @@ export function buildComboFromPressedKeys(pressedKeys: Set<string>): string {
       hasShift = true;
     } else if (key === "AltLeft" || key === "AltRight") {
       hasAlt = true;
-    } else if (!baseKey) {
-      // Take the first non-modifier key
-      baseKey = key;
+    } else {
+      baseKeys.push(key);
     }
   }
 
-  if (!baseKey) return "";
+  if (baseKeys.length === 0) return "";
 
-  let combo = "";
-  if (hasCtrl) combo += "Ctrl+";
-  if (hasShift) combo += "Shift+";
-  if (hasAlt) combo += "Alt+";
-  combo += baseKey;
+  // Sort base keys alphabetically for consistent ordering
+  baseKeys.sort();
 
-  return combo;
+  const parts: string[] = [];
+  if (hasCtrl) parts.push("Ctrl");
+  if (hasShift) parts.push("Shift");
+  if (hasAlt) parts.push("Alt");
+  parts.push(...baseKeys);
+
+  return parts.join("+");
+}
+
+/**
+ * Normalize a combo string to canonical form.
+ * Ensures modifiers are in order Ctrl > Shift > Alt and base keys are sorted alphabetically.
+ */
+export function normalizeCombo(combo: string): string {
+  const parts = combo.split("+");
+
+  let hasCtrl = false;
+  let hasShift = false;
+  let hasAlt = false;
+  const baseKeys: string[] = [];
+
+  for (const part of parts) {
+    if (part === "Ctrl") {
+      hasCtrl = true;
+    } else if (part === "Shift") {
+      hasShift = true;
+    } else if (part === "Alt") {
+      hasAlt = true;
+    } else {
+      baseKeys.push(part);
+    }
+  }
+
+  // Sort base keys alphabetically
+  baseKeys.sort();
+
+  const normalized: string[] = [];
+  if (hasCtrl) normalized.push("Ctrl");
+  if (hasShift) normalized.push("Shift");
+  if (hasAlt) normalized.push("Alt");
+  normalized.push(...baseKeys);
+
+  return normalized.join("+");
+}
+
+/**
+ * Check if a combo is a multi-key chord (has multiple base keys).
+ */
+export function isMultiKeyChord(combo: string): boolean {
+  const parts = combo.split("+");
+  const baseKeys = parts.filter(p => p !== "Ctrl" && p !== "Shift" && p !== "Alt");
+  return baseKeys.length > 1;
 }

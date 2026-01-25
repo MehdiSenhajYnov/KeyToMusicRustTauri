@@ -18,6 +18,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     config,
     setCrossfadeDuration,
     setKeyCooldown,
+    setChordWindowMs,
     setMasterStopShortcut,
     setAutoMomentumShortcut,
     setKeyDetectionShortcut,
@@ -288,6 +289,34 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
             <span>0ms</span>
             <span>2000ms</span>
           </div>
+        </div>
+
+        {/* Chord Window (Multi-key detection) */}
+        <div className="space-y-1">
+          <div className="flex justify-between">
+            <label className="text-text-secondary text-sm font-medium">
+              Chord Window
+            </label>
+            <span className="text-text-muted text-xs">
+              {config.chordWindowMs}ms
+            </span>
+          </div>
+          <input
+            type="range"
+            min="20"
+            max="100"
+            step="5"
+            value={config.chordWindowMs}
+            onChange={(e) => setChordWindowMs(Number(e.target.value))}
+            className="w-full h-1 accent-accent-primary"
+          />
+          <div className="flex justify-between text-text-muted text-xs">
+            <span>20ms (fast)</span>
+            <span>100ms (lenient)</span>
+          </div>
+          <p className="text-text-muted text-xs">
+            Time window for detecting multi-key combos (A+Z)
+          </p>
         </div>
 
         {/* Audio Device */}

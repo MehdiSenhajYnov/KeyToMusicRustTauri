@@ -89,6 +89,12 @@ pub struct AppConfig {
     pub current_profile_id: Option<ProfileId>,
     #[serde(default)]
     pub audio_device: Option<String>,
+    #[serde(default = "default_chord_window_ms")]
+    pub chord_window_ms: u32,
+}
+
+fn default_chord_window_ms() -> u32 {
+    30
 }
 
 impl Default for AppConfig {
@@ -108,6 +114,7 @@ impl Default for AppConfig {
             key_cooldown: 200,
             current_profile_id: None,
             audio_device: None,
+            chord_window_ms: 30,
         }
     }
 }

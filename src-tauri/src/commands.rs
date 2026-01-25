@@ -68,6 +68,9 @@ pub fn update_config(
                     if v.is_null() { None } else { v.as_str().map(|s| s.to_string()) }
                 });
         }
+        if let Some(v) = updates.get("chordWindowMs").and_then(|v| v.as_u64()) {
+            config.chord_window_ms = v as u32;
+        }
     });
 
     // Sync audio device to audio engine
@@ -96,8 +99,19 @@ pub fn update_config(
     if updates.get("keyDetectionShortcut").is_some() {
         state.key_detector.set_key_detection_shortcut(config.key_detection_shortcut.clone());
     }
+    if updates.get("chordWindowMs").is_some() {
+        state.key_detector.set_chord_window(config.chord_window_ms);
+    }
 
     storage::save_config(&config)
+}
+
+/// Set the profile bindings for chord detection.
+/// Called when profile changes or bindings are modified.
+#[tauri::command]
+pub fn set_profile_bindings(state: State<'_, AppState>, bindings: Vec<String>) -> Result<(), String> {
+    state.key_detector.set_profile_bindings(&bindings);
+    Ok(())
 }
 
 // ─── Profile Commands ───────────────────────────────────────────────────────
