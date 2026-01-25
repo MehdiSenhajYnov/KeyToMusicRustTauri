@@ -27,6 +27,20 @@ pub enum LoopMode {
     Sequential,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum MomentumModifier {
+    Shift,
+    Ctrl,
+    Alt,
+    None,
+}
+
+impl Default for MomentumModifier {
+    fn default() -> Self {
+        MomentumModifier::Shift
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Sound {
@@ -91,6 +105,8 @@ pub struct AppConfig {
     pub audio_device: Option<String>,
     #[serde(default = "default_chord_window_ms")]
     pub chord_window_ms: u32,
+    #[serde(default)]
+    pub momentum_modifier: MomentumModifier,
 }
 
 fn default_chord_window_ms() -> u32 {
@@ -115,6 +131,7 @@ impl Default for AppConfig {
             current_profile_id: None,
             audio_device: None,
             chord_window_ms: 30,
+            momentum_modifier: MomentumModifier::default(),
         }
     }
 }

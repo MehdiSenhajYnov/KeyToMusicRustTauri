@@ -12,6 +12,9 @@ export type SoundSource =
 // Mode de boucle
 export type LoopMode = "off" | "random" | "single" | "sequential";
 
+// Modificateur pour déclencher le momentum
+export type MomentumModifier = "Shift" | "Ctrl" | "Alt" | "None";
+
 // Configuration d'un son individuel
 export interface Sound {
   id: SoundId;
@@ -66,6 +69,7 @@ export interface AppConfig {
   currentProfileId: ProfileId | null;
   audioDevice: string | null;     // null = follow system default, string = force specific device
   chordWindowMs: number;          // Multi-key chord detection window in ms (default: 30, range: 20-100)
+  momentumModifier: MomentumModifier; // Modifier key to trigger momentum (default: "Shift")
 }
 
 // État "Now Playing" pour l'affichage

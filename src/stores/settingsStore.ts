@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AppConfig } from "../types";
+import type { AppConfig, MomentumModifier } from "../types";
 import * as commands from "../utils/tauriCommands";
 
 interface SettingsState {
@@ -16,6 +16,7 @@ interface SettingsState {
   setKeyCooldown: (cooldown: number) => Promise<void>;
   setAudioDevice: (device: string | null) => Promise<void>;
   setChordWindowMs: (ms: number) => Promise<void>;
+  setMomentumModifier: (modifier: MomentumModifier) => Promise<void>;
   loadConfig: () => Promise<void>;
 }
 
@@ -31,6 +32,7 @@ const defaultConfig: AppConfig = {
   currentProfileId: null,
   audioDevice: null,
   chordWindowMs: 30,
+  momentumModifier: "Shift",
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -164,6 +166,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await commands.updateConfig({ chordWindowMs: ms });
     } catch (e) {
       console.error("Failed to set chord window:", e);
+    }
+  },
+
+  setMomentumModifier: async (modifier) => {
+    set((state) => ({
+      config: { ...state.config, momentumModifier: modifier },
+    }));
+    try {
+      await commands.updateConfig({ momentumModifier: modifier });
+    } catch (e) {
+      console.error("Failed to set momentum modifier:", e);
     }
   },
 }));

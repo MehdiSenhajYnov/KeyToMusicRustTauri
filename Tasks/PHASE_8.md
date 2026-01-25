@@ -215,34 +215,63 @@ E pressé → Feuille (pas de A+Z+E+*) → TRIGGER IMMÉDIAT "A+Z+E"
 | 3 touches | 19,600 |
 | + Modifiers (×8) | ×8 pour chaque |
 
-## 8.5 Modificateur Momentum Configurable ⏳ EN DISCUSSION
+## 8.5 Modificateur Momentum Configurable ✅
 
 Permettre à l'utilisateur de choisir quel modificateur déclenche le momentum.
 
-> **Note**: En discussion. Cette feature résoudrait le problème Numpad+Shift (limitation hardware où Shift+Numpad4 envoie ArrowLeft au lieu de Numpad4).
+> **Objectif**: Résoudre le problème Numpad+Shift (limitation hardware où Shift+Numpad4 envoie ArrowLeft) tout en gardant l'app simple.
 
-- [ ] **8.5.1** Ajouter le champ config `momentumModifier`
-  - [ ] Type: `"Shift" | "Alt" | "Ctrl" | "None"`
-  - [ ] Défaut: "Shift" (comportement actuel)
-  - [ ] "None" = momentum désactivé (utiliser Auto-Momentum toggle)
+**Design décidé:**
+- Simple dropdown dans Settings (pas de touche custom, pas de per-binding)
+- Options: Shift (défaut), Ctrl, Alt, Désactivé
+- Règle: Le match exact a priorité (si "Ctrl+A" est assigné, il se déclenche normalement, pas "A" avec momentum)
 
-- [ ] **8.5.2** Ajouter dropdown dans Settings
-  - [ ] Sous la section "Key Detection"
-  - [ ] Label: "Momentum Modifier"
-  - [ ] Options: Shift (default), Alt, Ctrl, None
+- [x] **8.5.1** Ajouter le champ config `momentumModifier`
+  - [x] Type: `"Shift" | "Ctrl" | "Alt" | "None"`
+  - [x] Défaut: "Shift" (comportement actuel)
+  - [x] "None" = momentum par modifier désactivé (utiliser Auto-Momentum toggle uniquement)
+  - [x] Fichiers: `src/types/index.ts`, `src/stores/settingsStore.ts`
+  **✅ Complété** - Type `MomentumModifier` ajouté, `setMomentumModifier` dans le store
 
-- [ ] **8.5.3** Mettre à jour backend (`detector.rs`)
-  - [ ] Lire le modifier configuré au lieu de hardcoder Shift
-  - [ ] `with_momentum: bool` basé sur le modifier configuré
+- [x] **8.5.2** Ajouter dropdown dans Settings
+  - [x] Section "Key Detection"
+  - [x] Label: "Momentum Modifier"
+  - [x] Options avec labels clairs: "Shift (défaut)", "Ctrl", "Alt", "Désactivé"
+  - [x] Fichier: `src/components/Settings/SettingsModal.tsx`
+  **✅ Complété** - Dropdown ajouté, Settings réorganisé en sections avec scroll
 
-- [ ] **8.5.4** Mettre à jour frontend (`useKeyDetection.ts`)
-  - [ ] Lire `config.momentumModifier`
-  - [ ] Vérifier le modifier correspondant pour déclencher momentum
+- [x] **8.5.3** Mettre à jour backend (`types.rs`)
+  - [x] Ajouter enum `MomentumModifier` avec derive Serialize/Deserialize
+  - [x] Ajouter champ `momentum_modifier` à `AppConfig`
+  - [x] Défaut: `MomentumModifier::Shift`
+  **✅ Complété** - Enum et champ ajoutés dans `src-tauri/src/types.rs`
 
-**Options:**
+- [x] **8.5.4** Mettre à jour frontend (`useKeyDetection.ts`)
+  - [x] Lire `config.momentumModifier`
+  - [x] Fonction `hasMomentumModifier(keyCode, modifier)` pour vérifier le modifier
+  - [x] Logique: si modifier momentum pressé ET binding exact non trouvé → déclencher avec momentum
+  **✅ Complété** - Logique implémentée avec fallback correct
+
+- [x] **8.5.5** Persistance via `updateConfig`
+  - [x] Utilise la commande existante `update_config` pour sauvegarder
+  - [x] Pas besoin de commande Tauri séparée
+  **✅ Complété** - Utilise `commands.updateConfig({ momentumModifier })`
+
+**Bonus: Refactoring SettingsModal**
+- [x] Contenu scrollable (max-height 85vh)
+- [x] Sections avec headers: Shortcuts, Key Detection, Audio, Data, About
+- [x] Header et footer fixes
+- [x] Modal plus large (480px vs 420px)
+
+**Bonus: Détection de conflits Momentum/Shortcuts**
+- [x] Warning si un shortcut utilise le momentum modifier + une touche bindée
+- [x] Warning à la modification du momentum modifier si conflits avec shortcuts existants
+- [x] Messages toast informatifs pour guider l'utilisateur
+
+**Tableau des options:**
 | Modifier | Avantage | Inconvénient |
 |----------|----------|--------------|
-| Shift (défaut) | Intuitif | Conflit Numpad |
-| Alt | Fonctionne partout | Moins naturel |
-| Ctrl | Fonctionne partout | Conflits système possibles |
-| None | Simple | Perd la flexibilité |
+| Shift (défaut) | Intuitif, comportement actuel | Conflit Numpad hardware |
+| Ctrl | Fonctionne avec Numpad | Peut interférer avec shortcuts système |
+| Alt | Fonctionne avec Numpad | Moins naturel |
+| Désactivé | Simple | Momentum uniquement via Auto-Momentum |

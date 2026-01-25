@@ -7,7 +7,23 @@ import { useToastStore } from "../stores/toastStore";
 import * as commands from "../utils/tauriCommands";
 import { getKeyCode, recordKeyLayout } from "../utils/keyMapping";
 import { formatErrorMessage } from "../utils/errorMessages";
-import type { LoopMode, Sound } from "../types";
+import type { LoopMode, Sound, MomentumModifier } from "../types";
+
+/** Check if the momentum modifier is present in the key combo */
+function hasMomentumModifier(keyCode: string, modifier: MomentumModifier): boolean {
+  if (modifier === "None") return false;
+  const parts = keyCode.split("+");
+  switch (modifier) {
+    case "Shift":
+      return parts.includes("Shift");
+    case "Ctrl":
+      return parts.includes("Ctrl");
+    case "Alt":
+      return parts.includes("Alt");
+    default:
+      return false;
+  }
+}
 
 interface KeyPressedPayload {
   keyCode: string;
@@ -84,14 +100,14 @@ export function useKeyDetection() {
       );
 
       // If not found and keyCode has modifiers, try the base key
-      // (this allows Shift+A to trigger "KeyA" binding with momentum)
+      // (this allows [Modifier]+A to trigger "KeyA" binding with momentum)
       let useModifierForMomentum = false;
       if (!binding && payload.keyCode.includes("+")) {
         const parts = payload.keyCode.split("+");
         const baseKey = parts[parts.length - 1];
         binding = currentProfile.keyBindings.find((kb) => kb.keyCode === baseKey);
-        // If we found a base key binding and Shift was pressed, use momentum
-        if (binding && payload.withShift) {
+        // If we found a base key binding and the configured momentum modifier was pressed, use momentum
+        if (binding && hasMomentumModifier(payload.keyCode, config.momentumModifier)) {
           useModifierForMomentum = true;
         }
       }
@@ -141,7 +157,7 @@ export function useKeyDetection() {
         }
       }
     },
-    [currentProfile, config.autoMomentum, config.keyCooldown, config.keyDetectionEnabled, setLastKeyPressed, updateKeyBinding]
+    [currentProfile, config.autoMomentum, config.keyCooldown, config.keyDetectionEnabled, config.momentumModifier, setLastKeyPressed, updateKeyBinding]
   );
 
   // Listen for Tauri events from rdev (background key detection)

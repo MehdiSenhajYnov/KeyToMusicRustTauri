@@ -6,12 +6,60 @@ import { useExportStore } from "../../stores/exportStore";
 import { formatShortcut, recordKeyLayout, getKeyCode } from "../../utils/keyMapping";
 import * as commands from "../../utils/tauriCommands";
 import { useToastStore } from "../../stores/toastStore";
+import type { MomentumModifier } from "../../types";
 
 interface SettingsModalProps {
   onClose: () => void;
 }
 
 type ShortcutTarget = "masterStop" | "autoMomentum" | "keyDetection" | null;
+
+function SectionHeader({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="text-text-secondary text-xs font-semibold uppercase tracking-wide border-b border-border-color pb-1 mb-3">
+      {children}
+    </h3>
+  );
+}
+
+/** Check if a shortcut key array contains a specific modifier */
+function shortcutHasModifier(keys: string[], modifier: MomentumModifier): boolean {
+  if (modifier === "None") return false;
+  return keys.some((k) => {
+    switch (modifier) {
+      case "Shift":
+        return k === "ShiftLeft" || k === "ShiftRight";
+      case "Ctrl":
+        return k === "ControlLeft" || k === "ControlRight";
+      case "Alt":
+        return k === "AltLeft" || k === "AltRight";
+      default:
+        return false;
+    }
+  });
+}
+
+/** Get the base key (non-modifier) from a shortcut */
+function getShortcutBaseKey(keys: string[]): string | null {
+  const baseKey = keys.find(
+    (k) =>
+      !k.includes("Shift") &&
+      !k.includes("Control") &&
+      !k.includes("Alt")
+  );
+  return baseKey ?? null;
+}
+
+/** Get all base keys from profile bindings */
+function getProfileBaseKeys(bindings: { keyCode: string }[]): Set<string> {
+  const baseKeys = new Set<string>();
+  for (const binding of bindings) {
+    const parts = binding.keyCode.split("+");
+    const baseKey = parts[parts.length - 1];
+    baseKeys.add(baseKey);
+  }
+  return baseKeys;
+}
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
   const {
@@ -23,6 +71,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     setAutoMomentumShortcut,
     setKeyDetectionShortcut,
     setAudioDevice,
+    setMomentumModifier,
   } = useSettingsStore();
   const { currentProfile, loadProfiles, loadProfile } = useProfileStore();
   const { isExporting, startExport } = useExportStore();
@@ -39,6 +88,23 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   const saveShortcut = useCallback(
     (keys: string[]) => {
+      // Check if shortcut conflicts with momentum modifier + bound keys
+      if (config.momentumModifier !== "None" && currentProfile) {
+        const baseKey = getShortcutBaseKey(keys);
+        const profileBaseKeys = getProfileBaseKeys(currentProfile.keyBindings);
+
+        if (
+          baseKey &&
+          shortcutHasModifier(keys, config.momentumModifier) &&
+          profileBaseKeys.has(baseKey)
+        ) {
+          addToast(
+            `Warning: This shortcut uses ${config.momentumModifier} + a bound key. It will override momentum for that key.`,
+            "warning"
+          );
+        }
+      }
+
       switch (capturingTarget) {
         case "masterStop":
           setMasterStopShortcut(keys);
@@ -54,7 +120,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       setCapturedKeys([]);
       pressedRef.current.clear();
     },
-    [capturingTarget, setMasterStopShortcut, setAutoMomentumShortcut, setKeyDetectionShortcut]
+    [capturingTarget, config.momentumModifier, currentProfile, addToast, setMasterStopShortcut, setAutoMomentumShortcut, setKeyDetectionShortcut]
   );
 
   const clearShortcut = useCallback(
@@ -117,346 +183,420 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-bg-secondary border border-border-color rounded-lg w-[420px] p-5 space-y-5">
-        <div className="flex items-center justify-between">
+      <div className="bg-bg-secondary border border-border-color rounded-lg w-[480px] max-h-[85vh] flex flex-col">
+        {/* Header - fixed */}
+        <div className="flex items-center justify-between p-4 border-b border-border-color shrink-0">
           <h2 className="text-text-primary font-semibold">Settings</h2>
           <button
             onClick={onClose}
-            className="text-text-muted hover:text-text-primary"
+            className="text-text-muted hover:text-text-primary text-lg leading-none"
           >
             x
           </button>
         </div>
 
-        {/* Master Stop Shortcut */}
-        <div className="space-y-1">
-          <label className="text-text-secondary text-sm font-medium">
-            Master Stop Shortcut
-          </label>
-          <div className="flex items-center gap-2">
-            <span className="text-text-primary text-sm font-mono bg-bg-tertiary px-2 py-1 rounded min-w-[80px]">
-              {capturingTarget === "masterStop"
-                ? capturedKeys.length > 0
-                  ? formatShortcut(capturedKeys)
-                  : "Press keys..."
-                : formatShortcut(config.masterStopShortcut)}
-            </span>
-            <button
-              onClick={() => {
-                setCapturingTarget(capturingTarget === "masterStop" ? null : "masterStop");
-                setCapturedKeys([]);
-              }}
-              className={`text-xs px-2 py-1 rounded ${
-                capturingTarget === "masterStop"
-                  ? "bg-accent-warning/20 text-accent-warning"
-                  : "bg-bg-hover text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              {capturingTarget === "masterStop" ? "Cancel" : "Change"}
-            </button>
-          </div>
-        </div>
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-5">
+          {/* ===== SHORTCUTS SECTION ===== */}
+          <section>
+            <SectionHeader>Shortcuts</SectionHeader>
 
-        {/* Auto-Momentum Shortcut */}
-        <div className="space-y-1">
-          <label className="text-text-secondary text-sm font-medium">
-            Toggle Auto-Momentum Shortcut
-          </label>
-          <div className="flex items-center gap-2">
-            <span className="text-text-primary text-sm font-mono bg-bg-tertiary px-2 py-1 rounded min-w-[80px]">
-              {capturingTarget === "autoMomentum"
-                ? capturedKeys.length > 0
-                  ? formatShortcut(capturedKeys)
-                  : "Press keys..."
-                : config.autoMomentumShortcut.length > 0
-                  ? formatShortcut(config.autoMomentumShortcut)
-                  : "None"}
-            </span>
-            <button
-              onClick={() => {
-                setCapturingTarget(capturingTarget === "autoMomentum" ? null : "autoMomentum");
-                setCapturedKeys([]);
-              }}
-              className={`text-xs px-2 py-1 rounded ${
-                capturingTarget === "autoMomentum"
-                  ? "bg-accent-warning/20 text-accent-warning"
-                  : "bg-bg-hover text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              {capturingTarget === "autoMomentum" ? "Cancel" : "Change"}
-            </button>
-            {config.autoMomentumShortcut.length > 0 && (
-              <button
-                onClick={() => clearShortcut("autoMomentum")}
-                className="text-xs text-text-muted hover:text-accent-error"
-              >
-                Clear
-              </button>
+            {/* Master Stop Shortcut */}
+            <div className="space-y-1 mb-3">
+              <label className="text-text-secondary text-sm font-medium">
+                Master Stop
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-text-primary text-sm font-mono bg-bg-tertiary px-2 py-1 rounded min-w-[80px]">
+                  {capturingTarget === "masterStop"
+                    ? capturedKeys.length > 0
+                      ? formatShortcut(capturedKeys)
+                      : "Press keys..."
+                    : formatShortcut(config.masterStopShortcut)}
+                </span>
+                <button
+                  onClick={() => {
+                    setCapturingTarget(capturingTarget === "masterStop" ? null : "masterStop");
+                    setCapturedKeys([]);
+                  }}
+                  className={`text-xs px-2 py-1 rounded ${
+                    capturingTarget === "masterStop"
+                      ? "bg-accent-warning/20 text-accent-warning"
+                      : "bg-bg-hover text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  {capturingTarget === "masterStop" ? "Cancel" : "Change"}
+                </button>
+              </div>
+            </div>
+
+            {/* Auto-Momentum Shortcut */}
+            <div className="space-y-1 mb-3">
+              <label className="text-text-secondary text-sm font-medium">
+                Toggle Auto-Momentum
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-text-primary text-sm font-mono bg-bg-tertiary px-2 py-1 rounded min-w-[80px]">
+                  {capturingTarget === "autoMomentum"
+                    ? capturedKeys.length > 0
+                      ? formatShortcut(capturedKeys)
+                      : "Press keys..."
+                    : config.autoMomentumShortcut.length > 0
+                      ? formatShortcut(config.autoMomentumShortcut)
+                      : "None"}
+                </span>
+                <button
+                  onClick={() => {
+                    setCapturingTarget(capturingTarget === "autoMomentum" ? null : "autoMomentum");
+                    setCapturedKeys([]);
+                  }}
+                  className={`text-xs px-2 py-1 rounded ${
+                    capturingTarget === "autoMomentum"
+                      ? "bg-accent-warning/20 text-accent-warning"
+                      : "bg-bg-hover text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  {capturingTarget === "autoMomentum" ? "Cancel" : "Change"}
+                </button>
+                {config.autoMomentumShortcut.length > 0 && (
+                  <button
+                    onClick={() => clearShortcut("autoMomentum")}
+                    className="text-xs text-text-muted hover:text-accent-error"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Key Detection Shortcut */}
+            <div className="space-y-1">
+              <label className="text-text-secondary text-sm font-medium">
+                Toggle Key Detection
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-text-primary text-sm font-mono bg-bg-tertiary px-2 py-1 rounded min-w-[80px]">
+                  {capturingTarget === "keyDetection"
+                    ? capturedKeys.length > 0
+                      ? formatShortcut(capturedKeys)
+                      : "Press keys..."
+                    : config.keyDetectionShortcut.length > 0
+                      ? formatShortcut(config.keyDetectionShortcut)
+                      : "None"}
+                </span>
+                <button
+                  onClick={() => {
+                    setCapturingTarget(capturingTarget === "keyDetection" ? null : "keyDetection");
+                    setCapturedKeys([]);
+                  }}
+                  className={`text-xs px-2 py-1 rounded ${
+                    capturingTarget === "keyDetection"
+                      ? "bg-accent-warning/20 text-accent-warning"
+                      : "bg-bg-hover text-text-secondary hover:text-text-primary"
+                  }`}
+                >
+                  {capturingTarget === "keyDetection" ? "Cancel" : "Change"}
+                </button>
+                {config.keyDetectionShortcut.length > 0 && (
+                  <button
+                    onClick={() => clearShortcut("keyDetection")}
+                    className="text-xs text-text-muted hover:text-accent-error"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {capturingTarget && (
+              <p className="text-text-muted text-xs mt-2">
+                Hold 2+ keys together, then release to save. Press Escape to cancel.
+              </p>
             )}
-          </div>
-        </div>
+          </section>
 
-        {/* Key Detection Shortcut */}
-        <div className="space-y-1">
-          <label className="text-text-secondary text-sm font-medium">
-            Toggle Key Detection Shortcut
-          </label>
-          <div className="flex items-center gap-2">
-            <span className="text-text-primary text-sm font-mono bg-bg-tertiary px-2 py-1 rounded min-w-[80px]">
-              {capturingTarget === "keyDetection"
-                ? capturedKeys.length > 0
-                  ? formatShortcut(capturedKeys)
-                  : "Press keys..."
-                : config.keyDetectionShortcut.length > 0
-                  ? formatShortcut(config.keyDetectionShortcut)
-                  : "None"}
-            </span>
-            <button
-              onClick={() => {
-                setCapturingTarget(capturingTarget === "keyDetection" ? null : "keyDetection");
-                setCapturedKeys([]);
-              }}
-              className={`text-xs px-2 py-1 rounded ${
-                capturingTarget === "keyDetection"
-                  ? "bg-accent-warning/20 text-accent-warning"
-                  : "bg-bg-hover text-text-secondary hover:text-text-primary"
-              }`}
-            >
-              {capturingTarget === "keyDetection" ? "Cancel" : "Change"}
-            </button>
-            {config.keyDetectionShortcut.length > 0 && (
-              <button
-                onClick={() => clearShortcut("keyDetection")}
-                className="text-xs text-text-muted hover:text-accent-error"
+          {/* ===== KEY DETECTION SECTION ===== */}
+          <section>
+            <SectionHeader>Key Detection</SectionHeader>
+
+            {/* Key Cooldown */}
+            <div className="space-y-1 mb-3">
+              <div className="flex justify-between">
+                <label className="text-text-secondary text-sm font-medium">
+                  Key Cooldown
+                </label>
+                <span className="text-text-muted text-xs">
+                  {config.keyCooldown}ms
+                </span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="2000"
+                step="50"
+                value={config.keyCooldown}
+                onChange={(e) => setKeyCooldown(Number(e.target.value))}
+                className="w-full h-1 accent-accent-primary"
+              />
+              <div className="flex justify-between text-text-muted text-xs">
+                <span>0ms</span>
+                <span>2000ms</span>
+              </div>
+            </div>
+
+            {/* Chord Window */}
+            <div className="space-y-1 mb-3">
+              <div className="flex justify-between">
+                <label className="text-text-secondary text-sm font-medium">
+                  Chord Window
+                </label>
+                <span className="text-text-muted text-xs">
+                  {config.chordWindowMs}ms
+                </span>
+              </div>
+              <input
+                type="range"
+                min="20"
+                max="100"
+                step="5"
+                value={config.chordWindowMs}
+                onChange={(e) => setChordWindowMs(Number(e.target.value))}
+                className="w-full h-1 accent-accent-primary"
+              />
+              <div className="flex justify-between text-text-muted text-xs">
+                <span>20ms (fast)</span>
+                <span>100ms (lenient)</span>
+              </div>
+              <p className="text-text-muted text-xs">
+                Time window for detecting multi-key combos (A+Z)
+              </p>
+            </div>
+
+            {/* Momentum Modifier */}
+            <div className="space-y-1">
+              <label className="text-text-secondary text-sm font-medium">
+                Momentum Modifier
+              </label>
+              <select
+                value={config.momentumModifier}
+                onChange={(e) => {
+                  const newModifier = e.target.value as MomentumModifier;
+
+                  // Check for conflicts with existing shortcuts
+                  if (newModifier !== "None" && currentProfile) {
+                    const shortcuts = [
+                      { name: "Master Stop", keys: config.masterStopShortcut },
+                      { name: "Auto-Momentum", keys: config.autoMomentumShortcut },
+                      { name: "Key Detection", keys: config.keyDetectionShortcut },
+                    ];
+
+                    const profileBaseKeys = getProfileBaseKeys(currentProfile.keyBindings);
+                    const conflicts: string[] = [];
+
+                    for (const shortcut of shortcuts) {
+                      if (shortcut.keys.length === 0) continue;
+                      const baseKey = getShortcutBaseKey(shortcut.keys);
+                      if (
+                        baseKey &&
+                        shortcutHasModifier(shortcut.keys, newModifier) &&
+                        profileBaseKeys.has(baseKey)
+                      ) {
+                        conflicts.push(shortcut.name);
+                      }
+                    }
+
+                    if (conflicts.length > 0) {
+                      addToast(
+                        `Warning: ${conflicts.join(", ")} shortcut(s) use ${newModifier} + bound keys. They will override momentum.`,
+                        "warning"
+                      );
+                    }
+                  }
+
+                  setMomentumModifier(newModifier);
+                }}
+                className="w-full bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary focus:border-border-focus outline-none"
               >
-                Clear
+                <option value="Shift">Shift (default)</option>
+                <option value="Ctrl">Ctrl</option>
+                <option value="Alt">Alt</option>
+                <option value="None">Disabled</option>
+              </select>
+              <p className="text-text-muted text-xs">
+                Hold this key while pressing a bound key to start from momentum position.
+              </p>
+            </div>
+          </section>
+
+          {/* ===== AUDIO SECTION ===== */}
+          <section>
+            <SectionHeader>Audio</SectionHeader>
+
+            {/* Crossfade Duration */}
+            <div className="space-y-1 mb-3">
+              <div className="flex justify-between">
+                <label className="text-text-secondary text-sm font-medium">
+                  Crossfade Duration
+                </label>
+                <span className="text-text-muted text-xs">
+                  {config.crossfadeDuration}ms
+                </span>
+              </div>
+              <input
+                type="range"
+                min="100"
+                max="2000"
+                step="50"
+                value={config.crossfadeDuration}
+                onChange={(e) => setCrossfadeDuration(Number(e.target.value))}
+                className="w-full h-1 accent-accent-primary"
+              />
+              <div className="flex justify-between text-text-muted text-xs">
+                <span>100ms</span>
+                <span>2000ms</span>
+              </div>
+            </div>
+
+            {/* Audio Device */}
+            <div className="space-y-1">
+              <label className="text-text-secondary text-sm font-medium">
+                Audio Output
+              </label>
+              <select
+                value={config.audioDevice ?? ""}
+                onChange={(e) => {
+                  const value = e.target.value === "" ? null : e.target.value;
+                  setAudioDevice(value);
+                  addToast(
+                    value ? `Audio output: ${value}` : "Audio output: System Default",
+                    "info"
+                  );
+                }}
+                className="w-full bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary focus:border-border-focus outline-none"
+              >
+                <option value="">System Default (follow changes)</option>
+                {audioDevices.map((device) => (
+                  <option key={device} value={device}>
+                    {device}
+                  </option>
+                ))}
+              </select>
+              <p className="text-text-muted text-xs">
+                "System Default" follows your OS audio output changes automatically.
+              </p>
+            </div>
+          </section>
+
+          {/* ===== DATA SECTION ===== */}
+          <section>
+            <SectionHeader>Data</SectionHeader>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => {
+                  if (currentProfile) {
+                    startExport(currentProfile.id, currentProfile.name);
+                  }
+                }}
+                disabled={!currentProfile || isExporting}
+                className="px-3 py-1.5 text-sm bg-accent-primary/20 text-accent-primary rounded hover:bg-accent-primary/30 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isExporting ? "Exporting..." : "Export Profile"}
               </button>
+              <button
+                onClick={async () => {
+                  setImportStatus("Choosing file...");
+                  try {
+                    const path = await commands.pickKtmFile();
+                    if (!path) {
+                      setImportStatus(null);
+                      return;
+                    }
+                    setImportStatus("Importing...");
+                    const newId = await commands.importProfile(path);
+                    await loadProfiles();
+                    await loadProfile(newId);
+                    setImportStatus("Imported successfully!");
+                    setTimeout(() => setImportStatus(null), 3000);
+                  } catch (e) {
+                    setImportStatus(`Error: ${e}`);
+                    setTimeout(() => setImportStatus(null), 5000);
+                  }
+                }}
+                className="px-3 py-1.5 text-sm bg-accent-primary/20 text-accent-primary rounded hover:bg-accent-primary/30"
+              >
+                Import Profile
+              </button>
+              <button
+                onClick={async () => {
+                  setImportStatus("Choosing legacy file...");
+                  try {
+                    const path = await commands.pickLegacyFile();
+                    if (!path) {
+                      setImportStatus(null);
+                      return;
+                    }
+                    setImportStatus("Converting legacy save...");
+                    const profile = await commands.importLegacySave(path);
+                    await loadProfiles();
+                    await loadProfile(profile.id);
+                    setImportStatus(`Imported "${profile.name}" successfully!`);
+                    setTimeout(() => setImportStatus(null), 3000);
+                  } catch (e) {
+                    setImportStatus(`Error: ${e}`);
+                    setTimeout(() => setImportStatus(null), 5000);
+                  }
+                }}
+                className="px-3 py-1.5 text-sm bg-yellow-500/20 text-yellow-400 rounded hover:bg-yellow-500/30"
+              >
+                Import Legacy Save
+              </button>
+            </div>
+            {importStatus && (
+              <p className={`text-xs mt-2 ${importStatus.startsWith("Error") ? "text-accent-error" : "text-accent-success"}`}>
+                {importStatus}
+              </p>
             )}
-          </div>
-        </div>
+          </section>
 
-        {capturingTarget && (
-          <p className="text-text-muted text-xs">
-            Hold 2+ keys together, then release to save. Press Escape to cancel.
-          </p>
-        )}
-
-        {/* Crossfade Duration */}
-        <div className="space-y-1">
-          <div className="flex justify-between">
-            <label className="text-text-secondary text-sm font-medium">
-              Crossfade Duration
-            </label>
-            <span className="text-text-muted text-xs">
-              {config.crossfadeDuration}ms
-            </span>
-          </div>
-          <input
-            type="range"
-            min="100"
-            max="2000"
-            step="50"
-            value={config.crossfadeDuration}
-            onChange={(e) => setCrossfadeDuration(Number(e.target.value))}
-            className="w-full h-1 accent-accent-primary"
-          />
-          <div className="flex justify-between text-text-muted text-xs">
-            <span>100ms</span>
-            <span>2000ms</span>
-          </div>
-        </div>
-
-        {/* Key Cooldown */}
-        <div className="space-y-1">
-          <div className="flex justify-between">
-            <label className="text-text-secondary text-sm font-medium">
-              Key Cooldown
-            </label>
-            <span className="text-text-muted text-xs">
-              {config.keyCooldown}ms
-            </span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="2000"
-            step="50"
-            value={config.keyCooldown}
-            onChange={(e) => setKeyCooldown(Number(e.target.value))}
-            className="w-full h-1 accent-accent-primary"
-          />
-          <div className="flex justify-between text-text-muted text-xs">
-            <span>0ms</span>
-            <span>2000ms</span>
-          </div>
-        </div>
-
-        {/* Chord Window (Multi-key detection) */}
-        <div className="space-y-1">
-          <div className="flex justify-between">
-            <label className="text-text-secondary text-sm font-medium">
-              Chord Window
-            </label>
-            <span className="text-text-muted text-xs">
-              {config.chordWindowMs}ms
-            </span>
-          </div>
-          <input
-            type="range"
-            min="20"
-            max="100"
-            step="5"
-            value={config.chordWindowMs}
-            onChange={(e) => setChordWindowMs(Number(e.target.value))}
-            className="w-full h-1 accent-accent-primary"
-          />
-          <div className="flex justify-between text-text-muted text-xs">
-            <span>20ms (fast)</span>
-            <span>100ms (lenient)</span>
-          </div>
-          <p className="text-text-muted text-xs">
-            Time window for detecting multi-key combos (A+Z)
-          </p>
-        </div>
-
-        {/* Audio Device */}
-        <div className="space-y-1">
-          <label className="text-text-secondary text-sm font-medium">
-            Audio Output
-          </label>
-          <select
-            value={config.audioDevice ?? ""}
-            onChange={(e) => {
-              const value = e.target.value === "" ? null : e.target.value;
-              setAudioDevice(value);
-              addToast(
-                value ? `Audio output: ${value}` : "Audio output: System Default",
-                "info"
-              );
-            }}
-            className="w-full bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary focus:border-border-focus outline-none"
-          >
-            <option value="">System Default (follow changes)</option>
-            {audioDevices.map((device) => (
-              <option key={device} value={device}>
-                {device}
-              </option>
-            ))}
-          </select>
-          <p className="text-text-muted text-xs">
-            "System Default" follows your OS audio output changes automatically.
-          </p>
-        </div>
-
-        {/* Import/Export */}
-        <div className="space-y-2">
-          <label className="text-text-secondary text-sm font-medium">
-            Import / Export
-          </label>
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => {
-                if (currentProfile) {
-                  startExport(currentProfile.id, currentProfile.name);
-                }
-              }}
-              disabled={!currentProfile || isExporting}
-              className="px-3 py-1.5 text-sm bg-accent-primary/20 text-accent-primary rounded hover:bg-accent-primary/30 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {isExporting ? "Exporting..." : "Export Profile"}
-            </button>
-            <button
-              onClick={async () => {
-                setImportStatus("Choosing file...");
-                try {
-                  const path = await commands.pickKtmFile();
-                  if (!path) {
-                    setImportStatus(null);
-                    return;
-                  }
-                  setImportStatus("Importing...");
-                  const newId = await commands.importProfile(path);
-                  await loadProfiles();
-                  await loadProfile(newId);
-                  setImportStatus("Imported successfully!");
-                  setTimeout(() => setImportStatus(null), 3000);
-                } catch (e) {
-                  setImportStatus(`Error: ${e}`);
-                  setTimeout(() => setImportStatus(null), 5000);
-                }
-              }}
-              className="px-3 py-1.5 text-sm bg-accent-primary/20 text-accent-primary rounded hover:bg-accent-primary/30"
-            >
-              Import Profile
-            </button>
-            <button
-              onClick={async () => {
-                setImportStatus("Choosing legacy file...");
-                try {
-                  const path = await commands.pickLegacyFile();
-                  if (!path) {
-                    setImportStatus(null);
-                    return;
-                  }
-                  setImportStatus("Converting legacy save...");
-                  const profile = await commands.importLegacySave(path);
-                  await loadProfiles();
-                  await loadProfile(profile.id);
-                  setImportStatus(`Imported "${profile.name}" successfully!`);
-                  setTimeout(() => setImportStatus(null), 3000);
-                } catch (e) {
-                  setImportStatus(`Error: ${e}`);
-                  setTimeout(() => setImportStatus(null), 5000);
-                }
-              }}
-              className="px-3 py-1.5 text-sm bg-yellow-500/20 text-yellow-400 rounded hover:bg-yellow-500/30"
-            >
-              Import Legacy Save
-            </button>
-          </div>
-          {importStatus && (
-            <p className={`text-xs ${importStatus.startsWith("Error") ? "text-accent-error" : "text-accent-success"}`}>
-              {importStatus}
+          {/* ===== ABOUT SECTION ===== */}
+          <section>
+            <SectionHeader>About</SectionHeader>
+            <p className="text-text-muted text-xs mb-2">
+              KeyToMusic v1.0.0 - Soundboard for manga reading
             </p>
-          )}
+            <div className="flex gap-3">
+              <button
+                onClick={async () => {
+                  try {
+                    const folder = await commands.getDataFolder();
+                    await commands.openFolder(folder);
+                  } catch (e) {
+                    addToast("Failed to open data folder", "error");
+                  }
+                }}
+                className="text-xs text-accent-primary hover:text-accent-primary/80 underline"
+              >
+                Open Data Folder
+              </button>
+              <button
+                onClick={async () => {
+                  try {
+                    const folder = await commands.getLogsFolder();
+                    await open(folder);
+                  } catch (e) {
+                    addToast("Failed to open logs folder", "error");
+                  }
+                }}
+                className="text-xs text-accent-primary hover:text-accent-primary/80 underline"
+              >
+                Open Logs Folder
+              </button>
+            </div>
+          </section>
         </div>
 
-        {/* About */}
-        <div className="border-t border-border-color pt-3 space-y-2">
-          <p className="text-text-muted text-xs">
-            KeyToMusic v1.0.0 - Soundboard for manga reading
-          </p>
-          <div className="flex gap-3">
-            <button
-              onClick={async () => {
-                try {
-                  const folder = await commands.getDataFolder();
-                  await commands.openFolder(folder);
-                } catch (e) {
-                  addToast("Failed to open data folder", "error");
-                }
-              }}
-              className="text-xs text-accent-primary hover:text-accent-primary/80 underline"
-            >
-              Open Data Folder
-            </button>
-            <button
-              onClick={async () => {
-                try {
-                  const folder = await commands.getLogsFolder();
-                  await open(folder);
-                } catch (e) {
-                  addToast("Failed to open logs folder", "error");
-                }
-              }}
-              className="text-xs text-accent-primary hover:text-accent-primary/80 underline"
-            >
-              Open Logs Folder
-            </button>
-          </div>
-        </div>
-
-        <div className="flex justify-end">
+        {/* Footer - fixed */}
+        <div className="flex justify-end p-4 border-t border-border-color shrink-0">
           <button
             onClick={onClose}
             className="px-4 py-2 bg-bg-hover text-text-primary text-sm rounded hover:bg-bg-tertiary"

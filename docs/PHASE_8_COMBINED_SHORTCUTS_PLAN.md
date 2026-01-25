@@ -16,8 +16,8 @@ Ce document capture toutes les décisions et détails techniques discutés pour 
 ### 1.2 Numpad + Shift ne fonctionne pas pour le momentum
 - **Problème** : Shift+Numpad4 ne déclenche pas le momentum
 - **Cause** : Comportement hardware/OS standard. Quand NumLock est ON et Shift est pressé, le système envoie la touche alternative (ArrowLeft, End, etc.) au lieu de "Shift+Numpad4"
-- **Status** : ⚠️ Limitation hardware, pas un bug de l'app
-- **Solution possible** : Permettre à l'utilisateur de choisir un autre modificateur (Alt, Ctrl) pour le momentum
+- **Status** : ✅ RÉSOLU
+- **Solution** : Momentum modifier configurable (Phase 8.5) - dropdown Shift/Ctrl/Alt/Désactivé dans Settings > Key Detection
 
 ### 1.3 Combined Key Shortcuts pas visible sur le frontend
 - **Problème** : Le backend envoie les codes combinés (Ctrl+KeyA) mais l'UI ne permet pas de les assigner ni de les afficher
@@ -253,27 +253,54 @@ impl ChordDetector {
 
 ---
 
-## 4. Modificateur momentum configurable - Discussion
+## 4. Modificateur momentum configurable - DÉCIDÉ
 
-### 4.1 Idée
-Permettre à l'utilisateur de choisir quel modificateur déclenche le momentum :
-- Shift (défaut actuel)
-- Alt
-- Ctrl
-- None (momentum toujours désactivé, utiliser Auto-Momentum toggle)
+### 4.1 Design final
+Simple dropdown dans Settings avec 4 options :
+- **Shift** (défaut) - comportement actuel
+- **Ctrl** - fonctionne avec Numpad
+- **Alt** - fonctionne avec Numpad
+- **Désactivé** - momentum uniquement via Auto-Momentum toggle
 
-### 4.2 Avantages
+### 4.2 Décisions clés
+1. **Pas de touche custom** (comme "A") - trop de complexity (latence, edge cases)
+2. **Pas de per-binding** - mémoire musculaire impossible, UX cauchemar
+3. **Règle simple** : le match exact a priorité
+   - Si "Ctrl+A" est assigné → se déclenche normalement
+   - Si seulement "A" est assigné et Ctrl=momentum → "A" se déclenche avec momentum
+
+### 4.3 Avantages
 - Résout le problème Numpad+Shift
-- Plus de flexibilité pour l'utilisateur
+- Simple à comprendre (un seul dropdown)
+- Pas de confusion pour les utilisateurs qui veulent juste "que ça marche"
 
-### 4.3 Implémentation envisagée
-- Nouveau champ dans `config.json` : `momentumModifier: "Shift" | "Alt" | "Ctrl" | "None"`
-- Dropdown dans Settings
-- Backend : vérifier le modifier configuré au lieu de hardcoder Shift
-- Frontend : idem
+### 4.4 Implémentation
+- `config.momentumModifier: "Shift" | "Ctrl" | "Alt" | "None"`
+- Dropdown dans Settings > Key Detection
+- Backend : `detector.rs` vérifie le modifier configuré
+- Frontend : `useKeyDetection.ts` vérifie le modifier correspondant
 
-### 4.4 Status
-⏸️ En discussion - à décider si on implémente ou pas.
+### 4.5 Détection de conflits
+
+**Problème identifié:** Si l'utilisateur a un son sur "A", le momentum modifier sur "Alt", et le shortcut Auto-Momentum sur "Alt+A", appuyer sur Alt+A déclenche le shortcut au lieu du son avec momentum.
+
+**Solution:** Warnings bidirectionnels dans Settings :
+1. **À la modification du momentum modifier:** Vérifie si des shortcuts existants utilisent ce modifier + une touche bindée
+2. **À la configuration d'un shortcut:** Vérifie si le shortcut utilise le momentum modifier + une touche bindée
+
+**Messages toast:**
+- "Warning: Auto-Momentum shortcut(s) use Alt + bound keys. They will override momentum."
+- "Warning: This shortcut uses Alt + a bound key. It will override momentum for that key."
+
+### 4.6 Status
+✅ **IMPLÉMENTÉ** (2026-01-25)
+
+**Fichiers modifiés:**
+- `src/types/index.ts` - Type `MomentumModifier`
+- `src/stores/settingsStore.ts` - Action `setMomentumModifier()`
+- `src-tauri/src/types.rs` - Enum `MomentumModifier` avec Default
+- `src/hooks/useKeyDetection.ts` - Fonction `hasMomentumModifier()`
+- `src/components/Settings/SettingsModal.tsx` - Dropdown + réorganisation en sections + détection de conflits
 
 ---
 
@@ -430,10 +457,14 @@ if (conflict?.type === 'warning') {
 1. [ ] Vérifier que le backend envoie correctement les combined codes (déjà fait)
 2. [ ] S'assurer du fallback : si "Ctrl+A" n'existe pas mais "A" existe, déclencher "A" avec momentum si Shift était dans le combo
 
-### Phase 4 (Optionnel) : Momentum modifier configurable
-1. [ ] Ajouter champ config
-2. [ ] UI dropdown dans Settings
-3. [ ] Mise à jour backend/frontend
+### Phase 4 : Momentum modifier configurable ✅ IMPLÉMENTÉ
+1. [x] Ajouter champ `momentumModifier` dans types et settingsStore
+2. [x] UI dropdown dans Settings (Shift/Ctrl/Alt/Désactivé)
+3. [x] Backend: `types.rs` - enum MomentumModifier avec serde
+4. [x] Frontend: `useKeyDetection.ts` - fonction `hasMomentumModifier()`
+5. [x] Persistance via `updateConfig` (pas de commande séparée nécessaire)
+
+> Voir section 4 pour le design complet.
 
 ### Phase 5 (Future) : Multi-key chords
 1. [ ] Implémenter fenêtre de détection 30ms

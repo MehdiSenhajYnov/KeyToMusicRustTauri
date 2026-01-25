@@ -65,7 +65,7 @@ final_volume = sound.volume × track.volume × master_volume
 
 **Crossfade:** 500ms default duration with a custom curve that creates a brief silence gap between outgoing and incoming sounds (35%-65% of the duration). Crossfade only occurs between sounds on the same track.
 
-**Momentum:** Each sound has a momentum property (start position in seconds). Sounds can start from 0:00 or from their momentum position. Auto-Momentum mode or Shift key triggers momentum start.
+**Momentum:** Each sound has a momentum property (start position in seconds). Sounds can start from 0:00 or from their momentum position. Auto-Momentum mode or the configured momentum modifier key (Shift/Ctrl/Alt, configurable in Settings) triggers momentum start.
 
 **Playback via Symphonia:** All audio playback uses a custom `SymphoniaSource` that implements `rodio::Source`. This provides consistent format support (MP3, M4A/AAC, OGG, FLAC, WAV) and instant byte-level seeking for momentum (O(1) for CBR, O(log n) for VBR). The `isomp4` symphonia feature is required for M4A files from YouTube downloads.
 
@@ -450,18 +450,31 @@ E pressed → Leaf node (no A+Z+E+*) → TRIGGER IMMEDIATELY "A+Z+E"
 - `src-tauri/src/keys/detector.rs` - Integration with global key detection
 - `src/utils/keyMapping.ts` - `normalizeCombo()`, `buildComboFromPressedKeys()`
 
-## Planned Features (Future Phases)
+### Configurable Momentum Modifier ✅ (Phase 8.5)
 
-### Configurable Momentum Modifier (Phase 8.5)
-- Let user choose momentum trigger: Shift (default), Alt, Ctrl, or None
-- Solves Numpad+Shift hardware limitation (Shift+Numpad4 sends ArrowLeft instead)
-- New config field: `momentumModifier: "Shift" | "Alt" | "Ctrl" | "None"`
-- Status: Under discussion
+Users can choose which modifier key triggers momentum playback:
+- **Options:** Shift (default), Ctrl, Alt, or Disabled
+- **Config field:** `momentumModifier: "Shift" | "Ctrl" | "Alt" | "None"`
+- **UI:** Dropdown in Settings under "Key Detection" section
+- **Rule:** Exact binding match takes priority (e.g., "Ctrl+A" binding triggers normally, not "A" with momentum)
+- **Use case:** Solves Numpad+Shift hardware limitation (Shift+Numpad4 sends ArrowLeft on most keyboards)
+
+**Conflict detection:** Warns users when shortcuts conflict with momentum modifier + bound keys:
+- When changing momentum modifier: checks if existing shortcuts would override momentum
+- When setting a shortcut: checks if it uses the momentum modifier + a bound key
+- Shows toast warnings to help users understand and resolve conflicts
+
+**Key files:**
+- `src/types/index.ts` - `MomentumModifier` type
+- `src/stores/settingsStore.ts` - `setMomentumModifier()` action
+- `src-tauri/src/types.rs` - `MomentumModifier` enum
+- `src/hooks/useKeyDetection.ts` - `hasMomentumModifier()` check
+- `src/components/Settings/SettingsModal.tsx` - Dropdown UI with conflict detection (organized in sections with scrolling)
 
 ## Known Limitations
 
 ### Numpad + Shift
-When NumLock is ON and Shift is pressed with a numpad key, the OS sends the alternate key (ArrowLeft, End, etc.) instead of "Shift+Numpad4". This is standard keyboard hardware behavior, not a bug. Workaround: use Alt or Ctrl as momentum modifier (Phase 8.5) or assign explicit Shift+Numpad bindings.
+When NumLock is ON and Shift is pressed with a numpad key, the OS sends the alternate key (ArrowLeft, End, etc.) instead of "Shift+Numpad4". This is standard keyboard hardware behavior, not a bug. **Workaround:** Go to Settings > Key Detection > Momentum Modifier and select "Ctrl" or "Alt" instead of "Shift".
 
 ## Technical Limits
 
