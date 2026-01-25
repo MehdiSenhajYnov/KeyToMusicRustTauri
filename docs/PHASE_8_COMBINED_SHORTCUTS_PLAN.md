@@ -166,12 +166,148 @@ Permettre à l'utilisateur de choisir quel modificateur déclenche le momentum :
 
 ## 5. Plan d'implémentation
 
+### Phase 0 : Validation des raccourcis réservés (Pré-requis)
+
+Avant d'implémenter la capture, on doit bloquer les raccourcis déjà utilisés.
+
+**Raccourcis réservés (à bloquer) :**
+
+| Catégorie | Raccourcis | Raison |
+|-----------|------------|--------|
+| App (Undo/Redo) | `Ctrl+Z`, `Ctrl+Y`, `Cmd+Z`, `Cmd+Shift+Z` | Système undo/redo |
+| App (Global shortcuts) | `config.masterStopShortcut` | Master Stop |
+| App (Global shortcuts) | `config.autoMomentumShortcut` | Toggle Auto-Momentum |
+| App (Global shortcuts) | `config.keyDetectionShortcut` | Toggle Key Detection |
+| OS (Système) | `Ctrl+C`, `Ctrl+V`, `Ctrl+X` | Copy/Paste/Cut |
+| OS (Système) | `Ctrl+A`, `Ctrl+S`, `Ctrl+W`, `Ctrl+Q`, `Ctrl+N`, `Ctrl+T` | Actions système |
+| OS (Système) | `Alt+F4` | Fermer fenêtre |
+| OS (Warning) | `Ctrl+1-9` | Tabs navigateur (warning, pas blocage) |
+| OS (Warning) | `Alt+lettre` | Menus Windows (warning, pas blocage) |
+
+**Fonction de validation étendue (`keyMapping.ts`) :**
+
+```typescript
+interface ShortcutConflict {
+  type: 'error' | 'warning';
+  message: string;
+  conflictWith: string;  // "Undo", "Master Stop", "Copy", etc.
+}
+
+export function checkShortcutConflicts(
+  combo: string,
+  config: AppConfig
+): ShortcutConflict | null {
+  // 1. Check app undo/redo (hardcoded)
+  const undoRedo: Record<string, string> = {
+    "Ctrl+KeyZ": "Undo",
+    "Ctrl+KeyY": "Redo",
+  };
+  if (undoRedo[combo]) {
+    return {
+      type: 'error',
+      message: `Already used for ${undoRedo[combo]}`,
+      conflictWith: undoRedo[combo]
+    };
+  }
+
+  // 2. Check user-configured global shortcuts
+  const configShortcuts = [
+    { keys: config.masterStopShortcut, name: "Master Stop" },
+    { keys: config.autoMomentumShortcut, name: "Auto-Momentum Toggle" },
+    { keys: config.keyDetectionShortcut, name: "Key Detection Toggle" },
+  ];
+
+  for (const shortcut of configShortcuts) {
+    if (shortcut.keys.length > 0) {
+      const configCombo = buildKeyCombo(shortcut.keys);
+      if (configCombo === combo) {
+        return {
+          type: 'error',
+          message: `Already used for ${shortcut.name}`,
+          conflictWith: shortcut.name
+        };
+      }
+    }
+  }
+
+  // 3. Check system shortcuts
+  const systemShortcuts: Record<string, string> = {
+    "Ctrl+KeyC": "Copy",
+    "Ctrl+KeyV": "Paste",
+    "Ctrl+KeyX": "Cut",
+    "Ctrl+KeyA": "Select All",
+    "Ctrl+KeyS": "Save",
+    "Ctrl+KeyW": "Close Window",
+    "Ctrl+KeyQ": "Quit App",
+    "Ctrl+KeyN": "New Window",
+    "Ctrl+KeyT": "New Tab",
+    "Alt+F4": "Close Window",
+  };
+
+  if (systemShortcuts[combo]) {
+    return {
+      type: 'error',
+      message: `System shortcut for ${systemShortcuts[combo]}`,
+      conflictWith: systemShortcuts[combo]
+    };
+  }
+
+  // 4. Warnings (pas de blocage, juste info)
+  const { baseKey, ctrl, alt } = parseKeyCombo(combo);
+
+  if (ctrl && /^Digit[1-9]$/.test(baseKey)) {
+    return {
+      type: 'warning',
+      message: "May conflict with browser tab switching",
+      conflictWith: "Browser tabs"
+    };
+  }
+
+  if (alt && /^Key[A-Z]$/.test(baseKey)) {
+    return {
+      type: 'warning',
+      message: "May conflict with menu access on Windows",
+      conflictWith: "Windows menus"
+    };
+  }
+
+  return null;
+}
+```
+
+**UI feedback dans KeyCaptureSlot :**
+
+```tsx
+// Après capture d'une touche
+const conflict = checkShortcutConflicts(capturedCombo, config);
+
+if (conflict?.type === 'error') {
+  // Afficher message d'erreur, ne pas accepter la touche
+  showError(`Cannot use ${displayCombo}: ${conflict.message}`);
+  return; // Ne pas enregistrer
+}
+
+if (conflict?.type === 'warning') {
+  // Afficher warning mais permettre quand même
+  showWarning(`Warning: ${conflict.message}`);
+  // Continuer et enregistrer
+}
+```
+
+**Messages UI exemples :**
+- Error: `"Ctrl+Z is already used for Undo"`
+- Error: `"Ctrl+Shift+S is already used for Master Stop"`
+- Error: `"Ctrl+C is a system shortcut for Copy"`
+- Warning: `"Ctrl+1 may conflict with browser tab switching"`
+
 ### Phase 1 : UI Refactor AddSoundModal (Priorité haute)
-1. [ ] Créer composant `KeyCaptureSlot` réutilisable
-2. [ ] Remplacer input texte par liste de slots dans AddSoundModal
-3. [ ] Implémenter logique de capture avec modifiers
-4. [ ] Afficher preview du cycling
-5. [ ] Tester avec Ctrl+A, Shift+F1, etc.
+1. [ ] Implémenter `checkShortcutConflicts()` étendue (avec config)
+2. [ ] Créer composant `KeyCaptureSlot` réutilisable
+3. [ ] Remplacer input texte par liste de slots dans AddSoundModal
+4. [ ] Implémenter logique de capture avec modifiers
+5. [ ] Afficher preview du cycling
+6. [ ] Tester avec Ctrl+A, Shift+F1, etc.
+7. [ ] Afficher erreurs/warnings pour raccourcis réservés
 
 ### Phase 2 : Affichage KeyGrid
 1. [ ] Mettre à jour `keyCodeToDisplay()` pour afficher "Ctrl+A" au lieu de "KeyA"
