@@ -1,7 +1,7 @@
 # KeyToMusic - Liste Exhaustive des Tâches
 
 > Document généré depuis la spécification technique complète
-> Dernière mise à jour: 2026-01-24
+> Dernière mise à jour: 2025-01-25
 > **Phase 0 COMPLÉTÉE** - 2026-01-20
 > **Phase 1 COMPLÉTÉE** - 2026-01-23
 > **Phase 2 COMPLÉTÉE** - 2026-01-23
@@ -14,6 +14,7 @@
 > **Phase 6.5 COMPLÉTÉE** - 2026-01-24 (Concurrent YouTube Downloads & Key Cycling)
 > **Phase 7 COMPLÉTÉE** - 2026-01-24 (Error Handling: logging, error sound, FileNotFoundModal, verification, toasts)
 > **Phase 7.5 COMPLÉTÉE** - 2026-01-24 (Legacy Import: conversion des saves de l'ancienne version)
+> **Phase 8** - Nouvelles Features (Profile Duplication, Combined Shortcuts, Undo/Redo)
 
 ---
 
@@ -31,8 +32,10 @@
 10. [Phase 6.5 - Concurrent YouTube Downloads & Key Cycling](#phase-65---concurrent-youtube-downloads--key-cycling)
 11. [Phase 7 - Gestion des Erreurs](#phase-7---gestion-des-erreurs)
 12. [Phase 7.5 - Legacy Import](#phase-75---legacy-import)
-13. [Phase 8 - Polish & Optimisations](#phase-8---polish--optimisations)
-11. [Phase 9 - Tests & Validation](#phase-9---tests--validation)
+13. [Phase 8 - Nouvelles Features](#phase-8---nouvelles-features)
+14. [Phase 9 - Polish & Optimisations](#phase-9---polish--optimisations)
+15. [Phase 10 - Tests & Validation](#phase-10---tests--validation)
+16. [Phase 11 - Build & Release](#phase-11---build--release-bonus)
 
 ---
 
@@ -1694,24 +1697,126 @@
 
 ---
 
-## Phase 8 - Polish & Optimisations
+## Phase 8 - Nouvelles Features
 
-### 8.1 Optimisations Audio
+Cette phase ajoute des fonctionnalités demandées pour améliorer l'UX sans alourdir l'interface.
 
-- [x] **8.1.1** Optimiser le seeking/momentum ✅
+### 8.1 Duplication de Profil
+
+- [ ] **8.1.1** Ajouter la commande backend `duplicate_profile`
+  - [ ] Créer `src-tauri/src/storage/profile.rs::duplicate_profile(id: String, new_name: String)`
+  - [ ] Charger le profil source
+  - [ ] Générer un nouvel UUID pour le profil dupliqué
+  - [ ] Mettre à jour `createdAt` et `updatedAt`
+  - [ ] Copier tous les sons, tracks, et key bindings
+  - [ ] Sauvegarder le nouveau profil
+  - [ ] Retourner le profil dupliqué
+
+- [ ] **8.1.2** Ajouter la commande Tauri `duplicate_profile`
+  - [ ] Créer dans `commands.rs`: `duplicate_profile(id: String, new_name: Option<String>) -> Result<Profile, String>`
+  - [ ] Si `new_name` est None, utiliser "{original_name} (Copy)"
+  - [ ] Enregistrer la commande dans `main.rs`
+
+- [ ] **8.1.3** Ajouter l'option dans le menu contextuel du ProfileSelector
+  - [ ] Ajouter "Duplicate" dans le menu clic-droit existant (après Rename, avant Delete)
+  - [ ] Appeler `duplicateProfile` du profileStore
+  - [ ] Rafraîchir la liste des profils après duplication
+  - [ ] Sélectionner automatiquement le profil dupliqué
+
+- [ ] **8.1.4** Ajouter `duplicateProfile` dans `profileStore.ts`
+  - [ ] Appeler `commands.duplicateProfile(id)`
+  - [ ] Ajouter le nouveau profil à la liste
+  - [ ] Sélectionner le nouveau profil
+
+### 8.2 Raccourcis Clavier Combinés (Modificateurs)
+
+Permettre l'utilisation de combinaisons comme Ctrl+A, Shift+F1, Alt+1 comme triggers de sons.
+
+- [ ] **8.2.1** Modifier le type `KeyBinding` pour supporter les modificateurs
+  - [ ] Ajouter un champ optionnel `modifiers: Vec<String>` (ex: ["ControlLeft", "ShiftLeft"])
+  - [ ] Ou utiliser une notation combinée dans `keyCode` (ex: "Ctrl+KeyA")
+  - [ ] Décider de l'approche: champ séparé vs notation string
+  - [ ] Mettre à jour les types TypeScript correspondants
+
+- [ ] **8.2.2** Modifier le détecteur de touches backend (`detector.rs`)
+  - [ ] Lors d'un KeyPress, vérifier si des modificateurs sont maintenus
+  - [ ] Construire le code combiné (ex: si Ctrl+Shift maintenus et KeyA pressé → "Ctrl+Shift+KeyA")
+  - [ ] Émettre l'événement avec le code combiné
+  - [ ] Ne pas bloquer les touches modificateurs seules (elles ne déclenchent pas de sons)
+
+- [ ] **8.2.3** Modifier le frontend pour supporter les combinaisons
+  - [ ] Mettre à jour `useKeyDetection.ts` pour construire le code combiné
+  - [ ] Lors de l'assignation de touche (AddSoundModal, SoundDetails), capturer aussi les modificateurs
+  - [ ] Afficher les combinaisons correctement (ex: "Ctrl+A" au lieu de "KeyA")
+
+- [ ] **8.2.4** Mettre à jour `keyMapping.ts` pour l'affichage
+  - [ ] Fonction `formatKeyCombo(keyCode: string)` pour afficher "Ctrl+Shift+A" lisiblement
+  - [ ] Parser la notation combinée pour extraire les modificateurs
+  - [ ] Gérer l'ordre d'affichage (Ctrl avant Shift avant Alt avant la touche)
+
+- [ ] **8.2.5** Mettre à jour les validations
+  - [ ] Vérifier les conflits avec les shortcuts système (Ctrl+S, etc.)
+  - [ ] Vérifier les conflits avec les shortcuts de l'app (Master Stop, etc.)
+  - [ ] Avertir l'utilisateur si conflit détecté
+
+### 8.3 Système Undo/Redo
+
+Implémenter Ctrl+Z (Undo) et Ctrl+Y (Redo) pour les modifications de profil.
+
+- [ ] **8.3.1** Créer le store d'historique `historyStore.ts`
+  - [ ] Définir le type `HistoryEntry` (timestamp, action, previousState, newState)
+  - [ ] Stack `past: HistoryEntry[]` pour undo
+  - [ ] Stack `future: HistoryEntry[]` pour redo
+  - [ ] Limite de 50 entrées maximum (éviter la mémoire excessive)
+  - [ ] Actions: `pushState(entry)`, `undo()`, `redo()`, `clear()`
+
+- [ ] **8.3.2** Définir les actions annulables
+  - [ ] Suppression de son
+  - [ ] Suppression de binding (touche)
+  - [ ] Suppression de track
+  - [ ] Modification de binding (changement de touche, ajout/retrait de son)
+  - [ ] Modification de son (volume, momentum, nom)
+  - [ ] Changement de loop mode
+  - [ ] **Non annulable**: création de profil, suppression de profil, téléchargements YouTube
+
+- [ ] **8.3.3** Intégrer avec `profileStore.ts`
+  - [ ] Avant chaque action annulable, capturer l'état actuel du profil (ou juste la partie modifiée)
+  - [ ] Après l'action, pusher l'entrée dans l'historique
+  - [ ] `undo()`: restaurer l'état précédent, déplacer l'entrée vers `future`
+  - [ ] `redo()`: restaurer l'état suivant, déplacer l'entrée vers `past`
+
+- [ ] **8.3.4** Implémenter les raccourcis clavier
+  - [ ] Ajouter listener dans `useKeyDetection.ts` ou créer `useUndoRedo.ts`
+  - [ ] Ctrl+Z → `historyStore.undo()`
+  - [ ] Ctrl+Y → `historyStore.redo()`
+  - [ ] Désactiver quand un champ de texte est focus
+  - [ ] Feedback toast: "Action annulée" / "Action rétablie"
+
+- [ ] **8.3.5** Indicateur visuel (optionnel)
+  - [ ] Griser Undo si `past` est vide
+  - [ ] Griser Redo si `future` est vide
+  - [ ] Possibilité d'afficher le nom de la prochaine action annulable dans un tooltip
+
+---
+
+## Phase 9 - Polish & Optimisations
+
+### 9.1 Optimisations Audio
+
+- [x] **9.1.1** Optimiser le seeking/momentum ✅
   - [x] Remplacé rodio skip_duration (O(n) lent) par symphonia seeking (O(1) instantané)
   - [x] Créé SymphoniaSource custom implémentant rodio::Source
   - [x] Supprimé le système de pre-caching (momentum_cache, momentum_source) devenu inutile
   - [x] Audio thread: timeout dynamique (200ms idle, 16ms quand actif) pour réduire CPU
   **✅ Complété** - Latence de lecture négligeable à n'importe quelle position
 
-- [x] **8.1.2** Optimiser le chargement du profil ✅
+- [x] **9.1.2** Optimiser le chargement du profil ✅
   - [x] Calcul batch des durées via preload_profile_sounds (2 threads parallèles)
   - [x] Ne traite que les sons dont la durée est manquante (duration == 0)
   - [x] Utilise std::thread::scope pour le parallélisme contrôlé
   **✅ Complété** - Chargement rapide sans CPU spike
 
-- [x] **8.1.3** Seamless Audio Device Switching ✅
+- [x] **9.1.3** Seamless Audio Device Switching ✅
   - [x] Store `file_path: Option<String>` in AudioTrack to enable resume
   - [x] Create `TrackResumeInfo` struct (track_id, sound_id, file_path, position, volumes)
   - [x] Capture playback state before device switch (position via elapsed time)
@@ -1720,60 +1825,60 @@
   - [x] Works for both `SetAudioDevice` command (Settings dropdown) and device polling (OS default change)
   **✅ Complété** - Sounds continue playing on new device with <50ms gap
 
-- [ ] **8.1.4** Optimiser le crossfade
+- [ ] **9.1.4** Optimiser le crossfade
   - [ ] Profiler les performances du crossfade
   - [ ] Optimiser les calculs de volume
   - [ ] Tester avec différentes durées de crossfade
 
-### 8.2 Optimisations UI
+### 9.2 Optimisations UI
 
-- [ ] **8.2.1** Optimiser le rendering React
+- [ ] **9.2.1** Optimiser le rendering React
   - [ ] Utiliser React.memo pour les composants fréquemment re-rendus
   - [ ] Utiliser useMemo et useCallback pour éviter les recalculs
   - [ ] Profiler avec React DevTools
   - [ ] Optimiser les listes (virtualisation si nécessaire)
 
-- [ ] **8.2.2** Optimiser les animations
+- [ ] **9.2.2** Optimiser les animations
   - [ ] Utiliser CSS transitions plutôt que JS animations
   - [ ] Optimiser les animations de progress bar
   - [ ] Utiliser transform et opacity pour les animations (GPU-accelerated)
 
-- [ ] **8.2.3** Lazy loading des modals
+- [ ] **9.2.3** Lazy loading des modals
   - [ ] Charger les modals uniquement quand ouvertes
   - [ ] Utiliser React.lazy et Suspense si applicable
 
-### 8.3 Sauvegarde Automatique
+### 9.3 Sauvegarde Automatique
 
-- [ ] **8.3.1** Implémenter le debouncing pour auto-save
+- [ ] **9.3.1** Implémenter le debouncing pour auto-save
   - [ ] Créer un `AutoSaver` dans le backend
   - [ ] Attendre 1 seconde après la dernière modification avant de sauvegarder
   - [ ] Éviter les sauvegardes excessives
 
-- [ ] **8.3.2** Implémenter la sauvegarde périodique
+- [ ] **9.3.2** Implémenter la sauvegarde périodique
   - [ ] Timer qui sauvegarde toutes les 5 minutes
   - [ ] Sauvegarder uniquement si des changements ont eu lieu
   - [ ] Logger les sauvegardes pour debug
 
-- [ ] **8.3.3** Sauvegarder à la fermeture
+- [ ] **9.3.3** Sauvegarder à la fermeture
   - [ ] Hook Tauri `on_window_event` pour CloseRequested
   - [ ] Sauvegarder le profil actuel
   - [ ] Sauvegarder la config
   - [ ] Attendre la fin des sauvegardes avant de fermer
 
-### 8.4 UX Improvements
+### 9.4 UX Improvements
 
-- [ ] **8.4.1** Indicateurs de chargement
+- [ ] **9.4.1** Indicateurs de chargement
   - [ ] Spinner lors du chargement d'un profil
   - [ ] Skeleton loaders pour les composants
   - [ ] Progress bar pour les téléchargements YouTube
 
-- [ ] **8.4.2** Feedback visuel
+- [ ] **9.4.2** Feedback visuel
   - [ ] Animation au click des boutons
   - [ ] Highlight des touches quand pressées
   - [ ] Animation du volume slider
   - [ ] Pulsation de l'icône de lecture
 
-- [ ] **8.4.3** Keyboard shortcuts
+- [ ] **9.4.3** Keyboard shortcuts
   - [ ] Implémenter des raccourcis clavier pour l'UI
   - [ ] Ctrl+N: Nouveau profil
   - [ ] Ctrl+S: Sauvegarder (manuel)
@@ -1782,31 +1887,31 @@
   - [ ] ESC: Fermer le modal actif
   - [ ] Documenter les raccourcis
 
-- [ ] **8.4.4** Drag & Drop amélioré
+- [ ] **9.4.4** Drag & Drop amélioré
   - [ ] Animation au drag over
   - [ ] Preview des fichiers draggés
   - [ ] Feedback visuel pendant le drop
 
-### 8.5 Accessibilité
+### 9.5 Accessibilité
 
-- [ ] **8.5.1** ARIA labels
+- [ ] **9.5.1** ARIA labels
   - [ ] Ajouter aria-label sur tous les boutons sans texte
   - [ ] Ajouter aria-describedby pour les tooltips
   - [ ] Assurer la navigation au clavier
 
-- [ ] **8.5.2** Focus management
+- [ ] **9.5.2** Focus management
   - [ ] Focus automatique sur les inputs de modals
   - [ ] Retour du focus après fermeture de modal
   - [ ] Focus visible (outline)
 
-- [ ] **8.5.3** Contraste et lisibilité
+- [ ] **9.5.3** Contraste et lisibilité
   - [ ] Vérifier le contraste des couleurs (WCAG AA minimum)
   - [ ] Tester avec des outils d'accessibilité
   - [ ] Assurer une taille de police lisible
 
-### 8.6 Documentation Utilisateur
+### 9.6 Documentation Utilisateur
 
-- [ ] **8.6.1** Créer un README.md
+- [ ] **9.6.1** Créer un README.md
   - [ ] Description du projet
   - [ ] Fonctionnalités principales
   - [ ] Installation (pour utilisateurs)
@@ -1814,7 +1919,7 @@
   - [ ] Screenshots
   - [ ] FAQ
 
-- [ ] **8.6.2** Créer un guide utilisateur
+- [ ] **9.6.2** Créer un guide utilisateur
   - [ ] Comment créer un profil
   - [ ] Comment ajouter des sons
   - [ ] Comment assigner des touches
@@ -1823,93 +1928,93 @@
   - [ ] Comment télécharger depuis YouTube
   - [ ] Comment importer/exporter
 
-- [ ] **8.6.3** Tooltips dans l'UI
+- [ ] **9.6.3** Tooltips dans l'UI
   - [ ] Ajouter des tooltips sur les éléments complexes
   - [ ] Expliquer le momentum
   - [ ] Expliquer les loop modes
   - [ ] Expliquer le crossfade
 
-### 8.7 Configuration Avancée
+### 9.7 Configuration Avancée
 
-- [ ] **8.7.1** Exporter les settings vers un fichier
+- [ ] **9.7.1** Exporter les settings vers un fichier
   - [ ] Permettre l'export de la config globale
   - [ ] Permettre l'import de config
 
-- [ ] **8.7.2** Reset aux valeurs par défaut
+- [ ] **9.7.2** Reset aux valeurs par défaut
   - [ ] Bouton "Reset to Default" dans Settings
   - [ ] Confirmation avant reset
   - [ ] Appliquer AppConfig::default()
 
 ---
 
-## Phase 9 - Tests & Validation
+## Phase 10 - Tests & Validation
 
-### 9.1 Tests Backend (Rust)
+### 10.1 Tests Backend (Rust)
 
-- [ ] **9.1.1** Tests unitaires pour types
+- [ ] **10.1.1** Tests unitaires pour types
   - [ ] Tester les sérialisations/désérialisations JSON
   - [ ] Tester les valeurs par défaut (AppConfig::default)
   - [ ] Tester les validations
 
-- [ ] **9.1.2** Tests unitaires pour storage
+- [ ] **10.1.2** Tests unitaires pour storage
   - [ ] Tester load_config/save_config
   - [ ] Tester create_profile/load_profile/save_profile/delete_profile
   - [ ] Tester avec des données invalides
   - [ ] Tester les cas d'erreur (fichier manquant, JSON corrompu)
 
-- [ ] **9.1.3** Tests unitaires pour audio
+- [ ] **10.1.3** Tests unitaires pour audio
   - [ ] Tester les calculs de volume final
   - [ ] Tester la logique de sélection des sons (loop modes)
   - [ ] Tester la courbe de crossfade (get_volumes)
   - [ ] Tester le cooldown
 
-- [ ] **9.1.4** Tests unitaires pour keys
+- [ ] **10.1.4** Tests unitaires pour keys
   - [ ] Tester key_to_code et code_to_key
   - [ ] Tester is_shortcut_pressed
   - [ ] Tester la détection des modificateurs
 
-- [ ] **9.1.5** Tests unitaires pour YouTube
+- [ ] **10.1.5** Tests unitaires pour YouTube
   - [ ] Tester is_valid_youtube_url
   - [ ] Tester extract_video_id
   - [ ] Tester sanitize_filename
   - [ ] Tester la logique de cache (mock)
 
-- [ ] **9.1.6** Tests unitaires pour import/export
+- [ ] **10.1.6** Tests unitaires pour import/export
   - [ ] Tester l'export d'un profil (mock filesystem)
   - [ ] Tester l'import d'un profil
   - [ ] Tester avec des données invalides
 
-- [ ] **9.1.7** Tests d'intégration
+- [ ] **10.1.7** Tests d'intégration
   - [ ] Tester le flow complet: create profile → add sound → save → load
   - [ ] Tester le flow audio: play sound → crossfade → stop
   - [ ] Tester le flow YouTube: download → cache → play
 
-### 9.2 Tests Frontend (React)
+### 10.2 Tests Frontend (React)
 
-- [ ] **9.2.1** Tests unitaires pour utils
+- [ ] **10.2.1** Tests unitaires pour utils
   - [ ] Tester formatDuration
   - [ ] Tester formatFileSize
   - [ ] Tester keyCodeToDisplay
   - [ ] Tester parseKeyCombination
 
-- [ ] **9.2.2** Tests unitaires pour stores
+- [ ] **10.2.2** Tests unitaires pour stores
   - [ ] Tester les actions de audioStore
   - [ ] Tester les actions de profileStore
   - [ ] Tester les actions de settingsStore
 
-- [ ] **9.2.3** Tests de composants
+- [ ] **10.2.3** Tests de composants
   - [ ] Tester les composants simples (Header, Sidebar)
   - [ ] Tester les interactions (clicks, inputs)
   - [ ] Utiliser React Testing Library
   - [ ] Mock les commandes Tauri
 
-- [ ] **9.2.4** Tests d'intégration frontend
+- [ ] **10.2.4** Tests d'intégration frontend
   - [ ] Tester les flows complets (create profile → add sound)
   - [ ] Tester les modals (open → input → save → close)
 
-### 9.3 Tests Manuels
+### 10.3 Tests Manuels
 
-- [ ] **9.3.1** Test des fonctionnalités audio
+- [ ] **10.3.1** Test des fonctionnalités audio
   - [ ] Tester la lecture de chaque format (MP3, WAV, OGG, FLAC)
   - [ ] Tester le crossfade avec différentes durées
   - [ ] Tester le momentum
@@ -1918,57 +2023,57 @@
   - [ ] Tester avec plusieurs pistes simultanées
   - [ ] Tester avec des fichiers longs (2-3 heures)
 
-- [ ] **9.3.2** Test des touches
+- [ ] **10.3.2** Test des touches
   - [ ] Tester la détection en arrière-plan (fenêtre non focusée)
   - [ ] Tester le cooldown
   - [ ] Tester le Master Stop
   - [ ] Tester avec Shift pour momentum
   - [ ] Tester la désactivation lors du focus d'input
 
-- [ ] **9.3.3** Test des profils
+- [ ] **10.3.3** Test des profils
   - [ ] Créer plusieurs profils
   - [ ] Basculer entre profils
   - [ ] Renommer/supprimer des profils
   - [ ] Sauvegarder/charger
 
-- [ ] **9.3.4** Test YouTube
+- [ ] **10.3.4** Test YouTube
   - [ ] Télécharger plusieurs vidéos
   - [ ] Vérifier le cache
   - [ ] Tester avec des URLs invalides
   - [ ] Tester avec des vidéos privées/indisponibles
   - [ ] Tester le progress
 
-- [ ] **9.3.5** Test Import/Export
+- [ ] **10.3.5** Test Import/Export
   - [ ] Exporter un profil
   - [ ] Vérifier le contenu du .ktm (unzip)
   - [ ] Importer sur la même machine
   - [ ] Importer sur une autre machine (si possible)
   - [ ] Tester avec des profils complexes (nombreux sons, tracks)
 
-- [ ] **9.3.6** Test des erreurs
+- [ ] **10.3.6** Test des erreurs
   - [ ] Supprimer un fichier audio référencé → vérifier le modal
   - [ ] Tester l'update du chemin
   - [ ] Tester la suppression du son
   - [ ] Vérifier que error.mp3 joue
   - [ ] Tester avec yt-dlp non installé
 
-### 9.4 Tests Multi-Plateformes
+### 10.4 Tests Multi-Plateformes
 
-- [ ] **9.4.1** Tests sur Windows
+- [ ] **10.4.1** Tests sur Windows
   - [ ] Compiler et lancer l'app
   - [ ] Tester toutes les fonctionnalités
   - [ ] Vérifier les chemins de fichiers (backslashes)
   - [ ] Tester le system tray
   - [ ] Tester l'installeur
 
-- [ ] **9.4.2** Tests sur macOS
+- [ ] **10.4.2** Tests sur macOS
   - [ ] Compiler et lancer l'app
   - [ ] Tester toutes les fonctionnalités
   - [ ] Vérifier les permissions (keyboard access)
   - [ ] Tester le system tray
   - [ ] Tester le .dmg
 
-- [ ] **9.4.3** Tests sur Linux
+- [ ] **10.4.3** Tests sur Linux
   - [ ] Compiler et lancer l'app sur Ubuntu
   - [ ] Tester sur Fedora (si possible)
   - [ ] Tester sur Arch (si possible)
@@ -1976,51 +2081,51 @@
   - [ ] Tester le system tray (peut varier selon le DE)
   - [ ] Tester les packages (.deb, .AppImage)
 
-### 9.5 Tests de Performance
+### 10.5 Tests de Performance
 
-- [ ] **9.5.1** Benchmark audio
+- [ ] **10.5.1** Benchmark audio
   - [ ] Mesurer la latence de déclenchement
   - [ ] Mesurer l'utilisation CPU pendant la lecture
   - [ ] Mesurer l'utilisation mémoire avec plusieurs pistes
   - [ ] Identifier les bottlenecks
 
-- [ ] **9.5.2** Benchmark UI
+- [ ] **10.5.2** Benchmark UI
   - [ ] Mesurer le temps de rendu des composants
   - [ ] Profiler avec React DevTools
   - [ ] Identifier les re-renders inutiles
 
-- [ ] **9.5.3** Stress tests
+- [ ] **10.5.3** Stress tests
   - [ ] Tester avec 20 pistes simultanées
   - [ ] Tester avec 100+ sons dans un profil
   - [ ] Tester avec des fichiers très longs (10+ heures)
   - [ ] Tester le spam de touches (ignorer cooldown en test)
 
-### 9.6 Tests de Sécurité
+### 10.6 Tests de Sécurité
 
-- [ ] **9.6.1** Valider les inputs utilisateur
+- [ ] **10.6.1** Valider les inputs utilisateur
   - [ ] Vérifier que les chemins de fichiers sont sûrs (pas d'injection)
   - [ ] Vérifier que les URLs YouTube sont validées
   - [ ] Vérifier les limites de taille (noms, durées, etc.)
 
-- [ ] **9.6.2** Tester les permissions Tauri
+- [ ] **10.6.2** Tester les permissions Tauri
   - [ ] Vérifier que seules les permissions nécessaires sont activées
   - [ ] Tester l'accès filesystem (scope limité à AppData)
 
-### 9.7 Validation Finale
+### 10.7 Validation Finale
 
-- [ ] **9.7.1** Checklist des fonctionnalités
+- [ ] **10.7.1** Checklist des fonctionnalités
   - [ ] Toutes les fonctionnalités de la spec sont implémentées
   - [ ] Toutes les commandes Tauri sont fonctionnelles
   - [ ] Tous les events sont émis correctement
   - [ ] Toutes les erreurs sont gérées
 
-- [ ] **9.7.2** Checklist UX
+- [ ] **10.7.2** Checklist UX
   - [ ] L'UI est cohérente et intuitive
   - [ ] Les animations sont fluides
   - [ ] Les messages d'erreur sont clairs
   - [ ] Les tooltips sont présents où nécessaire
 
-- [ ] **9.7.3** Checklist de polish
+- [ ] **10.7.3** Checklist de polish
   - [ ] Pas de console.log en production
   - [ ] Pas de TODOs dans le code
   - [ ] Code formaté (rustfmt, prettier)
@@ -2028,63 +2133,63 @@
 
 ---
 
-## Phase 10 - Build & Release (Bonus)
+## Phase 11 - Build & Release (Bonus)
 
-### 10.1 Préparation du Build
+### 11.1 Préparation du Build
 
-- [ ] **10.1.1** Configurer les icônes
+- [ ] **11.1.1** Configurer les icônes
   - [ ] Créer toutes les tailles d'icônes requises
   - [ ] Optimiser les icônes
 
-- [ ] **10.1.2** Configurer le bundle
+- [ ] **11.1.2** Configurer le bundle
   - [ ] Vérifier tauri.conf.json (identifier, version, etc.)
   - [ ] Configurer les targets (Windows, macOS, Linux)
   - [ ] Configurer les ressources à inclure
 
-- [ ] **10.1.3** Optimiser le build
+- [ ] **11.1.3** Optimiser le build
   - [ ] Build en mode release
   - [ ] Vérifier la taille du bundle
   - [ ] Strip les symboles de debug si nécessaire
 
-### 10.2 Build par Plateforme
+### 11.2 Build par Plateforme
 
-- [ ] **10.2.1** Build Windows
+- [ ] **11.2.1** Build Windows
   - [ ] `npm run tauri build`
   - [ ] Vérifier le .exe et l'installeur .msi
   - [ ] Tester l'installation
 
-- [ ] **10.2.2** Build macOS
+- [ ] **11.2.2** Build macOS
   - [ ] `npm run tauri build`
   - [ ] Vérifier le .app et le .dmg
   - [ ] Signer l'app (si certificat disponible)
   - [ ] Tester l'installation
 
-- [ ] **10.2.3** Build Linux
+- [ ] **11.2.3** Build Linux
   - [ ] `npm run tauri build`
   - [ ] Vérifier le .deb et .AppImage
   - [ ] Tester l'installation sur Ubuntu
 
-### 10.3 Documentation de Release
+### 11.3 Documentation de Release
 
-- [ ] **10.3.1** Changelog
+- [ ] **11.3.1** Changelog
   - [ ] Lister toutes les fonctionnalités
   - [ ] Lister les bugs connus (si applicable)
 
-- [ ] **10.3.2** Instructions d'installation
+- [ ] **11.3.2** Instructions d'installation
   - [ ] Documenter l'installation pour chaque plateforme
   - [ ] Documenter l'installation de yt-dlp
 
-- [ ] **10.3.3** Licence
+- [ ] **11.3.3** Licence
   - [ ] Choisir une licence (MIT, GPL, etc.)
   - [ ] Ajouter LICENSE file
 
-### 10.4 Distribution
+### 11.4 Distribution
 
-- [ ] **10.4.1** Hébergement des releases
+- [ ] **11.4.1** Hébergement des releases
   - [ ] GitHub Releases
   - [ ] Uploader les binaires pour chaque plateforme
 
-- [ ] **10.4.2** Auto-update (optionnel)
+- [ ] **11.4.2** Auto-update (optionnel)
   - [ ] Configurer Tauri updater
   - [ ] Héberger le fichier de métadonnées d'update
 

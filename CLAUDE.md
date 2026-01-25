@@ -382,6 +382,29 @@ Use platform-specific app data directories:
 - **Resizable SoundDetails Panel:** Divider bar between KeyGrid and SoundDetails with drag-to-resize (min 120px, default 256px). Uses mousedown/mousemove/mouseup pattern with body cursor override.
 - **Drag & Drop:** Support for adding multiple audio files at once with bulk assignment to specified keys. Dropping files while AddSoundModal is open appends them to the existing file list (uses `processedFilesRef` to distinguish mount vs. subsequent prop changes, React StrictMode safe).
 
+## Planned Features (Phase 8)
+
+### Profile Duplication
+- Duplicate an existing profile via right-click context menu
+- Creates a copy with new UUID, appends "(Copy)" to name
+- Backend: `duplicate_profile(id, new_name)` command
+- Frontend: Option in ProfileSelector context menu
+
+### Combined Key Shortcuts (Modifiers)
+- Support key combinations like `Ctrl+A`, `Shift+F1`, `Alt+1` as sound triggers
+- Doubles the number of available key bindings without additional hardware
+- Modifier detection in both backend (detector.rs) and frontend (useKeyDetection)
+- Display format: "Ctrl+Shift+A" instead of "KeyA"
+- Conflict detection with system and app shortcuts
+
+### Undo/Redo System
+- Ctrl+Z for Undo, Ctrl+Y for Redo
+- Implemented via `historyStore.ts` with past/future stacks
+- Undoable actions: sound deletion, binding changes, track deletion, sound modifications
+- Non-undoable: profile creation/deletion, YouTube downloads
+- Maximum 50 history entries to limit memory usage
+- Toast feedback: "Action undone" / "Action redone"
+
 ## Technical Limits
 
 - **Max Tracks:** 20

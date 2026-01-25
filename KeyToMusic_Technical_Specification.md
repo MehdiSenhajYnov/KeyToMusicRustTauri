@@ -15,6 +15,7 @@
 11. [Import/Export](#11-importexport)
 12. [Gestion des Erreurs](#12-gestion-des-erreurs)
 13. [Instructions de Développement](#13-instructions-de-développement)
+14. [Fonctionnalités Planifiées (Phase 8)](#14-fonctionnalités-planifiées-phase-8)
 
 ---
 
@@ -2637,6 +2638,152 @@ useEffect(() => {
 
 ---
 
+## 14. Fonctionnalités Planifiées (Phase 8)
+
+### 14.1 Duplication de Profil
+
+Permet de dupliquer un profil existant pour créer une variante.
+
+**Backend (`storage/profile.rs`):**
+```rust
+pub fn duplicate_profile(id: &str, new_name: Option<String>) -> Result<Profile, String> {
+    let source = load_profile(id)?;
+    let mut new_profile = source.clone();
+    new_profile.id = Uuid::new_v4().to_string();
+    new_profile.name = new_name.unwrap_or_else(|| format!("{} (Copy)", source.name));
+    new_profile.created_at = chrono::Utc::now().to_rfc3339();
+    new_profile.updated_at = new_profile.created_at.clone();
+    save_profile(&new_profile)?;
+    Ok(new_profile)
+}
+```
+
+**Frontend:** Option "Duplicate" dans le menu contextuel (clic droit) de `ProfileSelector.tsx`.
+
+### 14.2 Raccourcis Clavier Combinés (Modificateurs)
+
+Permet d'utiliser des combinaisons de touches comme triggers (ex: `Ctrl+A`, `Shift+F1`, `Alt+1`).
+
+**Format de stockage:** Deux options possibles:
+1. Champ séparé: `keyCode: "KeyA", modifiers: ["ControlLeft"]`
+2. Notation combinée: `keyCode: "Ctrl+KeyA"`
+
+**Détection backend (`detector.rs`):**
+```rust
+// Lors d'un KeyPress, vérifier les modificateurs maintenus
+let mut combo = String::new();
+if pressed.contains("ControlLeft") || pressed.contains("ControlRight") {
+    combo.push_str("Ctrl+");
+}
+if pressed.contains("ShiftLeft") || pressed.contains("ShiftRight") {
+    combo.push_str("Shift+");
+}
+if pressed.contains("AltLeft") || pressed.contains("AltRight") {
+    combo.push_str("Alt+");
+}
+combo.push_str(&key_code);
+// Émettre l'événement avec le combo
+```
+
+**Affichage (`keyMapping.ts`):**
+```typescript
+function formatKeyCombo(keyCode: string): string {
+  // "Ctrl+Shift+KeyA" → "Ctrl+Shift+A"
+  return keyCode
+    .replace("Key", "")
+    .replace("Digit", "")
+    .split("+")
+    .map(part => part === "Control" ? "Ctrl" : part)
+    .join("+");
+}
+```
+
+**Validation:** Détecter les conflits avec les raccourcis système (Ctrl+C, Ctrl+V, etc.) et les raccourcis de l'app (Master Stop, etc.).
+
+### 14.3 Système Undo/Redo
+
+Permet d'annuler et rétablir les modifications de profil via Ctrl+Z / Ctrl+Y.
+
+**Store (`src/stores/historyStore.ts`):**
+```typescript
+interface HistoryEntry {
+  timestamp: number;
+  action: string;           // "delete_sound", "change_binding", etc.
+  previousState: Partial<Profile>;
+  newState: Partial<Profile>;
+}
+
+interface HistoryStore {
+  past: HistoryEntry[];     // Stack pour undo
+  future: HistoryEntry[];   // Stack pour redo
+  maxEntries: number;       // Limite: 50
+
+  pushState: (entry: HistoryEntry) => void;
+  undo: () => void;
+  redo: () => void;
+  clear: () => void;
+  canUndo: () => boolean;
+  canRedo: () => boolean;
+}
+```
+
+**Actions annulables:**
+- Suppression de son
+- Suppression de binding (touche)
+- Suppression de track
+- Modification de binding (changement de touche, ajout/retrait de son)
+- Modification de son (volume, momentum, nom)
+- Changement de loop mode
+
+**Actions NON annulables:**
+- Création/suppression de profil
+- Téléchargements YouTube (irréversibles)
+- Modifications de configuration globale
+
+**Intégration avec profileStore:**
+```typescript
+// Avant chaque action annulable:
+const previousState = getRelevantState();
+performAction();
+const newState = getRelevantState();
+historyStore.pushState({ action: "action_name", previousState, newState });
+
+// Undo:
+const entry = past.pop();
+applyState(entry.previousState);
+future.push(entry);
+
+// Redo:
+const entry = future.pop();
+applyState(entry.newState);
+past.push(entry);
+```
+
+**Hook (`src/hooks/useUndoRedo.ts`):**
+```typescript
+useEffect(() => {
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (isTextInputFocused()) return;
+
+    if (e.ctrlKey && e.key === 'z') {
+      e.preventDefault();
+      historyStore.undo();
+      showToast("Action annulée");
+    }
+    if (e.ctrlKey && e.key === 'y') {
+      e.preventDefault();
+      historyStore.redo();
+      showToast("Action rétablie");
+    }
+  };
+
+  window.addEventListener('keydown', handleKeyDown);
+  return () => window.removeEventListener('keydown', handleKeyDown);
+}, []);
+```
+
+---
+
 ## Annexes
 
 ### A. Formats Audio Supportés
@@ -2674,8 +2821,9 @@ useEffect(() => {
 
 **Document généré le** : 2024-01-20
 **Dernière mise à jour** : 2025-01-25
-**Version** : 1.1.0
+**Version** : 1.2.0
 **Auteur** : Document technique pour Claude Code
 
 ### Changelog
+- **v1.2.0** (2025-01-25): Ajout de la section 14 (Features planifiées: Profile Duplication, Combined Shortcuts, Undo/Redo)
 - **v1.1.0** (2025-01-25): Ajout de l'implémentation macOS CGEventTap (section 6.7), ConfirmDialog (section 9.4.3), dépendances conditionnelles par plateforme
