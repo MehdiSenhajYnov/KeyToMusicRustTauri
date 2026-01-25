@@ -462,7 +462,11 @@ Users can choose which modifier key triggers momentum playback:
 **Conflict detection:** Warns users when shortcuts conflict with momentum modifier + bound keys:
 - When changing momentum modifier: checks if existing shortcuts would override momentum
 - When setting a shortcut: checks if it uses the momentum modifier + a bound key
-- Shows toast warnings to help users understand and resolve conflicts
+- Shows toast warnings for immediate feedback on changes
+- Persistent warning icons with tooltips:
+  - Next to conflicting shortcuts in Settings
+  - Next to Momentum Modifier dropdown if conflicts exist
+  - On affected keys in KeyGrid (visible after closing Settings)
 
 **Key files:**
 - `src/types/index.ts` - `MomentumModifier` type

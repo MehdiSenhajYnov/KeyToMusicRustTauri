@@ -1,11 +1,19 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useProfileStore } from "../../stores/profileStore";
 import { useExportStore } from "../../stores/exportStore";
-import { formatShortcut, recordKeyLayout, getKeyCode } from "../../utils/keyMapping";
+import {
+  formatShortcut,
+  recordKeyLayout,
+  getKeyCode,
+  findMomentumConflicts,
+  keyCodeToDisplay,
+  type MomentumModifierType,
+} from "../../utils/keyMapping";
 import * as commands from "../../utils/tauriCommands";
 import { useToastStore } from "../../stores/toastStore";
+import { WarningTooltip } from "../common/WarningTooltip";
 import type { MomentumModifier } from "../../types";
 
 interface SettingsModalProps {
@@ -20,45 +28,6 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
       {children}
     </h3>
   );
-}
-
-/** Check if a shortcut key array contains a specific modifier */
-function shortcutHasModifier(keys: string[], modifier: MomentumModifier): boolean {
-  if (modifier === "None") return false;
-  return keys.some((k) => {
-    switch (modifier) {
-      case "Shift":
-        return k === "ShiftLeft" || k === "ShiftRight";
-      case "Ctrl":
-        return k === "ControlLeft" || k === "ControlRight";
-      case "Alt":
-        return k === "AltLeft" || k === "AltRight";
-      default:
-        return false;
-    }
-  });
-}
-
-/** Get the base key (non-modifier) from a shortcut */
-function getShortcutBaseKey(keys: string[]): string | null {
-  const baseKey = keys.find(
-    (k) =>
-      !k.includes("Shift") &&
-      !k.includes("Control") &&
-      !k.includes("Alt")
-  );
-  return baseKey ?? null;
-}
-
-/** Get all base keys from profile bindings */
-function getProfileBaseKeys(bindings: { keyCode: string }[]): Set<string> {
-  const baseKeys = new Set<string>();
-  for (const binding of bindings) {
-    const parts = binding.keyCode.split("+");
-    const baseKey = parts[parts.length - 1];
-    baseKeys.add(baseKey);
-  }
-  return baseKeys;
 }
 
 export function SettingsModal({ onClose }: SettingsModalProps) {
@@ -86,23 +55,45 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     commands.listAudioDevices().then(setAudioDevices).catch(() => {});
   }, []);
 
+  // Build shortcuts array for conflict detection
+  const shortcuts = useMemo(() => [
+    { name: "Master Stop", keys: config.masterStopShortcut },
+    { name: "Auto-Momentum", keys: config.autoMomentumShortcut },
+    { name: "Key Detection", keys: config.keyDetectionShortcut },
+  ], [config.masterStopShortcut, config.autoMomentumShortcut, config.keyDetectionShortcut]);
+
+  // Detect conflicts between momentum modifier and shortcuts
+  const momentumConflicts = useMemo(() => {
+    if (!currentProfile) return [];
+    return findMomentumConflicts(
+      config.momentumModifier as MomentumModifierType,
+      shortcuts,
+      currentProfile.keyBindings
+    );
+  }, [config.momentumModifier, shortcuts, currentProfile]);
+
+  // Get conflict for a specific shortcut by name
+  const getShortcutConflict = (shortcutName: string) => {
+    return momentumConflicts.find((c) => c.shortcutName === shortcutName);
+  };
+
   const saveShortcut = useCallback(
     (keys: string[]) => {
       // Check if shortcut conflicts with momentum modifier + bound keys
-      if (config.momentumModifier !== "None" && currentProfile) {
-        const baseKey = getShortcutBaseKey(keys);
-        const profileBaseKeys = getProfileBaseKeys(currentProfile.keyBindings);
+      const newConflicts = currentProfile
+        ? findMomentumConflicts(
+            config.momentumModifier as MomentumModifierType,
+            [{ name: "New shortcut", keys }],
+            currentProfile.keyBindings
+          )
+        : [];
 
-        if (
-          baseKey &&
-          shortcutHasModifier(keys, config.momentumModifier) &&
-          profileBaseKeys.has(baseKey)
-        ) {
-          addToast(
-            `Warning: This shortcut uses ${config.momentumModifier} + a bound key. It will override momentum for that key.`,
-            "warning"
-          );
-        }
+      if (newConflicts.length > 0) {
+        const conflict = newConflicts[0];
+        addToast(
+          `Warning: Uses ${config.momentumModifier}+${keyCodeToDisplay(conflict.boundKey)}. Momentum won't work on this key.`,
+          "warning"
+        );
       }
 
       switch (capturingTarget) {
@@ -227,6 +218,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 >
                   {capturingTarget === "masterStop" ? "Cancel" : "Change"}
                 </button>
+                {getShortcutConflict("Master Stop") && (
+                  <WarningTooltip
+                    message={`Uses ${config.momentumModifier}+${keyCodeToDisplay(getShortcutConflict("Master Stop")!.boundKey)} which is bound. Momentum won't work on this key.`}
+                  />
+                )}
               </div>
             </div>
 
@@ -266,6 +262,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     Clear
                   </button>
                 )}
+                {getShortcutConflict("Auto-Momentum") && (
+                  <WarningTooltip
+                    message={`Uses ${config.momentumModifier}+${keyCodeToDisplay(getShortcutConflict("Auto-Momentum")!.boundKey)} which is bound. Momentum won't work on this key.`}
+                  />
+                )}
               </div>
             </div>
 
@@ -304,6 +305,11 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                   >
                     Clear
                   </button>
+                )}
+                {getShortcutConflict("Key Detection") && (
+                  <WarningTooltip
+                    message={`Uses ${config.momentumModifier}+${keyCodeToDisplay(getShortcutConflict("Key Detection")!.boundKey)} which is bound. Momentum won't work on this key.`}
+                  />
                 )}
               </div>
             </div>
@@ -374,9 +380,16 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
             {/* Momentum Modifier */}
             <div className="space-y-1">
-              <label className="text-text-secondary text-sm font-medium">
-                Momentum Modifier
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="text-text-secondary text-sm font-medium">
+                  Momentum Modifier
+                </label>
+                {momentumConflicts.length > 0 && (
+                  <WarningTooltip
+                    message={`${momentumConflicts.length} shortcut(s) use ${config.momentumModifier} + bound keys: ${momentumConflicts.map(c => c.shortcutName).join(", ")}`}
+                  />
+                )}
+              </div>
               <select
                 value={config.momentumModifier}
                 onChange={(e) => {
@@ -384,30 +397,15 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
                   // Check for conflicts with existing shortcuts
                   if (newModifier !== "None" && currentProfile) {
-                    const shortcuts = [
-                      { name: "Master Stop", keys: config.masterStopShortcut },
-                      { name: "Auto-Momentum", keys: config.autoMomentumShortcut },
-                      { name: "Key Detection", keys: config.keyDetectionShortcut },
-                    ];
+                    const newConflicts = findMomentumConflicts(
+                      newModifier as MomentumModifierType,
+                      shortcuts,
+                      currentProfile.keyBindings
+                    );
 
-                    const profileBaseKeys = getProfileBaseKeys(currentProfile.keyBindings);
-                    const conflicts: string[] = [];
-
-                    for (const shortcut of shortcuts) {
-                      if (shortcut.keys.length === 0) continue;
-                      const baseKey = getShortcutBaseKey(shortcut.keys);
-                      if (
-                        baseKey &&
-                        shortcutHasModifier(shortcut.keys, newModifier) &&
-                        profileBaseKeys.has(baseKey)
-                      ) {
-                        conflicts.push(shortcut.name);
-                      }
-                    }
-
-                    if (conflicts.length > 0) {
+                    if (newConflicts.length > 0) {
                       addToast(
-                        `Warning: ${conflicts.join(", ")} shortcut(s) use ${newModifier} + bound keys. They will override momentum.`,
+                        `Warning: ${newConflicts.map(c => c.shortcutName).join(", ")} use ${newModifier} + bound keys. Momentum won't work on these keys.`,
                         "warning"
                       );
                     }

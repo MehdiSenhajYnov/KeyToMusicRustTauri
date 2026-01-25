@@ -267,6 +267,10 @@ Permettre à l'utilisateur de choisir quel modificateur déclenche le momentum.
 - [x] Warning si un shortcut utilise le momentum modifier + une touche bindée
 - [x] Warning à la modification du momentum modifier si conflits avec shortcuts existants
 - [x] Messages toast informatifs pour guider l'utilisateur
+- [x] Icônes warning persistantes avec tooltips:
+  - À côté des shortcuts en conflit dans Settings
+  - À côté du dropdown Momentum Modifier si conflits
+  - Sur les touches KeyGrid affectées par un conflit
 
 **Tableau des options:**
 | Modifier | Avantage | Inconvénient |

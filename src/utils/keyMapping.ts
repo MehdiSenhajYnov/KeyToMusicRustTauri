@@ -412,3 +412,129 @@ export function isMultiKeyChord(combo: string): boolean {
   const baseKeys = parts.filter(p => p !== "Ctrl" && p !== "Shift" && p !== "Alt");
   return baseKeys.length > 1;
 }
+
+/**
+ * Momentum modifier type
+ */
+export type MomentumModifierType = "Shift" | "Ctrl" | "Alt" | "None";
+
+/**
+ * Check if a shortcut key array contains a specific modifier.
+ */
+export function shortcutHasModifier(keys: string[], modifier: MomentumModifierType): boolean {
+  if (modifier === "None") return false;
+  return keys.some((k) => {
+    switch (modifier) {
+      case "Shift":
+        return k === "ShiftLeft" || k === "ShiftRight";
+      case "Ctrl":
+        return k === "ControlLeft" || k === "ControlRight";
+      case "Alt":
+        return k === "AltLeft" || k === "AltRight";
+      default:
+        return false;
+    }
+  });
+}
+
+/**
+ * Get the base key (non-modifier) from a shortcut key array.
+ */
+export function getShortcutBaseKey(keys: string[]): string | null {
+  const baseKey = keys.find(
+    (k) =>
+      !k.includes("Shift") &&
+      !k.includes("Control") &&
+      !k.includes("Alt")
+  );
+  return baseKey ?? null;
+}
+
+/**
+ * Get all base keys from profile bindings.
+ */
+export function getProfileBaseKeys(bindings: { keyCode: string }[]): Set<string> {
+  const baseKeys = new Set<string>();
+  for (const binding of bindings) {
+    const parts = binding.keyCode.split("+");
+    const baseKey = parts[parts.length - 1];
+    baseKeys.add(baseKey);
+  }
+  return baseKeys;
+}
+
+/**
+ * Information about a momentum/shortcut conflict.
+ */
+export interface MomentumConflict {
+  shortcutName: string;
+  shortcutKeys: string[];
+  boundKey: string;
+}
+
+/**
+ * Check if shortcuts conflict with momentum modifier and profile bindings.
+ * Returns list of conflicting shortcuts.
+ */
+export function findMomentumConflicts(
+  momentumModifier: MomentumModifierType,
+  shortcuts: { name: string; keys: string[] }[],
+  profileBindings: { keyCode: string }[]
+): MomentumConflict[] {
+  if (momentumModifier === "None") return [];
+
+  const profileBaseKeys = getProfileBaseKeys(profileBindings);
+  const conflicts: MomentumConflict[] = [];
+
+  for (const shortcut of shortcuts) {
+    if (shortcut.keys.length === 0) continue;
+
+    const baseKey = getShortcutBaseKey(shortcut.keys);
+    if (
+      baseKey &&
+      shortcutHasModifier(shortcut.keys, momentumModifier) &&
+      profileBaseKeys.has(baseKey)
+    ) {
+      conflicts.push({
+        shortcutName: shortcut.name,
+        shortcutKeys: shortcut.keys,
+        boundKey: baseKey,
+      });
+    }
+  }
+
+  return conflicts;
+}
+
+/**
+ * Check if a specific key binding is affected by a momentum conflict.
+ */
+export function getKeyMomentumConflict(
+  keyCode: string,
+  momentumModifier: MomentumModifierType,
+  shortcuts: { name: string; keys: string[] }[]
+): MomentumConflict | null {
+  if (momentumModifier === "None") return null;
+
+  // Get the base key from the binding
+  const parts = keyCode.split("+");
+  const baseKey = parts[parts.length - 1];
+
+  for (const shortcut of shortcuts) {
+    if (shortcut.keys.length === 0) continue;
+
+    const shortcutBaseKey = getShortcutBaseKey(shortcut.keys);
+    if (
+      shortcutBaseKey === baseKey &&
+      shortcutHasModifier(shortcut.keys, momentumModifier)
+    ) {
+      return {
+        shortcutName: shortcut.name,
+        shortcutKeys: shortcut.keys,
+        boundKey: baseKey,
+      };
+    }
+  }
+
+  return null;
+}

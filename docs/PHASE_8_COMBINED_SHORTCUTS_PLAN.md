@@ -292,6 +292,11 @@ Simple dropdown dans Settings avec 4 options :
 - "Warning: Auto-Momentum shortcut(s) use Alt + bound keys. They will override momentum."
 - "Warning: This shortcut uses Alt + a bound key. It will override momentum for that key."
 
+**Icônes warning persistantes:**
+- À côté des shortcuts en conflit dans Settings (avec tooltip explicatif)
+- À côté du dropdown Momentum Modifier si des conflits existent
+- Sur les touches KeyGrid affectées (rappel visuel après fermeture des Settings)
+
 ### 4.6 Status
 ✅ **IMPLÉMENTÉ** (2026-01-25)
 
@@ -300,7 +305,10 @@ Simple dropdown dans Settings avec 4 options :
 - `src/stores/settingsStore.ts` - Action `setMomentumModifier()`
 - `src-tauri/src/types.rs` - Enum `MomentumModifier` avec Default
 - `src/hooks/useKeyDetection.ts` - Fonction `hasMomentumModifier()`
-- `src/components/Settings/SettingsModal.tsx` - Dropdown + réorganisation en sections + détection de conflits
+- `src/components/Settings/SettingsModal.tsx` - Dropdown + sections + warnings avec tooltips
+- `src/components/Keys/KeyGrid.tsx` - Warning icons sur les touches en conflit
+- `src/components/common/WarningTooltip.tsx` - Composant réutilisable (nouveau)
+- `src/utils/keyMapping.ts` - Fonctions utilitaires pour détection de conflits
 
 ---
 
