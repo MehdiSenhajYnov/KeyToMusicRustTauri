@@ -40,8 +40,9 @@ export function KeyGrid({ selectedKey, onKeySelect }: KeyGridProps) {
                 onClick={() =>
                   onKeySelect(isSelected ? null : kb.keyCode)
                 }
+                title={keyCodeToDisplay(kb.keyCode)}
                 className={`
-                  relative px-3 py-2 rounded border text-left min-w-[120px] transition-all
+                  relative px-3 py-2 rounded border text-left min-w-[100px] max-w-[180px] transition-all
                   ${isSelected
                     ? "border-accent-primary bg-accent-primary/10"
                     : "border-border-color bg-bg-secondary hover:border-border-focus"
@@ -50,8 +51,11 @@ export function KeyGrid({ selectedKey, onKeySelect }: KeyGridProps) {
                   ${isJustPressed ? "scale-95" : ""}
                 `}
               >
-                <div className="flex items-center gap-2">
-                  <span className="text-accent-primary font-mono text-xs font-bold bg-bg-tertiary px-1.5 py-0.5 rounded">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="text-accent-primary font-mono text-xs font-bold bg-bg-tertiary px-1.5 py-0.5 rounded truncate max-w-full"
+                    title={keyCodeToDisplay(kb.keyCode)}
+                  >
                     {keyCodeToDisplay(kb.keyCode)}
                   </span>
                   {isPlaying && (

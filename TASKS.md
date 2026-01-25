@@ -14,7 +14,7 @@
 > **Phase 6.5 COMPLÉTÉE** - 2026-01-24 (Concurrent YouTube Downloads & Key Cycling)
 > **Phase 7 COMPLÉTÉE** - 2026-01-24 (Error Handling: logging, error sound, FileNotFoundModal, verification, toasts)
 > **Phase 7.5 COMPLÉTÉE** - 2026-01-24 (Legacy Import: conversion des saves de l'ancienne version)
-> **Phase 8** 🔄 - Nouvelles Features (Profile Duplication ✅, Combined Shortcuts ✅, Undo/Redo ✅, KeyGrid display ⏳)
+> **Phase 8 COMPLÉTÉE** - 2026-01-25 (Profile Duplication, Combined Shortcuts, Undo/Redo, KeyGrid display)
 
 ---
 
@@ -1802,11 +1802,12 @@ Permettre l'utilisation de combinaisons comme Ctrl+A, Shift+F1, Alt+1 comme trig
   - [x] UI feedback: message rouge pour erreur, orange pour warning
   **✅ Complété** - `KeyCaptureSlot.tsx` créé, AddSoundModal refactoré
 
-- [ ] **8.2.8** Mise à jour KeyGrid pour afficher les combinaisons
-  - [ ] Gérer les noms plus longs ("Ctrl+Shift+A" vs "A")
-  - [ ] Truncate ou font-size adaptative si nécessaire
-  - [ ] Tester avec différentes largeurs de fenêtre
-  **⏳ En attente**
+- [x] **8.2.8** Mise à jour KeyGrid et SoundDetails pour afficher les combinaisons
+  - [x] Gérer les noms plus longs ("Ctrl+Shift+A" vs "A")
+  - [x] Truncate avec max-width et tooltip au survol dans KeyGrid
+  - [x] SoundDetails: capture avec support modifiers (keydown/keyup pattern)
+  - [x] Affichage en temps réel des touches pressées dans les boutons Move/Change Key
+  **✅ Complété** - KeyGrid et SoundDetails mis à jour
 
 ### 8.3 Système Undo/Redo ✅
 

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useProfileStore } from "../../stores/profileStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useConfirmStore } from "../../stores/confirmStore";
-import { keyCodeToDisplay, charToKeyCode, recordKeyLayout } from "../../utils/keyMapping";
+import { keyCodeToDisplay, charToKeyCode, recordKeyLayout, buildComboFromPressedKeys } from "../../utils/keyMapping";
 import { formatDuration } from "../../utils/fileHelpers";
 import { AddSoundModal } from "./AddSoundModal";
 import * as commands from "../../utils/tauriCommands";
@@ -30,6 +30,8 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // "binding" = reassign entire key, soundId string = move that sound to another key
   const [capturingKeyFor, setCapturingKeyFor] = useState<"binding" | string | null>(null);
+  const [capturedDisplay, setCapturedDisplay] = useState("");
+  const pressedKeysRef = useRef<Set<string>>(new Set());
 
   const handleCapturedKey = useCallback(async (newKeyCode: string) => {
     if (!currentProfile) return;
@@ -100,22 +102,45 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   }, [currentProfile, selectedKey, capturingKeyFor, updateKeyBinding, removeKeyBinding, addKeyBinding, saveCurrentProfile, addToast, showConfirm, onKeyChanged, onClose]);
 
   useEffect(() => {
-    if (!capturingKeyFor) return;
+    if (!capturingKeyFor) {
+      pressedKeysRef.current.clear();
+      setCapturedDisplay("");
+      return;
+    }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      if (e.key === "Escape") {
+      if (e.code === "Escape") {
         setCapturingKeyFor(null);
         return;
       }
       const code = charToKeyCode(e.key) || e.code;
       recordKeyLayout(code, e.key);
-      handleCapturedKey(code);
+      pressedKeysRef.current.add(code);
+      const combo = buildComboFromPressedKeys(pressedKeysRef.current);
+      if (combo) {
+        setCapturedDisplay(keyCodeToDisplay(combo));
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const code = charToKeyCode(e.key) || e.code;
+      const combo = buildComboFromPressedKeys(pressedKeysRef.current);
+      if (combo) {
+        handleCapturedKey(combo);
+      }
+      pressedKeysRef.current.delete(code);
     };
 
     window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
+    };
   }, [capturingKeyFor, handleCapturedKey]);
 
   if (!currentProfile) return null;
@@ -229,7 +254,9 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
             }`}
             title="Change the key for this binding"
           >
-            {capturingKeyFor === "binding" ? "Press a key..." : "Change Key"}
+            {capturingKeyFor === "binding"
+              ? capturedDisplay || "Press a key..."
+              : "Change Key"}
           </button>
         </div>
         <div className="flex items-center gap-2">
@@ -261,8 +288,15 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
       </div>
 
       {capturingKeyFor && (
-        <p className="text-accent-warning text-xs animate-pulse">
-          Press the target key (Escape to cancel)
+        <p className="text-accent-warning text-xs">
+          {capturedDisplay ? (
+            <span>
+              <span className="font-mono font-medium">{capturedDisplay}</span>
+              <span className="text-text-muted ml-2">Release to confirm</span>
+            </span>
+          ) : (
+            <span className="animate-pulse">Press the target key (Escape to cancel)</span>
+          )}
         </p>
       )}
 
@@ -286,7 +320,9 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
                   }`}
                   title="Move this sound to another key"
                 >
-                  {capturingKeyFor === sound.id ? "Press key..." : "Move"}
+                  {capturingKeyFor === sound.id
+                    ? capturedDisplay || "Press key..."
+                    : "Move"}
                 </button>
                 <button
                   onClick={() => handleRemoveSound(sound.id, sound.name)}
