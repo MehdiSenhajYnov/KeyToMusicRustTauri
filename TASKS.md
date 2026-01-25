@@ -14,7 +14,7 @@
 > **Phase 6.5 COMPLÉTÉE** - 2026-01-24 (Concurrent YouTube Downloads & Key Cycling)
 > **Phase 7 COMPLÉTÉE** - 2026-01-24 (Error Handling: logging, error sound, FileNotFoundModal, verification, toasts)
 > **Phase 7.5 COMPLÉTÉE** - 2026-01-24 (Legacy Import: conversion des saves de l'ancienne version)
-> **Phase 8** 🔄 - Nouvelles Features (Profile Duplication ✅, Combined Shortcuts 🔄, Undo/Redo ✅)
+> **Phase 8** 🔄 - Nouvelles Features (Profile Duplication ✅, Combined Shortcuts ✅, Undo/Redo ✅, KeyGrid display ⏳)
 
 ---
 
@@ -1739,7 +1739,7 @@ Cette phase ajoute des fonctionnalités demandées pour améliorer l'UX sans alo
   - [x] Sélectionner le nouveau profil
   **✅ Complété** - Fonction ajoutée au store et à tauriCommands.ts
 
-### 8.2 Raccourcis Clavier Combinés (Modificateurs) 🔄 PARTIELLEMENT COMPLÉTÉ
+### 8.2 Raccourcis Clavier Combinés (Modificateurs) ✅ COMPLÉTÉ
 
 Permettre l'utilisation de combinaisons comme Ctrl+A, Shift+F1, Alt+1 comme triggers de sons.
 
@@ -1777,30 +1777,30 @@ Permettre l'utilisation de combinaisons comme Ctrl+A, Shift+F1, Alt+1 comme trig
   - [x] Avertit pour Ctrl+chiffre (tabs) et Alt+lettre (menus Windows)
   **✅ Complété** - Validation des conflits système implémentée
 
-- [ ] **8.2.6** Validation étendue des raccourcis réservés
-  - [ ] Étendre `checkKeyComboConflict` → `checkShortcutConflicts(combo, config)`
-  - [ ] Bloquer les raccourcis app (Ctrl+Z, Ctrl+Y pour Undo/Redo)
-  - [ ] Bloquer les global shortcuts configurés par l'utilisateur:
-    - [ ] `config.masterStopShortcut` (Master Stop)
-    - [ ] `config.autoMomentumShortcut` (Auto-Momentum Toggle)
-    - [ ] `config.keyDetectionShortcut` (Key Detection Toggle)
-  - [ ] Bloquer les raccourcis système (Ctrl+C/V/X/A/S/W/Q/N/T, Alt+F4)
-  - [ ] Warning (pas blocage) pour Ctrl+1-9 (tabs) et Alt+lettre (menus Windows)
-  - [ ] Retourner un objet `{ type: 'error'|'warning', message, conflictWith }`
-  - [ ] Message explicite: "Ctrl+Z is already used for Undo"
-  **⏳ En attente** - Pré-requis avant UI refactor
+- [x] **8.2.6** Validation étendue des raccourcis réservés
+  - [x] Étendre `checkKeyComboConflict` → `checkShortcutConflicts(combo, config)`
+  - [x] Bloquer les raccourcis app (Ctrl+Z, Ctrl+Y pour Undo/Redo)
+  - [x] Bloquer les global shortcuts configurés par l'utilisateur:
+    - [x] `config.masterStopShortcut` (Master Stop)
+    - [x] `config.autoMomentumShortcut` (Auto-Momentum Toggle)
+    - [x] `config.keyDetectionShortcut` (Key Detection Toggle)
+  - [x] Bloquer les raccourcis système (Ctrl+C/V/X/A/S/W/Q/N/T, Alt+F4)
+  - [x] Warning (pas blocage) pour Ctrl+1-9 (tabs) et Alt+lettre (menus Windows)
+  - [x] Retourner un objet `{ type: 'error'|'warning', message, conflictWith }`
+  - [x] Message explicite: "Reserved for Undo", "System shortcut (Copy)"
+  **✅ Complété** - `checkShortcutConflicts()` ajoutée dans keyMapping.ts
 
-- [ ] **8.2.7** Refonte UI AddSoundModal pour key assignment
-  - [ ] Créer composant `KeyCaptureSlot` réutilisable (click → capture mode → press keys)
-  - [ ] Remplacer l'input texte "aze" par une liste de slots de capture
-  - [ ] Chaque slot capture une combinaison de touches (ex: Ctrl+A, Shift+F1)
-  - [ ] Bouton "+" pour ajouter un slot si `nombre de keys < nombre de sons`
-  - [ ] Bouton "×" pour supprimer un slot
-  - [ ] Preview du cycling en temps réel (Sound 1 → Key 1, Sound 2 → Key 2, Sound 3 → Key 1...)
-  - [ ] Même pattern de capture que les global shortcuts dans Settings
-  - [ ] Afficher erreurs/warnings de `checkShortcutConflicts()` lors de la capture
-  - [ ] UI feedback: message rouge pour erreur, orange pour warning
-  **⏳ En attente** - UI à développer
+- [x] **8.2.7** Refonte UI AddSoundModal pour key assignment
+  - [x] Créer composant `KeyCaptureSlot` réutilisable (click → capture mode → press keys)
+  - [x] Remplacer l'input texte "aze" par une liste de slots de capture
+  - [x] Chaque slot capture une combinaison de touches (ex: Ctrl+A, Shift+F1)
+  - [x] Bouton "+" pour ajouter un slot si `nombre de keys < nombre de sons`
+  - [x] Bouton "×" pour supprimer un slot
+  - [x] Preview du cycling en temps réel (Sound 1 → Key 1, Sound 2 → Key 2, Sound 3 → Key 1...)
+  - [x] Même pattern de capture que les global shortcuts dans Settings
+  - [x] Afficher erreurs/warnings de `checkShortcutConflicts()` lors de la capture
+  - [x] UI feedback: message rouge pour erreur, orange pour warning
+  **✅ Complété** - `KeyCaptureSlot.tsx` créé, AddSoundModal refactoré
 
 - [ ] **8.2.8** Mise à jour KeyGrid pour afficher les combinaisons
   - [ ] Gérer les noms plus longs ("Ctrl+Shift+A" vs "A")
