@@ -191,7 +191,6 @@ export interface ShortcutConflictConfig {
   masterStopShortcut?: string[];
   autoMomentumShortcut?: string[];
   keyDetectionShortcut?: string[];
-  existingBindings?: string[]; // Existing key bindings in profile
 }
 
 /**
@@ -273,17 +272,9 @@ export function checkShortcutConflicts(
       }
     }
 
-    // 3. Existing bindings in profile (optional)
-    if (config.existingBindings && config.existingBindings.includes(combo)) {
-      return {
-        type: "warning",
-        message: "Already assigned to another sound",
-        conflictWith: "Existing binding",
-      };
-    }
   }
 
-  // 4. System shortcuts (blocked)
+  // 3. System shortcuts (blocked)
   const systemShortcuts: Record<string, string> = {
     "Ctrl+KeyC": "Copy",
     "Ctrl+KeyV": "Paste",
@@ -305,7 +296,7 @@ export function checkShortcutConflicts(
     };
   }
 
-  // 5. Warnings (allowed but inform user)
+  // 4. Warnings (allowed but inform user)
   if (ctrl && /^Digit[1-9]$/.test(baseKey)) {
     return {
       type: "warning",

@@ -288,10 +288,6 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     masterStopShortcut: config?.masterStopShortcut,
     autoMomentumShortcut: config?.autoMomentumShortcut,
     keyDetectionShortcut: config?.keyDetectionShortcut,
-    existingBindings: currentProfile?.keyBindings.map((kb) => kb.keyCode).filter(
-      // Don't flag as conflict if we're adding to this key
-      (kc) => !targetKey || kc !== targetKey
-    ),
   };
 
   // Key slot management
@@ -642,8 +638,8 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
               ))}
             </div>
 
-            {/* Add key button */}
-            {files.length > 1 && (
+            {/* Add key button - only show when keys < sounds */}
+            {files.length > 1 && assignedKeys.length < files.length && (
               <button
                 type="button"
                 onClick={handleAddKeySlot}
