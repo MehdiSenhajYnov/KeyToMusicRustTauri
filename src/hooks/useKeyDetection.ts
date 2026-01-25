@@ -5,7 +5,7 @@ import { useProfileStore } from "../stores/profileStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useToastStore } from "../stores/toastStore";
 import * as commands from "../utils/tauriCommands";
-import { charToKeyCode, recordKeyLayout } from "../utils/keyMapping";
+import { getKeyCode, recordKeyLayout } from "../utils/keyMapping";
 import { formatErrorMessage } from "../utils/errorMessages";
 import type { LoopMode, Sound } from "../types";
 
@@ -173,7 +173,8 @@ export function useKeyDetection() {
     };
   }, [handleKeyPress, setLastKeyPressed, toggleKeyDetection, toggleAutoMomentum]);
 
-  // Fallback: browser keyboard events (foreground key detection)
+  // Browser keyboard events - only for shortcuts and preventDefault
+  // Sound triggering is handled by the backend chord detector (rdev global hook)
   const pressedKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -188,8 +189,8 @@ export function useKeyDetection() {
         return;
       }
 
-      // Track pressed keys for shortcut detection (use character-based code to match rdev)
-      const resolvedCode = charToKeyCode(e.key) || e.code;
+      // Track pressed keys for shortcut detection (use physical code to match rdev)
+      const resolvedCode = getKeyCode(e);
       pressedKeysRef.current.add(resolvedCode);
       recordKeyLayout(resolvedCode, e.key);
 
@@ -224,28 +225,26 @@ export function useKeyDetection() {
         return;
       }
 
-      // Convert key character to keyCode (layout-aware)
-      const baseKeyCode = charToKeyCode(e.key) || e.code;
+      // Prevent default for keys that might have bindings (to avoid typing in UI)
+      // The actual sound triggering is handled by the backend chord detector
+      const baseKeyCode = getKeyCode(e);
 
-      // Build combined key code with modifiers (match backend order: Ctrl > Shift > Alt > Key)
-      let keyCode = "";
-      if (e.ctrlKey || e.metaKey) keyCode += "Ctrl+";
-      if (e.shiftKey) keyCode += "Shift+";
-      if (e.altKey) keyCode += "Alt+";
-      keyCode += baseKeyCode;
+      // Check if any binding contains this key (single key or as part of a combo)
+      const hasRelatedBinding = currentProfile?.keyBindings.some((kb) => {
+        const parts = kb.keyCode.split("+");
+        return parts.includes(baseKeyCode) ||
+               parts.includes("Ctrl") && e.ctrlKey ||
+               parts.includes("Shift") && e.shiftKey ||
+               parts.includes("Alt") && e.altKey;
+      });
 
-      if (currentProfile?.keyBindings.some((kb) => kb.keyCode === keyCode || kb.keyCode === baseKeyCode)) {
+      if (hasRelatedBinding) {
         e.preventDefault();
       }
-
-      handleKeyPress({
-        keyCode,
-        withShift: e.shiftKey,
-      });
     };
 
     const handleBrowserKeyUp = (e: KeyboardEvent) => {
-      const resolvedCode = charToKeyCode(e.key) || e.code;
+      const resolvedCode = getKeyCode(e);
       pressedKeysRef.current.delete(resolvedCode);
     };
 
@@ -261,5 +260,5 @@ export function useKeyDetection() {
       window.removeEventListener("keyup", handleBrowserKeyUp);
       window.removeEventListener("blur", handleWindowBlur);
     };
-  }, [handleKeyPress, currentProfile, config.masterStopShortcut, config.keyDetectionShortcut, config.autoMomentumShortcut, setLastKeyPressed, toggleKeyDetection, toggleAutoMomentum]);
+  }, [currentProfile, config.masterStopShortcut, config.keyDetectionShortcut, config.autoMomentumShortcut, setLastKeyPressed, toggleKeyDetection, toggleAutoMomentum]);
 }

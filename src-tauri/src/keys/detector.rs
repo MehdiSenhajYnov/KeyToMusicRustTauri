@@ -176,7 +176,20 @@ impl KeyDetector {
                 });
             }
 
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_os = "windows")]
+            {
+                use crate::keys::windows_listener::{listen_windows, WinKeyEvent};
+
+                let handler = handle_key_event;
+                listen_windows(move |event| {
+                    match event {
+                        WinKeyEvent::Press(code) => handler(code, true),
+                        WinKeyEvent::Release(code) => handler(code, false),
+                    }
+                });
+            }
+
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             {
                 use rdev::{listen, EventType};
                 use crate::keys::mapping::key_to_code;

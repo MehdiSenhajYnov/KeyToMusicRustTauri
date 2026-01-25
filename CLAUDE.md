@@ -12,7 +12,7 @@ KeyToMusic is a Tauri-based desktop soundboard application designed for manga re
 
 - **Framework:** Tauri 2.x (Rust backend + React frontend)
 - **Frontend:** React 18+ with TypeScript, Tailwind CSS, Zustand (state management)
-- **Backend:** Rust with rodio/cpal (audio), symphonia (fast seeking), rdev (global key detection)
+- **Backend:** Rust with rodio/cpal (audio), symphonia (fast seeking), platform-specific global key detection
 - **External Tools:** yt-dlp (YouTube downloads)
 
 ## Project Structure
@@ -35,7 +35,9 @@ keytomusic/
 │   │   ├── keys/                 # Global keyboard detection & mapping (platform-specific)
 │   │   │   ├── detector.rs       # Key detector with cooldown, shortcuts
 │   │   │   ├── mapping.rs        # KeyEvent types, key code conversions
-│   │   │   └── macos_listener.rs # macOS-only CGEventTap implementation
+│   │   │   ├── chord.rs          # Multi-key chord detection (Trie-based)
+│   │   │   ├── macos_listener.rs # macOS-only CGEventTap implementation
+│   │   │   └── windows_listener.rs # Windows-only Raw Input API implementation
 │   │   ├── youtube/              # YouTube downloader, cache, ffmpeg/yt-dlp managers
 │   │   ├── import_export/        # .ktm file handling
 │   │   └── storage/              # Profile & config persistence
@@ -75,11 +77,19 @@ final_volume = sound.volume × track.volume × master_volume
 
 ### Key Detection
 
-Uses platform-specific global keyboard capture (works when app is in background):
-- **Windows/Linux:** Uses `rdev` crate
-- **macOS:** Uses custom CGEventTap implementation (see below)
+Uses platform-specific global keyboard capture (works both when app is focused AND in background):
+- **Windows:** Uses Raw Input API (`src-tauri/src/keys/windows_listener.rs`)
+- **macOS:** Uses custom CGEventTap implementation (`src-tauri/src/keys/macos_listener.rs`)
+- **Linux:** Uses `rdev` crate
 
-**macOS CGEventTap Implementation:** On macOS 13+, rdev crashes because it calls `TSMGetInputSourceProperty` from a background thread, which Apple now enforces must run on the main dispatch queue. The custom implementation in `src-tauri/src/keys/macos_listener.rs` uses CoreGraphics CGEventTap directly:
+**Windows Raw Input API Implementation:** The standard `rdev` crate and `SetWindowsHookEx` with `WH_KEYBOARD_LL` don't receive keyboard events when the Tauri/WebView2 window is focused. The Raw Input API bypasses this limitation:
+- Creates a hidden message-only window (`HWND_MESSAGE`)
+- Registers for raw keyboard input with `RIDEV_INPUTSINK` flag (receives input even when not in foreground)
+- Processes `WM_INPUT` messages to capture all keyboard events globally
+- Maps Windows virtual key codes to Web KeyboardEvent.code strings
+- Works consistently regardless of window focus state
+
+**macOS CGEventTap Implementation:** On macOS 13+, rdev crashes because it calls `TSMGetInputSourceProperty` from a background thread, which Apple now enforces must run on the main dispatch queue. The custom implementation uses CoreGraphics CGEventTap directly:
 - Creates an event tap at HID level for hardware-level key capture
 - Runs in a CFRunLoop on a dedicated Rust thread
 - Maps hardware keycodes (0x00-0x7E) directly to Web KeyboardEvent.code strings
@@ -472,11 +482,6 @@ serde_json = "1"
 rodio = "0.19"         # Audio playback
 cpal = "0.15"          # Audio device enumeration
 symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "wav", "pcm", "aac", "isomp4"] }  # Fast seeking + M4A
-
-# Platform-specific:
-[target."cfg(not(target_os = \"macos\"))".dependencies]
-rdev = "0.5"           # Global key detection (Windows/Linux only)
-# macOS uses native CGEventTap via CoreGraphics FFI (no external crate)
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 walkdir = "2"          # File traversal
@@ -485,6 +490,15 @@ zip = { version = "2", default-features = false, features = ["deflate"] }  # ffm
 tracing = "0.1"        # Structured logging
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }  # Log formatting
 tracing-appender = "0.2"  # Daily rolling log files
+
+# Platform-specific key detection:
+[target."cfg(target_os = \"linux\")".dependencies]
+rdev = { git = "https://github.com/fufesou/rdev" }  # Global key detection (Linux only)
+
+[target."cfg(target_os = \"windows\")".dependencies]
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Input", "Win32_Devices_HumanInterfaceDevice", "Win32_Graphics_Gdi"] }  # Raw Input API
+
+# macOS uses native CGEventTap via CoreGraphics FFI (no external crate)
 ```
 
 ### Frontend Dependencies (npm)

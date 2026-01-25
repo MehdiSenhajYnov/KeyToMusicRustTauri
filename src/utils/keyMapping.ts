@@ -90,6 +90,20 @@ export function charToKeyCode(char: string): string | null {
   return CHAR_TO_KEYCODE[char.toLowerCase()] || null;
 }
 
+/**
+ * Get the correct key code for a keyboard event.
+ * Prefers e.code for Numpad keys (to distinguish from Digit keys),
+ * otherwise uses charToKeyCode for layout-aware mapping.
+ */
+export function getKeyCode(e: KeyboardEvent): string {
+  // For Numpad keys, always use e.code to distinguish from digit row
+  if (e.code.startsWith("Numpad")) {
+    return e.code;
+  }
+  // For other keys, try character-based mapping for layout awareness
+  return charToKeyCode(e.key) || e.code;
+}
+
 export function isValidKeyCode(code: string): boolean {
   return code in KEY_DISPLAY_MAP;
 }

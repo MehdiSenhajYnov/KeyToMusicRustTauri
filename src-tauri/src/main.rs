@@ -15,7 +15,7 @@ use audio::{AudioEngineHandle, engine::AudioEvent};
 use commands::*;
 use keys::{KeyDetector, KeyEvent};
 use state::AppState;
-use tauri::{Emitter, Manager};
+use tauri::{DeviceEventFilter, Emitter, Manager};
 use std::time::Duration;
 
 /// Initialize the tracing/logging system.
@@ -93,6 +93,8 @@ fn main() {
     let app_state = AppState::new(config, audio_engine, key_detector.clone(), youtube_cache);
 
     tauri::Builder::default()
+        // Allow rdev (global keyboard hook) to receive events even when window is focused
+        .device_event_filter(DeviceEventFilter::Never)
         .plugin(tauri_plugin_shell::init())
         .manage(app_state)
         .setup(move |app| {

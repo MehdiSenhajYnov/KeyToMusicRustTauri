@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-shell";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useProfileStore } from "../../stores/profileStore";
 import { useExportStore } from "../../stores/exportStore";
-import { formatShortcut, recordKeyLayout, charToKeyCode } from "../../utils/keyMapping";
+import { formatShortcut, recordKeyLayout, getKeyCode } from "../../utils/keyMapping";
 import * as commands from "../../utils/tauriCommands";
 import { useToastStore } from "../../stores/toastStore";
 
@@ -92,7 +92,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     const handleDown = (e: KeyboardEvent) => {
       e.preventDefault();
       if (e.key === "Escape") return;
-      const code = charToKeyCode(e.key) || e.code;
+      const code = getKeyCode(e);
       pressedRef.current.add(code);
       recordKeyLayout(code, e.key);
       setCapturedKeys(Array.from(pressedRef.current));
@@ -103,7 +103,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       if (pressedRef.current.size >= 2) {
         saveShortcut(Array.from(pressedRef.current));
       }
-      const code = charToKeyCode(e.key) || e.code;
+      const code = getKeyCode(e);
       pressedRef.current.delete(code);
     };
 

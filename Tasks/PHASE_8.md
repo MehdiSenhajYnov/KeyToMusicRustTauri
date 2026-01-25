@@ -5,6 +5,21 @@
 
 Cette phase ajoute des fonctionnalités demandées pour améliorer l'UX sans alourdir l'interface.
 
+## Fix Windows Key Detection (2026-01-25)
+
+**Problème:** La détection de touches via `SetWindowsHookEx` (WH_KEYBOARD_LL) et `rdev` ne fonctionnait pas quand la fenêtre Tauri/WebView2 était en focus. Les événements clavier n'étaient reçus qu'en arrière-plan.
+
+**Solution:** Implémentation de l'API **Raw Input** de Windows (`src-tauri/src/keys/windows_listener.rs`):
+- Crée une fenêtre cachée message-only (`HWND_MESSAGE`)
+- Enregistre pour le raw input clavier avec flag `RIDEV_INPUTSINK`
+- Traite les messages `WM_INPUT` pour capturer tous les événements clavier
+- Fonctionne de manière consistante que l'app soit en focus ou en arrière-plan
+
+**Fichiers modifiés:**
+- `src-tauri/src/keys/windows_listener.rs` - Nouvelle implémentation Raw Input API
+- `src-tauri/src/keys/mapping.rs` - Fonctions rdev conditionnelles (Linux uniquement)
+- `src-tauri/Cargo.toml` - Ajout des features Windows pour Raw Input
+
 ---
 
 ## 8.1 Duplication de Profil ✅

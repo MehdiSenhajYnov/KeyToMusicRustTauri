@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useProfileStore } from "../../stores/profileStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useConfirmStore } from "../../stores/confirmStore";
-import { keyCodeToDisplay, charToKeyCode, recordKeyLayout, buildComboFromPressedKeys } from "../../utils/keyMapping";
+import { keyCodeToDisplay, getKeyCode, recordKeyLayout, buildComboFromPressedKeys } from "../../utils/keyMapping";
 import { formatDuration } from "../../utils/fileHelpers";
 import { AddSoundModal } from "./AddSoundModal";
 import * as commands from "../../utils/tauriCommands";
@@ -115,7 +115,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
         setCapturingKeyFor(null);
         return;
       }
-      const code = charToKeyCode(e.key) || e.code;
+      const code = getKeyCode(e);
       recordKeyLayout(code, e.key);
       pressedKeysRef.current.add(code);
       const combo = buildComboFromPressedKeys(pressedKeysRef.current);
@@ -127,7 +127,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     const handleKeyUp = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      const code = charToKeyCode(e.key) || e.code;
+      const code = getKeyCode(e);
       const combo = buildComboFromPressedKeys(pressedKeysRef.current);
       if (combo) {
         handleCapturedKey(combo);

@@ -1,4 +1,4 @@
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 use rdev::Key;
 
 /// Events emitted by the key detection system.
@@ -11,7 +11,8 @@ pub enum KeyEvent {
 }
 
 /// Convert an rdev::Key to a string key code matching Web KeyboardEvent.code format.
-#[cfg(not(target_os = "macos"))]
+/// Only used on Linux (Windows and macOS have their own implementations).
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn key_to_code(key: Key) -> String {
     match key {
         // Letters A-Z
@@ -68,7 +69,7 @@ pub fn key_to_code(key: Key) -> String {
         Key::KpMultiply => "NumpadMultiply".to_string(),
         Key::KpPlus => "NumpadAdd".to_string(),
         Key::KpMinus => "NumpadSubtract".to_string(),
-        Key::KpDelete => "NumpadDecimal".to_string(),
+        Key::KpDecimal => "NumpadDecimal".to_string(),
         Key::KpDivide => "NumpadDivide".to_string(),
         Key::KpReturn => "NumpadEnter".to_string(),
 
@@ -141,7 +142,8 @@ pub fn key_to_code(key: Key) -> String {
 }
 
 /// Convert a string key code back to an rdev::Key.
-#[cfg(not(target_os = "macos"))]
+/// Only used on Linux (Windows and macOS have their own implementations).
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn code_to_key(code: &str) -> Option<Key> {
     match code {
         // Letters
@@ -198,7 +200,7 @@ pub fn code_to_key(code: &str) -> Option<Key> {
         "NumpadMultiply" => Some(Key::KpMultiply),
         "NumpadAdd" => Some(Key::KpPlus),
         "NumpadSubtract" => Some(Key::KpMinus),
-        "NumpadDecimal" => Some(Key::KpDelete),
+        "NumpadDecimal" => Some(Key::KpDecimal),
         "NumpadDivide" => Some(Key::KpDivide),
         "NumpadEnter" => Some(Key::KpReturn),
 
@@ -269,7 +271,8 @@ pub fn code_to_key(code: &str) -> Option<Key> {
 }
 
 /// Check if a key is a modifier key (Shift, Ctrl, Alt, Meta).
-#[cfg(not(target_os = "macos"))]
+/// Only used on Linux (Windows and macOS have their own implementations).
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn is_modifier(key: &Key) -> bool {
     matches!(
         key,

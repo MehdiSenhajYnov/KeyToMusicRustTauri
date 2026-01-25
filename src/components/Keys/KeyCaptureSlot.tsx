@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   keyCodeToDisplay,
-  charToKeyCode,
+  getKeyCode,
   recordKeyLayout,
   buildComboFromPressedKeys,
   checkShortcutConflicts,
@@ -106,8 +106,8 @@ export function KeyCaptureSlot({
         return;
       }
 
-      // Get key code (layout-aware)
-      const code = charToKeyCode(e.key) || e.code;
+      // Get key code (layout-aware, but preserves Numpad distinction)
+      const code = getKeyCode(e);
       recordKeyLayout(code, e.key);
 
       // Add to pressed keys
@@ -126,7 +126,7 @@ export function KeyCaptureSlot({
       e.preventDefault();
       e.stopPropagation();
 
-      const code = charToKeyCode(e.key) || e.code;
+      const code = getKeyCode(e);
 
       // When a key is released, finalize the capture if we have a valid combo
       const combo = buildComboFromPressedKeys(pressedKeysRef.current);
