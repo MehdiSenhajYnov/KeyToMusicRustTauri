@@ -57,9 +57,9 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
         updateKeyBinding(newKeyCode, { soundIds: mergedSoundIds });
         removeKeyBinding(selectedKey);
       } else {
-        // Move binding to new key
-        removeKeyBinding(selectedKey);
+        // Move binding to new key - add first to prevent orphaning sounds
         addKeyBinding({ ...binding, keyCode: newKeyCode });
+        removeKeyBinding(selectedKey);
       }
       setTimeout(() => saveCurrentProfile(), 100);
       addToast(`Key changed: [${keyCodeToDisplay(selectedKey)}] → [${keyCodeToDisplay(newKeyCode)}]`, "success");

@@ -400,13 +400,13 @@ Use platform-specific app data directories:
 - Backend: `duplicate_profile(id, new_name)` command in `storage/profile.rs`
 - Frontend: Duplicate button (SVG icon) in ProfileSelector, calls `profileStore.duplicateProfile()`
 
-### Combined Key Shortcuts (Modifiers) 🔄 Partial
-- **Backend: ✅ Complete** - `detector.rs` emits combined codes ("Ctrl+Shift+KeyA")
-- **Frontend detection: ✅ Complete** - `useKeyDetection.ts` matches combined codes with fallback to base key
-- **Frontend UI: ⏳ Pending** - AddSoundModal still uses text input "aze", doesn't support assigning combined shortcuts
+### Combined Key Shortcuts (Modifiers) ✅
+- **Backend:** `detector.rs` emits combined codes ("Ctrl+Shift+KeyA")
+- **Frontend detection:** `useKeyDetection.ts` matches combined codes with fallback to base key
+- **Frontend UI:** AddSoundModal uses `KeyCaptureSlot` for key capture with full modifier support
 - Modifier order: Ctrl > Shift > Alt > Key
 - Shift+X on existing "X" binding still triggers momentum (backward compatible)
-- `keyMapping.ts` has helpers: `buildKeyCombo()`, `parseKeyCombo()`, `checkKeyComboConflict()`
+- `keyMapping.ts` has helpers: `buildKeyCombo()`, `parseKeyCombo()`, `checkShortcutConflicts()`
 
 ### Undo/Redo System ✅
 - Ctrl+Z for Undo, Ctrl+Y / Cmd+Shift+Z for Redo
@@ -472,8 +472,12 @@ Users can choose which modifier key triggers momentum playback:
 - `src/types/index.ts` - `MomentumModifier` type
 - `src/stores/settingsStore.ts` - `setMomentumModifier()` action
 - `src-tauri/src/types.rs` - `MomentumModifier` enum
+- `src-tauri/src/commands.rs` - `update_config` handles momentum modifier persistence
 - `src/hooks/useKeyDetection.ts` - `hasMomentumModifier()` check
 - `src/components/Settings/SettingsModal.tsx` - Dropdown UI with conflict detection (organized in sections with scrolling)
+- `src/components/Keys/KeyGrid.tsx` - Warning icons on conflicting keys
+- `src/components/common/WarningTooltip.tsx` - Reusable warning icon with tooltip
+- `src/utils/keyMapping.ts` - `findMomentumConflicts()`, `getKeyMomentumConflict()` utilities
 
 ## Known Limitations
 
