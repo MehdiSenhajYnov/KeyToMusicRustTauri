@@ -137,6 +137,7 @@ export function parseKeyCombo(combo: string): {
 /**
  * Check if a key combo conflicts with common system shortcuts.
  * Returns a warning message if conflict detected, null otherwise.
+ * @deprecated Use checkShortcutConflicts instead for full validation
  */
 export function checkKeyComboConflict(combo: string): string | null {
   const { baseKey, ctrl, alt } = parseKeyCombo(combo);
@@ -172,4 +173,188 @@ export function checkKeyComboConflict(combo: string): string | null {
   }
 
   return null;
+}
+
+/**
+ * Shortcut conflict result
+ */
+export interface ShortcutConflict {
+  type: "error" | "warning";
+  message: string;
+  conflictWith: string;
+}
+
+/**
+ * Configuration for shortcut conflict checking
+ */
+export interface ShortcutConflictConfig {
+  masterStopShortcut?: string[];
+  autoMomentumShortcut?: string[];
+  keyDetectionShortcut?: string[];
+  existingBindings?: string[]; // Existing key bindings in profile
+}
+
+/**
+ * Convert array of key codes to a combined key code string.
+ * ["ControlLeft", "ShiftLeft", "KeyS"] -> "Ctrl+Shift+KeyS"
+ */
+export function keysArrayToCombo(keys: string[]): string {
+  if (keys.length === 0) return "";
+
+  let hasCtrl = false;
+  let hasShift = false;
+  let hasAlt = false;
+  let baseKey = "";
+
+  for (const key of keys) {
+    if (key === "ControlLeft" || key === "ControlRight") {
+      hasCtrl = true;
+    } else if (key === "ShiftLeft" || key === "ShiftRight") {
+      hasShift = true;
+    } else if (key === "AltLeft" || key === "AltRight") {
+      hasAlt = true;
+    } else {
+      baseKey = key;
+    }
+  }
+
+  let combo = "";
+  if (hasCtrl) combo += "Ctrl+";
+  if (hasShift) combo += "Shift+";
+  if (hasAlt) combo += "Alt+";
+  combo += baseKey;
+
+  return combo;
+}
+
+/**
+ * Check if a key combo conflicts with reserved shortcuts.
+ * Includes app shortcuts (Undo/Redo), user-configured global shortcuts,
+ * system shortcuts, and optionally existing profile bindings.
+ */
+export function checkShortcutConflicts(
+  combo: string,
+  config?: ShortcutConflictConfig
+): ShortcutConflict | null {
+  const { baseKey, ctrl, alt } = parseKeyCombo(combo);
+
+  // 1. App undo/redo shortcuts (hardcoded, always blocked)
+  const appShortcuts: Record<string, string> = {
+    "Ctrl+KeyZ": "Undo",
+    "Ctrl+KeyY": "Redo",
+  };
+
+  if (appShortcuts[combo]) {
+    return {
+      type: "error",
+      message: `Reserved for ${appShortcuts[combo]}`,
+      conflictWith: appShortcuts[combo],
+    };
+  }
+
+  // 2. User-configured global shortcuts
+  if (config) {
+    const globalShortcuts = [
+      { keys: config.masterStopShortcut, name: "Master Stop" },
+      { keys: config.autoMomentumShortcut, name: "Auto-Momentum" },
+      { keys: config.keyDetectionShortcut, name: "Key Detection" },
+    ];
+
+    for (const shortcut of globalShortcuts) {
+      if (shortcut.keys && shortcut.keys.length > 0) {
+        const shortcutCombo = keysArrayToCombo(shortcut.keys);
+        if (shortcutCombo === combo) {
+          return {
+            type: "error",
+            message: `Used for ${shortcut.name}`,
+            conflictWith: shortcut.name,
+          };
+        }
+      }
+    }
+
+    // 3. Existing bindings in profile (optional)
+    if (config.existingBindings && config.existingBindings.includes(combo)) {
+      return {
+        type: "warning",
+        message: "Already assigned to another sound",
+        conflictWith: "Existing binding",
+      };
+    }
+  }
+
+  // 4. System shortcuts (blocked)
+  const systemShortcuts: Record<string, string> = {
+    "Ctrl+KeyC": "Copy",
+    "Ctrl+KeyV": "Paste",
+    "Ctrl+KeyX": "Cut",
+    "Ctrl+KeyA": "Select All",
+    "Ctrl+KeyS": "Save",
+    "Ctrl+KeyW": "Close Window",
+    "Ctrl+KeyQ": "Quit",
+    "Ctrl+KeyN": "New Window",
+    "Ctrl+KeyT": "New Tab",
+    "Alt+F4": "Close Window",
+  };
+
+  if (systemShortcuts[combo]) {
+    return {
+      type: "error",
+      message: `System shortcut (${systemShortcuts[combo]})`,
+      conflictWith: systemShortcuts[combo],
+    };
+  }
+
+  // 5. Warnings (allowed but inform user)
+  if (ctrl && /^Digit[1-9]$/.test(baseKey)) {
+    return {
+      type: "warning",
+      message: "May conflict with browser tabs",
+      conflictWith: "Browser tabs",
+    };
+  }
+
+  if (alt && /^Key[A-Z]$/.test(baseKey)) {
+    return {
+      type: "warning",
+      message: "May conflict with Windows menus",
+      conflictWith: "Windows menus",
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Build a combined key code from pressed keys Set.
+ * Used during key capture to create the combo string.
+ */
+export function buildComboFromPressedKeys(pressedKeys: Set<string>): string {
+  let hasCtrl = false;
+  let hasShift = false;
+  let hasAlt = false;
+  let baseKey = "";
+
+  for (const key of pressedKeys) {
+    if (key === "ControlLeft" || key === "ControlRight") {
+      hasCtrl = true;
+    } else if (key === "ShiftLeft" || key === "ShiftRight") {
+      hasShift = true;
+    } else if (key === "AltLeft" || key === "AltRight") {
+      hasAlt = true;
+    } else if (!baseKey) {
+      // Take the first non-modifier key
+      baseKey = key;
+    }
+  }
+
+  if (!baseKey) return "";
+
+  let combo = "";
+  if (hasCtrl) combo += "Ctrl+";
+  if (hasShift) combo += "Shift+";
+  if (hasAlt) combo += "Alt+";
+  combo += baseKey;
+
+  return combo;
 }

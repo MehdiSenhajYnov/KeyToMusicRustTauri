@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useProfileStore } from "../../stores/profileStore";
+import { useSettingsStore } from "../../stores/settingsStore";
 import { useToastStore } from "../../stores/toastStore";
-import { parseKeyCombination } from "../../utils/keyMapping";
+import { keyCodeToDisplay } from "../../utils/keyMapping";
 import { formatDuration } from "../../utils/fileHelpers";
 import * as commands from "../../utils/tauriCommands";
+import { KeyCaptureSlot } from "../Keys/KeyCaptureSlot";
 import type { LoopMode, SoundSource } from "../../types";
 
 type SourceMode = "local" | "youtube";
@@ -45,7 +47,8 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   const unlistenRef = useRef<(() => void) | null>(null);
   const downloadIdCounter = useRef(0);
   const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [keysInput, setKeysInput] = useState(targetKey || "");
+  // Key assignment: array of key codes (e.g., ["KeyA", "Ctrl+KeyB"])
+  const [assignedKeys, setAssignedKeys] = useState<string[]>(targetKey ? [targetKey] : [""]);
   const [selectedTrackId, setSelectedTrackId] = useState(
     currentProfile?.tracks[0]?.id || ""
   );
@@ -277,16 +280,45 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     }
   };
 
-  // Key input behavior: single file = replace, multiple = keep all typed keys
-  const handleKeyInput = (value: string) => {
-    if (targetKey) return;
+  // Get config for conflict checking
+  const config = useSettingsStore((s) => s.config);
 
-    if (isSingleFile) {
-      const lastChar = value.slice(-1).toLowerCase();
-      setKeysInput(lastChar);
-    } else {
-      setKeysInput(value.toLowerCase());
-    }
+  // Build conflict config for KeyCaptureSlot
+  const conflictConfig = {
+    masterStopShortcut: config?.masterStopShortcut,
+    autoMomentumShortcut: config?.autoMomentumShortcut,
+    keyDetectionShortcut: config?.keyDetectionShortcut,
+    existingBindings: currentProfile?.keyBindings.map((kb) => kb.keyCode).filter(
+      // Don't flag as conflict if we're adding to this key
+      (kc) => !targetKey || kc !== targetKey
+    ),
+  };
+
+  // Key slot management
+  const handleKeyChange = (index: number, keyCode: string) => {
+    setAssignedKeys((prev) => {
+      const next = [...prev];
+      next[index] = keyCode;
+      return next;
+    });
+  };
+
+  const handleAddKeySlot = () => {
+    setAssignedKeys((prev) => [...prev, ""]);
+  };
+
+  const handleRemoveKeySlot = (index: number) => {
+    if (assignedKeys.length <= 1) return;
+    setAssignedKeys((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Get valid keys (non-empty)
+  const validKeys = assignedKeys.filter((k) => k !== "");
+
+  // Calculate cycling preview: which key each file will be assigned to
+  const getKeyForFile = (fileIndex: number): string | null => {
+    if (validKeys.length === 0) return null;
+    return validKeys[fileIndex % validKeys.length];
   };
 
   const handleSubmit = () => {
@@ -316,7 +348,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
       return;
     }
 
-    const keyCodes = targetKey ? [targetKey] : parseKeyCombination(keysInput);
+    const keyCodes = targetKey ? [targetKey] : validKeys;
     if (keyCodes.length === 0) {
       addToast("Assign at least one key", "warning");
       return;
@@ -514,9 +546,9 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                 <div key={i} className="bg-bg-tertiary rounded p-2 space-y-1.5">
                   <div className="flex items-center gap-2">
                     {!isSingleFile && (
-                      <span className="text-accent-primary font-mono text-xs font-bold bg-bg-secondary px-1.5 py-0.5 rounded shrink-0">
-                          {keysInput.length > 0
-                          ? keysInput[i % keysInput.length].toUpperCase()
+                      <span className="text-accent-primary font-mono text-xs font-bold bg-bg-secondary px-1.5 py-0.5 rounded shrink-0 min-w-[24px] text-center">
+                        {getKeyForFile(i)
+                          ? keyCodeToDisplay(getKeyForFile(i)!)
                           : "-"}
                       </span>
                     )}
@@ -581,21 +613,55 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
 
         {/* Key assignment */}
         {!targetKey && (
-          <div className="space-y-1">
-            <label className="text-text-secondary text-sm">
-              {isSingleFile ? "Key" : `Keys (${files.length} needed)`}
-            </label>
-            <input
-              type="text"
-              value={keysInput}
-              onChange={(e) => handleKeyInput(e.target.value)}
-              placeholder={isSingleFile ? "a" : "asdfjkl"}
-              maxLength={isSingleFile ? 1 : files.length}
-              className="w-full bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary focus:border-border-focus outline-none font-mono tracking-widest"
-            />
-            {!isSingleFile && files.length > 0 && (
-              <p className="text-text-muted text-xs">
-                Each character maps to a file in order
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-text-secondary text-sm">
+                {isSingleFile ? "Key" : `Keys`}
+              </label>
+              {files.length > 1 && validKeys.length < files.length && (
+                <span className="text-text-muted text-xs">
+                  {validKeys.length} key{validKeys.length !== 1 ? "s" : ""} for {files.length} sounds
+                  {validKeys.length > 0 && " (will cycle)"}
+                </span>
+              )}
+            </div>
+
+            {/* Key capture slots */}
+            <div className="space-y-2">
+              {assignedKeys.map((keyCode, index) => (
+                <KeyCaptureSlot
+                  key={index}
+                  value={keyCode}
+                  onChange={(newKey) => handleKeyChange(index, newKey)}
+                  onRemove={assignedKeys.length > 1 ? () => handleRemoveKeySlot(index) : undefined}
+                  removable={assignedKeys.length > 1}
+                  conflictConfig={conflictConfig}
+                  index={assignedKeys.length > 1 ? index + 1 : undefined}
+                  placeholder="Click to assign key"
+                />
+              ))}
+            </div>
+
+            {/* Add key button */}
+            {files.length > 1 && (
+              <button
+                type="button"
+                onClick={handleAddKeySlot}
+                className="w-full px-3 py-2 text-sm text-text-muted hover:text-accent-primary border border-dashed border-border-color hover:border-accent-primary/50 rounded transition-colors flex items-center justify-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add another key
+              </button>
+            )}
+
+            {/* Cycling explanation */}
+            {files.length > 1 && validKeys.length > 0 && validKeys.length < files.length && (
+              <p className="text-text-muted text-xs bg-bg-tertiary rounded p-2">
+                Sounds will cycle through keys: {files.map((_, i) =>
+                  keyCodeToDisplay(getKeyForFile(i) || "?")
+                ).join(", ")}
               </p>
             )}
           </div>
