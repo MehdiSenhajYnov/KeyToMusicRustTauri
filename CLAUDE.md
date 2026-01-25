@@ -382,28 +382,59 @@ Use platform-specific app data directories:
 - **Resizable SoundDetails Panel:** Divider bar between KeyGrid and SoundDetails with drag-to-resize (min 120px, default 256px). Uses mousedown/mousemove/mouseup pattern with body cursor override.
 - **Drag & Drop:** Support for adding multiple audio files at once with bulk assignment to specified keys. Dropping files while AddSoundModal is open appends them to the existing file list (uses `processedFilesRef` to distinguish mount vs. subsequent prop changes, React StrictMode safe).
 
-## Planned Features (Phase 8)
+## Implemented Features (Phase 8)
 
-### Profile Duplication
-- Duplicate an existing profile via right-click context menu
+### Profile Duplication ✅
+- Duplicate an existing profile via button in ProfileSelector
 - Creates a copy with new UUID, appends "(Copy)" to name
-- Backend: `duplicate_profile(id, new_name)` command
-- Frontend: Option in ProfileSelector context menu
+- Backend: `duplicate_profile(id, new_name)` command in `storage/profile.rs`
+- Frontend: Duplicate button (SVG icon) in ProfileSelector, calls `profileStore.duplicateProfile()`
 
-### Combined Key Shortcuts (Modifiers)
-- Support key combinations like `Ctrl+A`, `Shift+F1`, `Alt+1` as sound triggers
-- Doubles the number of available key bindings without additional hardware
-- Modifier detection in both backend (detector.rs) and frontend (useKeyDetection)
-- Display format: "Ctrl+Shift+A" instead of "KeyA"
-- Conflict detection with system and app shortcuts
+### Combined Key Shortcuts (Modifiers) 🔄 Partial
+- **Backend: ✅ Complete** - `detector.rs` emits combined codes ("Ctrl+Shift+KeyA")
+- **Frontend detection: ✅ Complete** - `useKeyDetection.ts` matches combined codes with fallback to base key
+- **Frontend UI: ⏳ Pending** - AddSoundModal still uses text input "aze", doesn't support assigning combined shortcuts
+- Modifier order: Ctrl > Shift > Alt > Key
+- Shift+X on existing "X" binding still triggers momentum (backward compatible)
+- `keyMapping.ts` has helpers: `buildKeyCombo()`, `parseKeyCombo()`, `checkKeyComboConflict()`
 
-### Undo/Redo System
-- Ctrl+Z for Undo, Ctrl+Y for Redo
+### Undo/Redo System ✅
+- Ctrl+Z for Undo, Ctrl+Y / Cmd+Shift+Z for Redo
 - Implemented via `historyStore.ts` with past/future stacks
-- Undoable actions: sound deletion, binding changes, track deletion, sound modifications
-- Non-undoable: profile creation/deletion, YouTube downloads
+- Undoable: sound add/delete/modify, binding add/delete/modify, track add/delete
+- Non-undoable: profile creation/deletion, YouTube downloads, duration preloads, playback index
 - Maximum 50 history entries to limit memory usage
-- Toast feedback: "Action undone" / "Action redone"
+- Toast feedback: "Undo: {actionName}" / "Redo: {actionName}"
+- History cleared on profile switch
+- `useUndoRedo.ts` hook integrated in `App.tsx`
+
+## Planned Features (Future Phases)
+
+### AddSoundModal UI Refactor (Phase 8.2.6)
+- Replace text input "aze" with key capture slots (like Settings shortcuts)
+- Each slot: click to enter capture mode → press key combo → displays "Ctrl+A"
+- "+" button to add more key slots if keys < sounds
+- Preview of cycling assignment in real-time
+- Enables full Combined Key Shortcuts support
+
+### Multi-Key Chords (Phase 8.4)
+- Support pressing multiple non-modifier keys simultaneously (like piano chords)
+- Example: "A+Z" = A and Z pressed at the same time
+- Requires 30-50ms detection window (adds latency)
+- Exponentially increases available bindings (50 keys → 1,225 two-key combos)
+- Conflict resolution: longer combos have priority
+- Status: Planned for later if Modifier+Key doesn't suffice
+
+### Configurable Momentum Modifier (Phase 8.5)
+- Let user choose momentum trigger: Shift (default), Alt, Ctrl, or None
+- Solves Numpad+Shift hardware limitation (Shift+Numpad4 sends ArrowLeft instead)
+- New config field: `momentumModifier: "Shift" | "Alt" | "Ctrl" | "None"`
+- Status: Under discussion
+
+## Known Limitations
+
+### Numpad + Shift
+When NumLock is ON and Shift is pressed with a numpad key, the OS sends the alternate key (ArrowLeft, End, etc.) instead of "Shift+Numpad4". This is standard keyboard hardware behavior, not a bug. Workaround: use Alt or Ctrl as momentum modifier (Phase 8.5) or assign explicit Shift+Numpad bindings.
 
 ## Technical Limits
 

@@ -14,7 +14,7 @@
 > **Phase 6.5 COMPLÉTÉE** - 2026-01-24 (Concurrent YouTube Downloads & Key Cycling)
 > **Phase 7 COMPLÉTÉE** - 2026-01-24 (Error Handling: logging, error sound, FileNotFoundModal, verification, toasts)
 > **Phase 7.5 COMPLÉTÉE** - 2026-01-24 (Legacy Import: conversion des saves de l'ancienne version)
-> **Phase 8** ✅ - Nouvelles Features (Profile Duplication, Combined Shortcuts, Undo/Redo)
+> **Phase 8** 🔄 - Nouvelles Features (Profile Duplication ✅, Combined Shortcuts 🔄, Undo/Redo ✅)
 
 ---
 
@@ -32,7 +32,12 @@
 10. [Phase 6.5 - Concurrent YouTube Downloads & Key Cycling](#phase-65---concurrent-youtube-downloads--key-cycling)
 11. [Phase 7 - Gestion des Erreurs](#phase-7---gestion-des-erreurs)
 12. [Phase 7.5 - Legacy Import](#phase-75---legacy-import)
-13. [Phase 8 - Nouvelles Features](#phase-8---nouvelles-features)
+13. [Phase 8 - Nouvelles Features](#phase-8---nouvelles-features) 🔄
+    - [8.1 Duplication de Profil](#81-duplication-de-profil-) ✅
+    - [8.2 Raccourcis Combinés](#82-raccourcis-clavier-combinés-modificateurs--partiellement-complété) 🔄
+    - [8.3 Undo/Redo](#83-système-undoredo-) ✅
+    - [8.4 Multi-Key Chords](#84-multi-key-chords-future--planifié) ⏳
+    - [8.5 Momentum Modifier](#85-modificateur-momentum-configurable--en-discussion) ⏳
 14. [Phase 9 - Polish & Optimisations](#phase-9---polish--optimisations)
 15. [Phase 10 - Tests & Validation](#phase-10---tests--validation)
 16. [Phase 11 - Build & Release](#phase-11---build--release-bonus)
@@ -1697,9 +1702,11 @@
 
 ---
 
-## Phase 8 - Nouvelles Features ✅ COMPLÉTÉE
+## Phase 8 - Nouvelles Features 🔄 EN COURS
 
 Cette phase ajoute des fonctionnalités demandées pour améliorer l'UX sans alourdir l'interface.
+
+> **Note**: Phase 8.1 (Duplication) et 8.3 (Undo/Redo) sont complétées. Phase 8.2 (Combined Shortcuts) est partiellement implémentée - le backend fonctionne mais l'UI nécessite une refonte.
 
 ### 8.1 Duplication de Profil ✅
 
@@ -1732,9 +1739,13 @@ Cette phase ajoute des fonctionnalités demandées pour améliorer l'UX sans alo
   - [x] Sélectionner le nouveau profil
   **✅ Complété** - Fonction ajoutée au store et à tauriCommands.ts
 
-### 8.2 Raccourcis Clavier Combinés (Modificateurs) ✅
+### 8.2 Raccourcis Clavier Combinés (Modificateurs) 🔄 PARTIELLEMENT COMPLÉTÉ
 
 Permettre l'utilisation de combinaisons comme Ctrl+A, Shift+F1, Alt+1 comme triggers de sons.
+
+**Backend : ✅ Complété** | **Frontend UI : ⏳ En attente**
+
+> **Note**: Le backend envoie les codes combinés mais l'UI AddSoundModal utilise encore un input texte "aze" qui ne supporte pas les combinaisons. Une refonte UI est nécessaire (voir 8.2.6).
 
 - [x] **8.2.1** Modifier le type `KeyBinding` pour supporter les modificateurs
   - [x] Utiliser une notation combinée dans `keyCode` (ex: "Ctrl+KeyA")
@@ -1765,6 +1776,22 @@ Permettre l'utilisation de combinaisons comme Ctrl+A, Shift+F1, Alt+1 comme trig
   - [x] Vérifie les conflits avec Ctrl+C/V/X/Z/Y/A/S/W/Q/N/T, Alt+F4
   - [x] Avertit pour Ctrl+chiffre (tabs) et Alt+lettre (menus Windows)
   **✅ Complété** - Validation des conflits système implémentée
+
+- [ ] **8.2.6** Refonte UI AddSoundModal pour key assignment
+  - [ ] Créer composant `KeyCaptureSlot` réutilisable (click → capture mode → press keys)
+  - [ ] Remplacer l'input texte "aze" par une liste de slots de capture
+  - [ ] Chaque slot capture une combinaison de touches (ex: Ctrl+A, Shift+F1)
+  - [ ] Bouton "+" pour ajouter un slot si `nombre de keys < nombre de sons`
+  - [ ] Bouton "×" pour supprimer un slot
+  - [ ] Preview du cycling en temps réel (Sound 1 → Key 1, Sound 2 → Key 2, Sound 3 → Key 1...)
+  - [ ] Même pattern de capture que les global shortcuts dans Settings
+  **⏳ En attente** - UI à développer
+
+- [ ] **8.2.7** Mise à jour KeyGrid pour afficher les combinaisons
+  - [ ] Gérer les noms plus longs ("Ctrl+Shift+A" vs "A")
+  - [ ] Truncate ou font-size adaptative si nécessaire
+  - [ ] Tester avec différentes largeurs de fenêtre
+  **⏳ En attente**
 
 ### 8.3 Système Undo/Redo ✅
 
@@ -1811,6 +1838,71 @@ Implémenter Ctrl+Z (Undo) et Ctrl+Y (Redo) pour les modifications de profil.
   - [ ] Griser Redo si `future` est vide
   - [ ] Possibilité d'afficher le nom de la prochaine action annulable dans un tooltip
   **⏳ Optionnel** - Non implémenté (UI non alourdie)
+
+### 8.4 Multi-Key Chords (Future) ⏳ PLANIFIÉ
+
+Permettre des combinaisons de touches non-modifier pressées simultanément (comme un accord de piano).
+
+> **Note**: Cette feature est prévue pour plus tard. Elle nécessite une fenêtre de détection de 30-50ms qui ajoute de la latence. À implémenter seulement si les combinaisons Modifier+Key ne suffisent pas.
+
+- [ ] **8.4.1** Implémenter la fenêtre de détection 30ms
+  - [ ] Quand une touche est pressée, démarrer un timer de 30ms
+  - [ ] Si d'autres touches sont pressées dans ce délai, reset le timer
+  - [ ] Quand le timer expire (30ms sans nouvelle touche), déclencher l'événement
+  - [ ] Trier les touches alphabétiquement pour consistance ("KeyA+KeyZ" pas "KeyZ+KeyA")
+
+- [ ] **8.4.2** Résolution de conflits entre bindings
+  - [ ] Si bindings existent pour "A", "A+Z", et "A+Z+M"
+  - [ ] Priorité au binding le plus spécifique (le plus de touches)
+  - [ ] Pas de double-trigger (A ne trigger pas si A+Z est reconnu)
+
+- [ ] **8.4.3** Optimisation sélective du délai
+  - [ ] N'appliquer le délai que si le profil contient des multi-key bindings
+  - [ ] Touches simples restent instantanées si aucun chord potentiel
+
+- [ ] **8.4.4** UI pour capturer les multi-key chords
+  - [ ] Afficher "Press keys..." et enregistrer toutes les touches pressées "simultanément"
+  - [ ] Afficher preview : "A + Z" avant confirmation
+
+**Avantage combinatoire:**
+| Type | Combinaisons (~50 touches) |
+|------|----------------------------|
+| 1 touche | 50 |
+| 2 touches | 1,225 |
+| 3 touches | 19,600 |
+| + Modifiers (×8) | ×8 pour chaque |
+
+### 8.5 Modificateur Momentum Configurable ⏳ EN DISCUSSION
+
+Permettre à l'utilisateur de choisir quel modificateur déclenche le momentum.
+
+> **Note**: En discussion. Cette feature résoudrait le problème Numpad+Shift (limitation hardware où Shift+Numpad4 envoie ArrowLeft au lieu de Numpad4).
+
+- [ ] **8.5.1** Ajouter le champ config `momentumModifier`
+  - [ ] Type: `"Shift" | "Alt" | "Ctrl" | "None"`
+  - [ ] Défaut: "Shift" (comportement actuel)
+  - [ ] "None" = momentum désactivé (utiliser Auto-Momentum toggle)
+
+- [ ] **8.5.2** Ajouter dropdown dans Settings
+  - [ ] Sous la section "Key Detection"
+  - [ ] Label: "Momentum Modifier"
+  - [ ] Options: Shift (default), Alt, Ctrl, None
+
+- [ ] **8.5.3** Mettre à jour backend (`detector.rs`)
+  - [ ] Lire le modifier configuré au lieu de hardcoder Shift
+  - [ ] `with_momentum: bool` basé sur le modifier configuré
+
+- [ ] **8.5.4** Mettre à jour frontend (`useKeyDetection.ts`)
+  - [ ] Lire `config.momentumModifier`
+  - [ ] Vérifier le modifier correspondant pour déclencher momentum
+
+**Options:**
+| Modifier | Avantage | Inconvénient |
+|----------|----------|--------------|
+| Shift (défaut) | Intuitif | Conflit Numpad |
+| Alt | Fonctionne partout | Moins naturel |
+| Ctrl | Fonctionne partout | Conflits système possibles |
+| None | Simple | Perd la flexibilité |
 
 ---
 

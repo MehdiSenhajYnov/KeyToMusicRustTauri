@@ -2638,149 +2638,317 @@ useEffect(() => {
 
 ---
 
-## 14. Fonctionnalités Planifiées (Phase 8)
+## 14. Phase 8 - Nouvelles Features
 
-### 14.1 Duplication de Profil
+### 14.1 Duplication de Profil ✅ IMPLÉMENTÉ
 
 Permet de dupliquer un profil existant pour créer une variante.
 
 **Backend (`storage/profile.rs`):**
 ```rust
-pub fn duplicate_profile(id: &str, new_name: Option<String>) -> Result<Profile, String> {
+pub fn duplicate_profile(id: String, new_name: Option<String>) -> Result<Profile, String> {
     let source = load_profile(id)?;
-    let mut new_profile = source.clone();
-    new_profile.id = Uuid::new_v4().to_string();
-    new_profile.name = new_name.unwrap_or_else(|| format!("{} (Copy)", source.name));
-    new_profile.created_at = chrono::Utc::now().to_rfc3339();
-    new_profile.updated_at = new_profile.created_at.clone();
+    let new_id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    let name = new_name.unwrap_or_else(|| format!("{} (Copy)", source.name));
+    let new_profile = Profile {
+        id: new_id,
+        name,
+        created_at: now.clone(),
+        updated_at: now,
+        sounds: source.sounds,
+        tracks: source.tracks,
+        key_bindings: source.key_bindings,
+    };
     save_profile(&new_profile)?;
     Ok(new_profile)
 }
 ```
 
-**Frontend:** Option "Duplicate" dans le menu contextuel (clic droit) de `ProfileSelector.tsx`.
+**Commande Tauri (`commands.rs`):**
+```rust
+#[tauri::command]
+pub fn duplicate_profile(id: String, new_name: Option<String>) -> Result<Profile, String> {
+    storage::duplicate_profile(id, new_name)
+}
+```
 
-### 14.2 Raccourcis Clavier Combinés (Modificateurs)
+**Frontend (`ProfileSelector.tsx`):** Bouton "Duplicate" (icône SVG) à côté du bouton "Delete".
+
+### 14.2 Raccourcis Clavier Combinés (Modificateurs) 🔄 PARTIELLEMENT IMPLÉMENTÉ
 
 Permet d'utiliser des combinaisons de touches comme triggers (ex: `Ctrl+A`, `Shift+F1`, `Alt+1`).
 
-**Format de stockage:** Deux options possibles:
-1. Champ séparé: `keyCode: "KeyA", modifiers: ["ControlLeft"]`
-2. Notation combinée: `keyCode: "Ctrl+KeyA"`
+**Status:**
+- ✅ Backend (`detector.rs`): Émet les codes combinés
+- ✅ Frontend detection (`useKeyDetection.ts`): Match les codes combinés avec fallback
+- ✅ Key mapping (`keyMapping.ts`): Fonctions d'affichage et validation
+- ⏳ Frontend UI (`AddSoundModal.tsx`): Utilise encore un input texte, pas de capture
+
+**Format de stockage:** Notation combinée `keyCode: "Ctrl+KeyA"` (backward compatible).
+
+**Ordre des modificateurs:** `Ctrl > Shift > Alt > Key` (consistant backend/frontend).
 
 **Détection backend (`detector.rs`):**
 ```rust
-// Lors d'un KeyPress, vérifier les modificateurs maintenus
+// Build combined key code with modifiers (Ctrl, Alt, Shift)
+let has_ctrl = pressed.contains("ControlLeft") || pressed.contains("ControlRight");
+let has_alt = pressed.contains("AltLeft") || pressed.contains("AltRight");
+let has_shift = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
+
 let mut combo = String::new();
-if pressed.contains("ControlLeft") || pressed.contains("ControlRight") {
-    combo.push_str("Ctrl+");
-}
-if pressed.contains("ShiftLeft") || pressed.contains("ShiftRight") {
-    combo.push_str("Shift+");
-}
-if pressed.contains("AltLeft") || pressed.contains("AltRight") {
-    combo.push_str("Alt+");
-}
-combo.push_str(&key_code);
-// Émettre l'événement avec le combo
+if has_ctrl { combo.push_str("Ctrl+"); }
+if has_shift { combo.push_str("Shift+"); }
+if has_alt { combo.push_str("Alt+"); }
+combo.push_str(&code);
+
+cb(KeyEvent::KeyPressed { key_code: combo, with_shift: has_shift });
 ```
 
-**Affichage (`keyMapping.ts`):**
+**Frontend detection avec fallback (`useKeyDetection.ts`):**
 ```typescript
-function formatKeyCombo(keyCode: string): string {
-  // "Ctrl+Shift+KeyA" → "Ctrl+Shift+A"
-  return keyCode
-    .replace("Key", "")
-    .replace("Digit", "")
-    .split("+")
-    .map(part => part === "Control" ? "Ctrl" : part)
-    .join("+");
+// 1. Essayer le match exact (Ctrl+A)
+let binding = profile.keyBindings.find((kb) => kb.keyCode === payload.keyCode);
+let useModifierForMomentum = false;
+
+// 2. Fallback: si pas de match et combo contient "+", essayer la touche de base
+if (!binding && payload.keyCode.includes("+")) {
+  const parts = payload.keyCode.split("+");
+  const baseKey = parts[parts.length - 1];
+  binding = profile.keyBindings.find((kb) => kb.keyCode === baseKey);
+  // Si fallback avec Shift, appliquer momentum
+  if (binding && payload.withShift) {
+    useModifierForMomentum = true;
+  }
 }
 ```
 
-**Validation:** Détecter les conflits avec les raccourcis système (Ctrl+C, Ctrl+V, etc.) et les raccourcis de l'app (Master Stop, etc.).
+**Validation des conflits (`keyMapping.ts`):**
+```typescript
+export function checkKeyComboConflict(keyCode: string): { type: 'error' | 'warning'; message: string } | null {
+  const forbidden = ["Ctrl+C", "Ctrl+V", "Ctrl+X", "Ctrl+Z", "Ctrl+Y", "Ctrl+A", "Ctrl+S", ...];
+  const warnings = ["Ctrl+1", "Ctrl+2", ...]; // Browser tabs
+  // ...
+}
+```
 
-### 14.3 Système Undo/Redo
+#### 14.2.1 Refonte UI AddSoundModal (EN ATTENTE)
+
+L'UI actuelle utilise un input texte ("aze") qui ne supporte pas les combinaisons. Refonte nécessaire:
+
+**UI Actuelle:**
+```
+Keys: [aze________]  ← tape tout d'un coup
+```
+
+**UI Proposée:**
+```
+Keys:
+┌────────────────────────────────────────┐
+│ 1. [Click to capture]  →  [Ctrl+A] [×] │
+│ 2. [Click to capture]  →  [Z]      [×] │
+│ 3. [+ Add key]                         │
+└────────────────────────────────────────┘
+
+Sounds (5):                  Assigned to:
+├─ epic_battle.mp3           → Ctrl+A (key 1)
+├─ calm_ambient.mp3          → Z (key 2)
+├─ victory_theme.mp3         → Ctrl+A (cycle)
+├─ tension.mp3               → Z (cycle)
+└─ finale.mp3                → Ctrl+A (cycle)
+```
+
+**Composant `KeyCaptureSlot`:**
+- Click → mode capture → "Press key..."
+- Capture touche(s) avec modifiers
+- Affiche "Ctrl+A" ou "Shift+F1"
+- Bouton × pour supprimer
+- Réutilisable (comme dans Settings pour global shortcuts)
+
+### 14.3 Système Undo/Redo ✅ IMPLÉMENTÉ
 
 Permet d'annuler et rétablir les modifications de profil via Ctrl+Z / Ctrl+Y.
 
 **Store (`src/stores/historyStore.ts`):**
 ```typescript
+interface ProfileState {
+  sounds: Sound[];
+  tracks: Track[];
+  keyBindings: KeyBinding[];
+}
+
 interface HistoryEntry {
   timestamp: number;
-  action: string;           // "delete_sound", "change_binding", etc.
-  previousState: Partial<Profile>;
-  newState: Partial<Profile>;
+  actionName: string;       // "Add sound", "Delete binding", etc.
+  previousState: ProfileState;
 }
 
 interface HistoryStore {
   past: HistoryEntry[];     // Stack pour undo
   future: HistoryEntry[];   // Stack pour redo
-  maxEntries: number;       // Limite: 50
 
-  pushState: (entry: HistoryEntry) => void;
-  undo: () => void;
-  redo: () => void;
+  pushState: (actionName: string, previousState: ProfileState) => void;
+  undo: () => HistoryEntry | null;
+  redo: () => HistoryEntry | null;
   clear: () => void;
   canUndo: () => boolean;
   canRedo: () => boolean;
 }
 ```
 
-**Actions annulables:**
-- Suppression de son
-- Suppression de binding (touche)
-- Suppression de track
-- Modification de binding (changement de touche, ajout/retrait de son)
-- Modification de son (volume, momentum, nom)
-- Changement de loop mode
+**Actions annulables (intégrées dans `profileStore.ts`):**
+- `addSound` / `removeSound` / `updateSound`
+- `addTrack` / `removeTrack` / `updateTrack`
+- `addKeyBinding` / `updateKeyBinding` / `removeKeyBinding`
 
 **Actions NON annulables:**
 - Création/suppression de profil
-- Téléchargements YouTube (irréversibles)
+- Téléchargements YouTube
+- Mises à jour de `duration` (preload)
+- Mises à jour de `currentIndex` (playback)
 - Modifications de configuration globale
 
 **Intégration avec profileStore:**
 ```typescript
-// Avant chaque action annulable:
-const previousState = getRelevantState();
-performAction();
-const newState = getRelevantState();
-historyStore.pushState({ action: "action_name", previousState, newState });
-
-// Undo:
-const entry = past.pop();
-applyState(entry.previousState);
-future.push(entry);
-
-// Redo:
-const entry = future.pop();
-applyState(entry.newState);
-past.push(entry);
+// Exemple dans addSound:
+addSound: (sound) => {
+  const prev = captureProfileState(get().currentProfile);  // Capture avant
+  set((state) => ({
+    currentProfile: state.currentProfile
+      ? { ...state.currentProfile, sounds: [...state.currentProfile.sounds, sound] }
+      : null,
+  }));
+  if (prev) {
+    useHistoryStore.getState().pushState("Add sound", prev);
+  }
+}
 ```
 
 **Hook (`src/hooks/useUndoRedo.ts`):**
 ```typescript
-useEffect(() => {
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (isTextInputFocused()) return;
+export function useUndoRedo() {
+  const { undo, redo } = useProfileStore();
+  const addToast = useToastStore((s) => s.addToast);
 
-    if (e.ctrlKey && e.key === 'z') {
-      e.preventDefault();
-      historyStore.undo();
-      showToast("Action annulée");
-    }
-    if (e.ctrlKey && e.key === 'y') {
-      e.preventDefault();
-      historyStore.redo();
-      showToast("Action rétablie");
-    }
-  };
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if text input focused
+      if (document.activeElement?.tagName === "INPUT" ||
+          document.activeElement?.tagName === "TEXTAREA") return;
 
-  window.addEventListener('keydown', handleKeyDown);
-  return () => window.removeEventListener('keydown', handleKeyDown);
-}, []);
+      const isMac = navigator.platform.toUpperCase().includes("MAC");
+      const isUndo = (e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey;
+      const isRedo = (e.ctrlKey && e.key === "y") || (isMac && e.metaKey && e.shiftKey && e.key === "z");
+
+      if (isUndo) {
+        e.preventDefault();
+        const result = undo();
+        if (result) addToast(`Undo: ${result.actionName}`, "info");
+      }
+      if (isRedo) {
+        e.preventDefault();
+        const result = redo();
+        if (result) addToast(`Redo: ${result.actionName}`, "info");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undo, redo, addToast]);
+}
 ```
+
+**Intégration App.tsx:** `useUndoRedo()` est appelé dans le composant App.
+
+### 14.4 Multi-Key Chords (Accords) ⏳ PLANIFIÉ
+
+Permettre de presser plusieurs touches non-modifier simultanément (comme un accord de piano).
+
+**Exemple:** `KeyA+KeyZ` = A et Z pressés en même temps.
+
+**Avantage combinatoire:**
+| Type | Combinaisons (~50 touches) |
+|------|----------------------------|
+| 1 touche | 50 |
+| 2 touches | C(50,2) = 1,225 |
+| 3 touches | C(50,3) = 19,600 |
+| + Modifiers (×8) | ×8 pour chaque |
+
+**Défi technique:** Les touches arrivent séquentiellement même si pressées "en même temps":
+```
+t=0ms    KeyA down
+t=3ms    KeyZ down    ← "simultané" mais 3ms d'écart
+```
+
+**Solution proposée: Fenêtre de détection 30ms**
+```rust
+// Pseudo-code backend
+fn on_key_press(key: String) {
+    pressed_keys.insert(key);
+    start_or_reset_timer(30ms);
+}
+
+fn on_timer_expire() {
+    let chord = pressed_keys.iter().sorted().join("+");  // "KeyA+KeyZ"
+    emit_key_event(chord);
+}
+```
+
+**Résolution de conflits:**
+- Si bindings pour "A", "A+Z", et "A+Z+M" existent
+- Priorité au binding avec le plus de touches
+- Pas de double-trigger
+
+**Trade-off:** +30-50ms de latence sur toutes les touches.
+
+**Optimisation:** N'appliquer le délai que si des multi-key bindings existent dans le profil.
+
+**Status:** Planifié pour plus tard si Modifier+Key ne suffit pas.
+
+### 14.5 Modificateur Momentum Configurable ⏳ EN DISCUSSION
+
+Permettre à l'utilisateur de choisir quel modificateur déclenche le momentum.
+
+**Problème:** Numpad + Shift ne fonctionne pas (limitation hardware - voir section 14.6).
+
+**Solution proposée:**
+```typescript
+// config.json
+{
+  "momentumModifier": "Shift" | "Alt" | "Ctrl" | "None"
+}
+```
+
+**Options:**
+| Modifier | Avantage | Inconvénient |
+|----------|----------|--------------|
+| Shift (défaut) | Intuitif | Conflit Numpad |
+| Alt | Fonctionne partout | Moins naturel |
+| Ctrl | Fonctionne partout | Conflits système possibles |
+| None | Simple | Perd la flexibilité |
+
+**UI:** Dropdown dans Settings, section "Key Detection".
+
+**Status:** En discussion - à décider si on implémente.
+
+### 14.6 Limitations Connues
+
+#### Numpad + Shift (Hardware)
+
+Quand NumLock est ON et Shift est pressé avec une touche numpad, le système d'exploitation envoie la touche alternative au lieu de "Shift+Numpad4":
+
+| Touche | NumLock ON | Shift + NumLock ON |
+|--------|------------|-------------------|
+| Numpad4 | "Numpad4" | "ArrowLeft" ou "End" |
+| Numpad8 | "Numpad8" | "ArrowUp" |
+| Numpad2 | "Numpad2" | "ArrowDown" |
+
+C'est un comportement standard des claviers depuis DOS, pas un bug de l'application.
+
+**Workarounds:**
+1. Utiliser Alt ou Ctrl comme momentum modifier (Phase 14.5)
+2. Assigner des bindings explicites pour les touches alternatives
+3. Désactiver NumLock
 
 ---
 
@@ -2803,6 +2971,8 @@ useEffect(() => {
 | Master Stop | `Ctrl + Shift + S` (configurable) | Fonctionne même si Key Detection est off |
 | Toggle Key Detection | Configurable dans Settings | Fonctionne même si Key Detection est off |
 | Toggle Auto-Momentum | Configurable dans Settings | Fonctionne même si Key Detection est off |
+| Undo | `Ctrl + Z` (Windows/Linux) / `Cmd + Z` (macOS) | Annule la dernière action de profil |
+| Redo | `Ctrl + Y` (Windows/Linux) / `Cmd + Shift + Z` (macOS) | Rétablit l'action annulée |
 
 ### C. Limites Techniques
 
@@ -2820,10 +2990,16 @@ useEffect(() => {
 ---
 
 **Document généré le** : 2024-01-20
-**Dernière mise à jour** : 2025-01-25
-**Version** : 1.2.0
+**Dernière mise à jour** : 2026-01-25
+**Version** : 1.3.0
 **Auteur** : Document technique pour Claude Code
 
 ### Changelog
+- **v1.3.0** (2026-01-25):
+  - Phase 8 implémentée: Profile Duplication ✅, Undo/Redo ✅, Combined Shortcuts (backend ✅, UI ⏳)
+  - Ajout section 14.2.1 (UI refactor AddSoundModal)
+  - Ajout section 14.4 (Multi-Key Chords - planifié)
+  - Ajout section 14.5 (Momentum Modifier Configurable - en discussion)
+  - Ajout section 14.6 (Limitations Connues - Numpad+Shift)
 - **v1.2.0** (2025-01-25): Ajout de la section 14 (Features planifiées: Profile Duplication, Combined Shortcuts, Undo/Redo)
 - **v1.1.0** (2025-01-25): Ajout de l'implémentation macOS CGEventTap (section 6.7), ConfirmDialog (section 9.4.3), dépendances conditionnelles par plateforme
