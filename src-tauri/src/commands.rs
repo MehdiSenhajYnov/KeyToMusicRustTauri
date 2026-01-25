@@ -2,7 +2,7 @@ use crate::audio::{self, buffer::BufferManager};
 use crate::import_export;
 use crate::state::AppState;
 use crate::storage;
-use crate::types::{AppConfig, Profile, Sound, SoundSource};
+use crate::types::{AppConfig, MomentumModifier, Profile, Sound, SoundSource};
 use crate::youtube;
 use tauri::{Emitter, State};
 
@@ -70,6 +70,15 @@ pub fn update_config(
         }
         if let Some(v) = updates.get("chordWindowMs").and_then(|v| v.as_u64()) {
             config.chord_window_ms = v as u32;
+        }
+        if let Some(v) = updates.get("momentumModifier").and_then(|v| v.as_str()) {
+            config.momentum_modifier = match v {
+                "Shift" => MomentumModifier::Shift,
+                "Ctrl" => MomentumModifier::Ctrl,
+                "Alt" => MomentumModifier::Alt,
+                "None" => MomentumModifier::None,
+                _ => MomentumModifier::Shift, // default fallback
+            };
         }
     });
 
