@@ -3,6 +3,7 @@ import type { Profile, KeyBinding, Sound, Track } from "../types";
 import * as commands from "../utils/tauriCommands";
 import type { ProfileSummary } from "../utils/tauriCommands";
 import { useErrorStore } from "./errorStore";
+import { useHistoryStore, captureProfileState, applyHistoryState } from "./historyStore";
 
 function getSoundFilePath(sound: Sound): string {
   if (sound.source.type === "local") return sound.source.path;
@@ -44,6 +45,7 @@ interface ProfileState {
   saveCurrentProfile: () => Promise<void>;
   deleteProfile: (id: string) => Promise<void>;
   renameProfile: (id: string, newName: string) => Promise<void>;
+  duplicateProfile: (id: string, newName?: string) => Promise<Profile | null>;
 
   // Sounds
   addSound: (sound: Sound) => void;
@@ -59,6 +61,10 @@ interface ProfileState {
   addKeyBinding: (binding: KeyBinding) => void;
   updateKeyBinding: (keyCode: string, updates: Partial<KeyBinding>) => void;
   removeKeyBinding: (keyCode: string) => void;
+
+  // Undo/Redo
+  undo: () => boolean;
+  redo: () => boolean;
 }
 
 export const useProfileStore = create<ProfileState>((set, get) => ({
@@ -89,6 +95,8 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     try {
       // Stop any playing sounds before switching
       await commands.stopAllSounds().catch(() => {});
+      // Clear undo history when switching profiles
+      useHistoryStore.getState().clear();
       const profile = await commands.loadProfile(id);
       // Clean up orphaned sounds (not referenced by any key binding)
       const referencedIds = new Set(
@@ -181,7 +189,23 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     }
   },
 
+  duplicateProfile: async (id, newName) => {
+    try {
+      const profile = await commands.duplicateProfile(id, newName);
+      await get().loadProfiles();
+      return profile;
+    } catch (e) {
+      console.error("Failed to duplicate profile:", e);
+      return null;
+    }
+  },
+
   addSound: (sound) => {
+    const { currentProfile } = get();
+    if (!currentProfile) return;
+
+    const previousState = captureProfileState(currentProfile);
+
     set((state) => {
       if (!state.currentProfile) return state;
       return {
@@ -191,9 +215,18 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         },
       };
     });
+
+    const newState = captureProfileState(get().currentProfile!);
+    useHistoryStore.getState().pushState("Add sound", previousState, newState);
   },
 
   removeSound: (soundId) => {
+    const { currentProfile } = get();
+    if (!currentProfile) return;
+
+    const sound = currentProfile.sounds.find((s) => s.id === soundId);
+    const previousState = captureProfileState(currentProfile);
+
     set((state) => {
       if (!state.currentProfile) return state;
       return {
@@ -207,9 +240,29 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         },
       };
     });
+
+    const newState = captureProfileState(get().currentProfile!);
+    useHistoryStore.getState().pushState(
+      `Remove sound "${sound?.name || soundId}"`,
+      previousState,
+      newState
+    );
   },
 
   updateSound: (soundId, updates) => {
+    const { currentProfile } = get();
+    if (!currentProfile) return;
+
+    // Only track meaningful changes (not duration updates from preload)
+    const trackableUpdates = ["name", "momentum", "volume"];
+    const hasTrackableChange = Object.keys(updates).some((k) =>
+      trackableUpdates.includes(k)
+    );
+
+    const previousState = hasTrackableChange
+      ? captureProfileState(currentProfile)
+      : null;
+
     set((state) => {
       if (!state.currentProfile) return state;
       return {
@@ -221,9 +274,19 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         },
       };
     });
+
+    if (previousState) {
+      const newState = captureProfileState(get().currentProfile!);
+      useHistoryStore.getState().pushState("Update sound", previousState, newState);
+    }
   },
 
   addTrack: (track) => {
+    const { currentProfile } = get();
+    if (!currentProfile) return;
+
+    const previousState = captureProfileState(currentProfile);
+
     set((state) => {
       if (!state.currentProfile) return state;
       return {
@@ -233,9 +296,18 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         },
       };
     });
+
+    const newState = captureProfileState(get().currentProfile!);
+    useHistoryStore.getState().pushState(`Add track "${track.name}"`, previousState, newState);
   },
 
   removeTrack: (trackId) => {
+    const { currentProfile } = get();
+    if (!currentProfile) return;
+
+    const track = currentProfile.tracks.find((t) => t.id === trackId);
+    const previousState = captureProfileState(currentProfile);
+
     set((state) => {
       if (!state.currentProfile) return state;
       return {
@@ -248,9 +320,23 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         },
       };
     });
+
+    const newState = captureProfileState(get().currentProfile!);
+    useHistoryStore.getState().pushState(
+      `Remove track "${track?.name || trackId}"`,
+      previousState,
+      newState
+    );
   },
 
   updateTrack: (trackId, updates) => {
+    const { currentProfile } = get();
+    if (!currentProfile) return;
+
+    // Only track name changes, not playback state updates
+    const hasNameChange = "name" in updates;
+    const previousState = hasNameChange ? captureProfileState(currentProfile) : null;
+
     set((state) => {
       if (!state.currentProfile) return state;
       return {
@@ -262,9 +348,19 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         },
       };
     });
+
+    if (previousState) {
+      const newState = captureProfileState(get().currentProfile!);
+      useHistoryStore.getState().pushState("Rename track", previousState, newState);
+    }
   },
 
   addKeyBinding: (binding) => {
+    const { currentProfile } = get();
+    if (!currentProfile) return;
+
+    const previousState = captureProfileState(currentProfile);
+
     set((state) => {
       if (!state.currentProfile) return state;
       // Replace existing binding for same key
@@ -278,9 +374,25 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         },
       };
     });
+
+    const newState = captureProfileState(get().currentProfile!);
+    useHistoryStore.getState().pushState("Add key binding", previousState, newState);
   },
 
   updateKeyBinding: (keyCode, updates) => {
+    const { currentProfile } = get();
+    if (!currentProfile) return;
+
+    // Only track meaningful changes (not currentIndex updates from playback)
+    const trackableUpdates = ["loopMode", "name", "soundIds", "trackId"];
+    const hasTrackableChange = Object.keys(updates).some((k) =>
+      trackableUpdates.includes(k)
+    );
+
+    const previousState = hasTrackableChange
+      ? captureProfileState(currentProfile)
+      : null;
+
     set((state) => {
       if (!state.currentProfile) return state;
       return {
@@ -292,9 +404,19 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         },
       };
     });
+
+    if (previousState) {
+      const newState = captureProfileState(get().currentProfile!);
+      useHistoryStore.getState().pushState("Update key binding", previousState, newState);
+    }
   },
 
   removeKeyBinding: (keyCode) => {
+    const { currentProfile } = get();
+    if (!currentProfile) return;
+
+    const previousState = captureProfileState(currentProfile);
+
     set((state) => {
       if (!state.currentProfile) return state;
       const removedBinding = state.currentProfile.keyBindings.find(
@@ -321,5 +443,32 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         },
       };
     });
+
+    const newState = captureProfileState(get().currentProfile!);
+    useHistoryStore.getState().pushState("Remove key binding", previousState, newState);
+  },
+
+  undo: () => {
+    const { currentProfile } = get();
+    if (!currentProfile) return false;
+
+    const state = useHistoryStore.getState().undo();
+    if (!state) return false;
+
+    const restoredProfile = applyHistoryState(currentProfile, state);
+    set({ currentProfile: restoredProfile });
+    return true;
+  },
+
+  redo: () => {
+    const { currentProfile } = get();
+    if (!currentProfile) return false;
+
+    const state = useHistoryStore.getState().redo();
+    if (!state) return false;
+
+    const restoredProfile = applyHistoryState(currentProfile, state);
+    set({ currentProfile: restoredProfile });
+    return true;
   },
 }));

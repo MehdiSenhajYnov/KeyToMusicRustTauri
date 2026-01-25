@@ -16,6 +16,7 @@ import * as commands from "./utils/tauriCommands";
 import { useAudioEvents } from "./hooks/useAudioEvents";
 import { useKeyDetection } from "./hooks/useKeyDetection";
 import { useTextInputFocus } from "./hooks/useTextInputFocus";
+import { useUndoRedo } from "./hooks/useUndoRedo";
 
 function App() {
   const [showSettings, setShowSettings] = useState(false);
@@ -27,6 +28,7 @@ function App() {
   useAudioEvents();
   useKeyDetection();
   useTextInputFocus();
+  useUndoRedo();
 
   // Load config and profiles on mount
   useEffect(() => {

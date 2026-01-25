@@ -5,7 +5,7 @@ import { useToastStore } from "../../stores/toastStore";
 import { useConfirmStore } from "../../stores/confirmStore";
 
 export function ProfileSelector() {
-  const { profiles, currentProfile, loadProfile, createProfile, deleteProfile, loadProfiles, renameProfile } =
+  const { profiles, currentProfile, loadProfile, createProfile, deleteProfile, loadProfiles, renameProfile, duplicateProfile } =
     useProfileStore();
   const { updateConfig } = useSettingsStore();
   const addToast = useToastStore((s) => s.addToast);
@@ -56,6 +56,15 @@ export function ProfileSelector() {
     setEditingProfileId(null);
   };
 
+  const handleDuplicate = async (id: string, name: string) => {
+    const newProfile = await duplicateProfile(id);
+    if (newProfile) {
+      await loadProfile(newProfile.id);
+      await updateConfig({ currentProfileId: newProfile.id });
+      addToast(`Profile "${name}" duplicated`, "success");
+    }
+  };
+
   return (
     <div className="p-3 space-y-2">
       <h3 className="text-text-muted text-xs font-semibold uppercase tracking-wider">
@@ -100,6 +109,16 @@ export function ProfileSelector() {
                 {p.name}
               </span>
             )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDuplicate(p.id, p.name);
+              }}
+              className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-accent-primary text-xs p-0.5"
+              title="Duplicate"
+            >
+              ⎘
+            </button>
             <button
               onClick={(e) => {
                 e.stopPropagation();

@@ -137,6 +137,11 @@ pub fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), Stri
     Ok(())
 }
 
+#[tauri::command]
+pub fn duplicate_profile(id: String, new_name: Option<String>) -> Result<Profile, String> {
+    storage::duplicate_profile(id, new_name)
+}
+
 // ─── Audio Commands ─────────────────────────────────────────────────────────
 
 #[tauri::command]

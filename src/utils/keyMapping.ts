@@ -48,6 +48,20 @@ export function recordKeyLayout(code: string, key: string): void {
 }
 
 export function keyCodeToDisplay(code: string): string {
+  // Handle combined key codes (e.g., "Ctrl+Shift+KeyA")
+  if (code.includes("+")) {
+    const parts = code.split("+");
+    return parts.map((part) => {
+      // Simplify modifier display
+      if (part === "Ctrl") return "Ctrl";
+      if (part === "Shift") return "Shift";
+      if (part === "Alt") return "Alt";
+      // Use the learned layout map first (handles AZERTY, QWERTZ, etc.)
+      const layoutChar = layoutMap.get(part);
+      if (layoutChar) return layoutChar;
+      return KEY_DISPLAY_MAP[part] || part;
+    }).join("+");
+  }
   // Use the learned layout map first (handles AZERTY, QWERTZ, etc.)
   const layoutChar = layoutMap.get(code);
   if (layoutChar) return layoutChar;
@@ -82,4 +96,80 @@ export function isValidKeyCode(code: string): boolean {
 
 export function formatShortcut(keys: string[]): string {
   return keys.map(keyCodeToDisplay).join("+");
+}
+
+/**
+ * Build a combined key code from modifier flags and base key.
+ * Order: Ctrl > Shift > Alt > Key (consistent with backend)
+ */
+export function buildKeyCombo(
+  baseKey: string,
+  modifiers: { ctrl?: boolean; shift?: boolean; alt?: boolean }
+): string {
+  let combo = "";
+  if (modifiers.ctrl) combo += "Ctrl+";
+  if (modifiers.shift) combo += "Shift+";
+  if (modifiers.alt) combo += "Alt+";
+  combo += baseKey;
+  return combo;
+}
+
+/**
+ * Parse a combined key code into its components.
+ */
+export function parseKeyCombo(combo: string): {
+  baseKey: string;
+  ctrl: boolean;
+  shift: boolean;
+  alt: boolean;
+} {
+  const parts = combo.split("+");
+  const baseKey = parts[parts.length - 1];
+  const modifiers = parts.slice(0, -1);
+  return {
+    baseKey,
+    ctrl: modifiers.includes("Ctrl"),
+    shift: modifiers.includes("Shift"),
+    alt: modifiers.includes("Alt"),
+  };
+}
+
+/**
+ * Check if a key combo conflicts with common system shortcuts.
+ * Returns a warning message if conflict detected, null otherwise.
+ */
+export function checkKeyComboConflict(combo: string): string | null {
+  const { baseKey, ctrl, alt } = parseKeyCombo(combo);
+
+  // Common system shortcuts to warn about
+  const systemShortcuts: Record<string, string> = {
+    "Ctrl+KeyC": "Copy",
+    "Ctrl+KeyV": "Paste",
+    "Ctrl+KeyX": "Cut",
+    "Ctrl+KeyZ": "Undo",
+    "Ctrl+KeyY": "Redo",
+    "Ctrl+KeyA": "Select All",
+    "Ctrl+KeyS": "Save",
+    "Ctrl+KeyW": "Close Window",
+    "Ctrl+KeyQ": "Quit App",
+    "Ctrl+KeyN": "New Window",
+    "Ctrl+KeyT": "New Tab",
+    "Alt+F4": "Close Window",
+  };
+
+  if (systemShortcuts[combo]) {
+    return `This shortcut conflicts with "${systemShortcuts[combo]}"`;
+  }
+
+  // Warn about Ctrl+number (browser tab switching)
+  if (ctrl && /^Digit[1-9]$/.test(baseKey)) {
+    return "This shortcut may conflict with browser tab switching";
+  }
+
+  // Warn about Alt+letter (menu access on Windows)
+  if (alt && /^Key[A-Z]$/.test(baseKey)) {
+    return "This shortcut may conflict with menu access on Windows";
+  }
+
+  return null;
 }

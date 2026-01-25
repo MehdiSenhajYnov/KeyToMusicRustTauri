@@ -78,9 +78,24 @@ export function useKeyDetection() {
 
       if (!currentProfile) return;
 
-      const binding = currentProfile.keyBindings.find(
+      // Try to find binding with the exact combined key code first
+      let binding = currentProfile.keyBindings.find(
         (kb) => kb.keyCode === payload.keyCode
       );
+
+      // If not found and keyCode has modifiers, try the base key
+      // (this allows Shift+A to trigger "KeyA" binding with momentum)
+      let useModifierForMomentum = false;
+      if (!binding && payload.keyCode.includes("+")) {
+        const parts = payload.keyCode.split("+");
+        const baseKey = parts[parts.length - 1];
+        binding = currentProfile.keyBindings.find((kb) => kb.keyCode === baseKey);
+        // If we found a base key binding and Shift was pressed, use momentum
+        if (binding && payload.withShift) {
+          useModifierForMomentum = true;
+        }
+      }
+
       if (!binding) return;
 
       // Cooldown: only block if a sound was recently triggered
@@ -102,8 +117,9 @@ export function useKeyDetection() {
         updateKeyBinding(binding.keyCode, { currentIndex: nextIndex });
       }
 
+      // Use momentum if autoMomentum is on, or if Shift was used with a non-Shift binding
       const startPosition =
-        config.autoMomentum || payload.withShift ? sound.momentum : 0;
+        config.autoMomentum || useModifierForMomentum ? sound.momentum : 0;
 
       const filePath = getSoundFilePath(sound);
 
@@ -209,9 +225,16 @@ export function useKeyDetection() {
       }
 
       // Convert key character to keyCode (layout-aware)
-      const keyCode = charToKeyCode(e.key) || e.code;
+      const baseKeyCode = charToKeyCode(e.key) || e.code;
 
-      if (currentProfile?.keyBindings.some((kb) => kb.keyCode === keyCode)) {
+      // Build combined key code with modifiers (match backend order: Ctrl > Shift > Alt > Key)
+      let keyCode = "";
+      if (e.ctrlKey || e.metaKey) keyCode += "Ctrl+";
+      if (e.shiftKey) keyCode += "Shift+";
+      if (e.altKey) keyCode += "Alt+";
+      keyCode += baseKeyCode;
+
+      if (currentProfile?.keyBindings.some((kb) => kb.keyCode === keyCode || kb.keyCode === baseKeyCode)) {
         e.preventDefault();
       }
 

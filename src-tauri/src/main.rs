@@ -203,6 +203,7 @@ fn main() {
             load_profile,
             save_profile,
             delete_profile,
+            duplicate_profile,
             // Audio commands
             play_sound,
             stop_sound,

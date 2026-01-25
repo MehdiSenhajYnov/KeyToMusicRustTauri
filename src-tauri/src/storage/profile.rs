@@ -101,3 +101,26 @@ pub fn delete_profile(id: String) -> Result<(), String> {
 
     Ok(())
 }
+
+/// Duplicate an existing profile with a new UUID and optionally a new name.
+/// If new_name is None, the duplicated profile will be named "{original_name} (Copy)".
+pub fn duplicate_profile(id: String, new_name: Option<String>) -> Result<Profile, String> {
+    let source = load_profile(id)?;
+
+    let new_id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    let name = new_name.unwrap_or_else(|| format!("{} (Copy)", source.name));
+
+    let new_profile = Profile {
+        id: new_id,
+        name,
+        created_at: now.clone(),
+        updated_at: now,
+        sounds: source.sounds,
+        tracks: source.tracks,
+        key_bindings: source.key_bindings,
+    };
+
+    save_profile(&new_profile)?;
+    Ok(new_profile)
+}

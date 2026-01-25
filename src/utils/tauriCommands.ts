@@ -44,6 +44,13 @@ export async function deleteProfile(id: string): Promise<void> {
   return invoke("delete_profile", { id });
 }
 
+export async function duplicateProfile(
+  id: string,
+  newName?: string
+): Promise<Profile> {
+  return invoke<Profile>("duplicate_profile", { id, newName });
+}
+
 // ─── Audio ─────────────────────────────────────────────────────────────────
 
 export async function playSound(

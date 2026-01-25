@@ -102,13 +102,29 @@ impl KeyDetector {
                         return;
                     }
 
-                    // Detect if Shift is pressed
-                    let with_shift = pressed.contains("ShiftLeft")
-                        || pressed.contains("ShiftRight");
+                    // Build combined key code with modifiers (Ctrl, Alt, Shift)
+                    let has_ctrl = pressed.contains("ControlLeft") || pressed.contains("ControlRight");
+                    let has_alt = pressed.contains("AltLeft") || pressed.contains("AltRight");
+                    let has_shift = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
+
+                    // Build combo string in consistent order: Ctrl > Shift > Alt > Key
+                    let mut combo = String::new();
+                    if has_ctrl {
+                        combo.push_str("Ctrl+");
+                    }
+                    if has_shift {
+                        combo.push_str("Shift+");
+                    }
+                    if has_alt {
+                        combo.push_str("Alt+");
+                    }
+                    combo.push_str(&code);
 
                     drop(pressed);
 
-                    cb(KeyEvent::KeyPressed { key_code: code, with_shift });
+                    // Emit both the combined code and whether shift is pressed
+                    // (withShift is still used for momentum on non-combined bindings)
+                    cb(KeyEvent::KeyPressed { key_code: combo, with_shift: has_shift });
                 } else {
                     // Key release
                     pressed_keys.lock().unwrap().remove(&code);
