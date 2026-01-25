@@ -1855,30 +1855,59 @@ Implémenter Ctrl+Z (Undo) et Ctrl+Y (Redo) pour les modifications de profil.
   - [ ] Possibilité d'afficher le nom de la prochaine action annulable dans un tooltip
   **⏳ Optionnel** - Non implémenté (UI non alourdie)
 
-### 8.4 Multi-Key Chords (Future) ⏳ PLANIFIÉ
+### 8.4 Multi-Key Chords ⏳ PLANIFIÉ
 
 Permettre des combinaisons de touches non-modifier pressées simultanément (comme un accord de piano).
+Système inspiré des combos de jeux de combat (Street Fighter, Tekken).
 
-> **Note**: Cette feature est prévue pour plus tard. Elle nécessite une fenêtre de détection de 30-50ms qui ajoute de la latence. À implémenter seulement si les combinaisons Modifier+Key ne suffisent pas.
+> **Voir aussi**: `docs/PHASE_8_COMBINED_SHORTCUTS_PLAN.md` section 3 pour les détails complets.
 
-- [ ] **8.4.1** Implémenter la fenêtre de détection 30ms
-  - [ ] Quand une touche est pressée, démarrer un timer de 30ms
-  - [ ] Si d'autres touches sont pressées dans ce délai, reset le timer
-  - [ ] Quand le timer expire (30ms sans nouvelle touche), déclencher l'événement
-  - [ ] Trier les touches alphabétiquement pour consistance ("KeyA+KeyZ" pas "KeyZ+KeyA")
+**Principe : Arbre préfixe (Trie) + Trigger intelligent**
+- Trigger immédiat si le combo actuel est une "feuille" (pas d'extensions possibles)
+- Sinon attendre timer ou prochaine touche
+- Latence 0ms pour les touches sans extensions possibles
 
-- [ ] **8.4.2** Résolution de conflits entre bindings
-  - [ ] Si bindings existent pour "A", "A+Z", et "A+Z+M"
-  - [ ] Priorité au binding le plus spécifique (le plus de touches)
-  - [ ] Pas de double-trigger (A ne trigger pas si A+Z est reconnu)
+**Exemple avec bindings A, A+Z, A+Z+E :**
+```
+A pressé → Extensions possibles (A+Z, A+Z+E) → Timer 30ms démarre
+Z pressé → Extensions possibles (A+Z+E) → Timer continue
+E pressé → Feuille (pas de A+Z+E+*) → TRIGGER IMMÉDIAT "A+Z+E"
+```
 
-- [ ] **8.4.3** Optimisation sélective du délai
-  - [ ] N'appliquer le délai que si le profil contient des multi-key bindings
-  - [ ] Touches simples restent instantanées si aucun chord potentiel
+- [ ] **8.4.1** Implémenter la structure Trie (arbre préfixe)
+  - [ ] Construire le Trie à partir des keyBindings du profil
+  - [ ] Reconstruire le Trie quand le profil change
+  - [ ] Méthodes: `find(combo)`, `is_leaf(combo)`, `has_extensions(combo)`
 
-- [ ] **8.4.4** UI pour capturer les multi-key chords
-  - [ ] Afficher "Press keys..." et enregistrer toutes les touches pressées "simultanément"
-  - [ ] Afficher preview : "A + Z" avant confirmation
+- [ ] **8.4.2** Implémenter le ChordDetector dans `detector.rs`
+  - [ ] Tracker `current_combo: Vec<String>` (touches pressées, triées)
+  - [ ] Sur key press: ajouter à combo, vérifier si feuille → trigger ou timer
+  - [ ] Sur timer expire: trigger le meilleur match actuel
+  - [ ] Sur key release: retirer de combo
+
+- [ ] **8.4.3** Fenêtre de détection configurable
+  - [ ] Nouveau champ `config.chordWindowMs: u32` (défaut: 30ms)
+  - [ ] Range: 20-100ms dans les Settings
+  - [ ] Timer reset à chaque nouvelle touche pressée
+
+- [ ] **8.4.4** Optimisation latence conditionnelle
+  - [ ] 0ms si la touche est une feuille (pas d'extensions dans le profil)
+  - [ ] 0ms si le combo actuel est une feuille (trigger immédiat)
+  - [ ] Timer seulement si des extensions sont possibles
+
+- [ ] **8.4.5** Format et normalisation des combos
+  - [ ] Ordre: Modifiers d'abord (Ctrl > Shift > Alt), puis base keys alphabétiques
+  - [ ] "KeyZ+KeyA" → normalisé en "KeyA+KeyZ"
+  - [ ] "Ctrl+KeyZ+KeyA" → "Ctrl+KeyA+KeyZ"
+
+- [ ] **8.4.6** UI pour capturer les multi-key chords
+  - [ ] KeyCaptureSlot: déjà supporte multi-key via pressedKeysRef
+  - [ ] Afficher preview: "A + Z" pendant la capture
+  - [ ] `keyCodeToDisplay("KeyA+KeyZ")` → "A+Z"
+
+- [ ] **8.4.7** Frontend `useKeyDetection.ts`
+  - [ ] Parser les combos multi-key reçus du backend
+  - [ ] Chercher le binding correspondant dans le profil
 
 **Avantage combinatoire:**
 | Type | Combinaisons (~50 touches) |

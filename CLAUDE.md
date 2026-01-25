@@ -410,20 +410,38 @@ Use platform-specific app data directories:
 
 ## Planned Features (Future Phases)
 
-### AddSoundModal UI Refactor (Phase 8.2.6)
-- Replace text input "aze" with key capture slots (like Settings shortcuts)
-- Each slot: click to enter capture mode → press key combo → displays "Ctrl+A"
-- "+" button to add more key slots if keys < sounds
-- Preview of cycling assignment in real-time
-- Enables full Combined Key Shortcuts support
+### Multi-Key Chords (Phase 8.4) - Fighting Game Combo System
 
-### Multi-Key Chords (Phase 8.4)
-- Support pressing multiple non-modifier keys simultaneously (like piano chords)
-- Example: "A+Z" = A and Z pressed at the same time
-- Requires 30-50ms detection window (adds latency)
-- Exponentially increases available bindings (50 keys → 1,225 two-key combos)
-- Conflict resolution: longer combos have priority
-- Status: Planned for later if Modifier+Key doesn't suffice
+Support pressing multiple non-modifier keys simultaneously (like piano chords), using a combo detection system inspired by fighting games (Street Fighter, Tekken).
+
+**Concept:**
+- `KeyA+KeyZ` = A and Z pressed "simultaneously"
+- Uses a Trie (prefix tree) structure for optimal detection
+- Trigger immediately when combo reaches a "leaf" (no further extensions possible)
+- Timer only when extensions exist (conditional latency)
+
+**Example with bindings: A, A+Z, A+Z+E**
+```
+A pressed → Extensions possible (A+Z, A+Z+E) → Start 30ms timer
+Z pressed → Extensions possible (A+Z+E) → Continue timer
+E pressed → Leaf node (no A+Z+E+*) → TRIGGER IMMEDIATELY "A+Z+E"
+```
+
+**Latency optimization:**
+- 0ms if key is a leaf (no extensions in profile)
+- 0ms if current combo is a leaf (trigger immediately)
+- 30-50ms only when extensions are possible
+
+**Configuration:**
+- `config.chordWindowMs`: 20-100ms (configurable in Settings)
+
+**Format:** Modifiers first (Ctrl > Shift > Alt), then base keys sorted alphabetically.
+- `"KeyZ+KeyA"` → normalized to `"KeyA+KeyZ"`
+- `"Ctrl+KeyZ+KeyA"` → `"Ctrl+KeyA+KeyZ"`
+
+**See:** `docs/PHASE_8_COMBINED_SHORTCUTS_PLAN.md` section 3 for full details.
+
+**Status:** Planned
 
 ### Configurable Momentum Modifier (Phase 8.5)
 - Let user choose momentum trigger: Shift (default), Alt, Ctrl, or None

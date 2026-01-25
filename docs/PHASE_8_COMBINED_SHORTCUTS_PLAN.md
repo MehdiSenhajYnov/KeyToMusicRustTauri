@@ -90,7 +90,7 @@ Exemples :
 
 ---
 
-## 3. Multi-key chords (A+Z simultanés) - Future v2
+## 3. Multi-key chords (A+Z simultanés) - Phase 8.4
 
 ### 3.1 Concept
 Permettre des combinaisons de touches non-modifier pressées ensemble, comme un accord de piano :
@@ -112,31 +112,134 @@ t=0ms    KeyA down
 t=3ms    KeyZ down    ← "simultané" mais séquentiel
 ```
 
-**Solution : Fenêtre de détection**
+### 3.4 Solution : Système de combo (style jeux de combat)
+
+Inspiré des jeux de combat (Street Fighter, Tekken), on utilise un **arbre préfixe (Trie)** pour détecter les combos de manière optimale.
+
+**Principe :**
+- Trigger immédiat si le combo actuel est une **feuille** (pas d'extensions possibles)
+- Sinon attendre timer ou prochaine touche
+
+**Exemple avec bindings : A, A+Z, A+Z+E**
+
 ```
-KeyA pressé → timer 30ms démarre
-KeyZ pressé (dans 30ms) → timer reset
-... 30ms sans nouvelle touche ...
-→ Cherche binding pour "KeyA+KeyZ" (trié alphabétiquement)
+Structure Trie:
+Root
+├── A (binding exists)
+│   ├── Z (binding exists)
+│   │   └── E (binding exists, FEUILLE)
+│   └── E (binding exists, FEUILLE)
+└── B (binding exists, FEUILLE)
 ```
 
-### 3.4 Résolution de conflits
-Si bindings existent pour `A`, `A+Z`, et `A+Z+M` :
-- User appuie A seul → attendre 30ms → trigger "A"
-- User appuie A+Z rapide → attendre 30ms → trigger "A+Z" (pas de double-trigger)
-- User appuie A+Z+M → trigger "A+Z+M"
+**Scénario 1 : User presse A puis Z puis E**
+```
+t=0ms    A pressé
+         → Combos possibles: A, A+Z, A+Z+E
+         → Timer démarre (A existe mais extensions possibles)
 
-### 3.5 Trade-off latence
-| Approche | Latence | Multi-key |
-|----------|---------|-----------|
-| Actuel (immédiat) | 0ms | ❌ |
-| Avec fenêtre | +30-50ms | ✓ |
+t=10ms   Z pressé
+         → Combo actuel: A+Z
+         → Combos possibles: A+Z, A+Z+E
+         → Timer continue (A+Z existe mais A+Z+E possible)
 
-**Optimisation possible** : N'appliquer le délai que si des multi-key combos existent dans le profil pour cette touche.
+t=20ms   E pressé
+         → Combo actuel: A+Z+E
+         → C'est une FEUILLE (pas d'extension A+Z+E+*)
+         → TRIGGER IMMÉDIAT "A+Z+E" ✓
+```
 
-### 3.6 Décision
-- **Phase 1** : Implémenter Modifier + 1 touche (Ctrl+A, Shift+F1)
-- **Phase 2** : Ajouter multi-key chords (A+Z) plus tard si besoin
+**Scénario 2 : User presse A puis Z (sans E)**
+```
+t=0ms    A pressé → Timer démarre
+t=10ms   Z pressé → Combo = A+Z, timer continue
+t=40ms   Timer expire (30ms après dernier input)
+         → TRIGGER "A+Z" (meilleur match) ✓
+```
+
+**Scénario 3 : User presse A seul**
+```
+t=0ms    A pressé → Timer démarre
+t=30ms   Timer expire
+         → TRIGGER "A" ✓
+```
+
+**Scénario 4 : User presse B (pas d'extensions)**
+```
+t=0ms    B pressé
+         → B est une FEUILLE (pas de B+* dans le profil)
+         → TRIGGER IMMÉDIAT "B" (0ms latence) ✓
+```
+
+### 3.5 Optimisation : Latence conditionnelle
+
+| Situation | Latence |
+|-----------|---------|
+| Touche sans extension possible (feuille) | 0ms |
+| Touche avec extensions, combo complet atteint | 0ms |
+| Touche avec extensions, attente timer | 30-50ms (configurable) |
+
+**Règle :** Le délai ne s'applique QUE si des extensions existent pour le combo actuel.
+
+### 3.6 Format des combos
+
+**Ordre canonique :** Modifiers d'abord (Ctrl > Shift > Alt), puis base keys triées alphabétiquement.
+
+```
+Ctrl+Shift+KeyA+KeyZ  ← correct
+KeyZ+KeyA             ← incorrect, sera normalisé en KeyA+KeyZ
+```
+
+### 3.7 Configuration
+
+Nouveau paramètre dans `config.json` :
+```json
+{
+  "chordWindowMs": 30  // 30-100ms, configurable dans Settings
+}
+```
+
+### 3.8 Implémentation Backend (detector.rs)
+
+```rust
+struct ChordDetector {
+    trie: ComboTrie,                    // Arbre des combos existants
+    current_combo: Vec<String>,         // Touches actuellement pressées
+    timer_handle: Option<TimerHandle>,  // Timer en cours
+    chord_window_ms: u32,               // Fenêtre configurable
+}
+
+impl ChordDetector {
+    fn on_key_press(&mut self, key: String) {
+        self.current_combo.push(key);
+        self.current_combo.sort(); // Ordre alphabétique
+
+        let node = self.trie.find(&self.current_combo);
+
+        if node.is_leaf() {
+            // Pas d'extensions possibles → trigger immédiat
+            self.trigger_combo();
+        } else {
+            // Extensions possibles → reset timer
+            self.reset_timer();
+        }
+    }
+
+    fn on_timer_expire(&mut self) {
+        // Timer expiré → trigger le meilleur match actuel
+        self.trigger_combo();
+    }
+}
+```
+
+### 3.9 Implémentation Frontend
+
+**KeyCaptureSlot :** Déjà supporte multi-key via `pressedKeysRef`.
+
+**Affichage :** `keyCodeToDisplay("KeyA+KeyZ")` → "A+Z"
+
+### 3.10 Status
+⏳ **Phase 8.4** - À implémenter après validation de l'approche
 
 ---
 
