@@ -2832,9 +2832,10 @@ export function useUndoRedo() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if text input focused
-      if (document.activeElement?.tagName === "INPUT" ||
-          document.activeElement?.tagName === "TEXTAREA") return;
+      // Skip if text input focused (but not range/checkbox inputs like sliders)
+      const target = e.target as HTMLElement;
+      if (target instanceof HTMLTextAreaElement) return;
+      if (target instanceof HTMLInputElement && target.type !== "range" && target.type !== "checkbox") return;
 
       const isMac = navigator.platform.toUpperCase().includes("MAC");
       const isUndo = (e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey;

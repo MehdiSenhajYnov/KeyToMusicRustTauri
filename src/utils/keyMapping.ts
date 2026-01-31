@@ -414,9 +414,10 @@ export function isMultiKeyChord(combo: string): boolean {
 }
 
 /**
- * Momentum modifier type
+ * Momentum modifier type (re-exported from types for backward compatibility)
  */
-export type MomentumModifierType = "Shift" | "Ctrl" | "Alt" | "None";
+import type { MomentumModifier } from "../types";
+export type MomentumModifierType = MomentumModifier;
 
 /**
  * Check if a shortcut key array contains a specific modifier.
@@ -537,4 +538,16 @@ export function getKeyMomentumConflict(
   }
 
   return null;
+}
+
+/**
+ * Build the shortcuts array used for conflict detection.
+ */
+import type { AppConfig } from "../types";
+export function buildShortcutsList(config: AppConfig) {
+  return [
+    { name: "Master Stop", keys: config.masterStopShortcut },
+    { name: "Auto-Momentum", keys: config.autoMomentumShortcut },
+    { name: "Key Detection", keys: config.keyDetectionShortcut },
+  ];
 }

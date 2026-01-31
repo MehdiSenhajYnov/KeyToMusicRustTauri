@@ -46,12 +46,6 @@ pub enum AudioCommand {
         sound_id: SoundId,
         volume: f32,
     },
-    CreateTrack {
-        track_id: TrackId,
-    },
-    RemoveTrack {
-        track_id: TrackId,
-    },
     SetAudioDevice {
         device_name: Option<String>,
     },
@@ -77,11 +71,6 @@ pub enum AudioEvent {
         track_id: TrackId,
         position: f64,
     },
-    SoundNotFound {
-        track_id: TrackId,
-        sound_id: SoundId,
-        file_path: String,
-    },
     Error {
         message: String,
     },
@@ -93,7 +82,6 @@ pub struct AudioEngineHandle {
     command_tx: Sender<AudioCommand>,
     pub events: Arc<Mutex<Vec<AudioEvent>>>,
     pub master_volume: Arc<Mutex<f32>>,
-    pub last_trigger_time: Arc<Mutex<Instant>>,
 }
 
 impl AudioEngineHandle {
@@ -102,9 +90,6 @@ impl AudioEngineHandle {
         let (command_tx, command_rx) = mpsc::channel::<AudioCommand>();
         let events = Arc::new(Mutex::new(Vec::<AudioEvent>::new()));
         let master_volume = Arc::new(Mutex::new(0.8f32));
-        let last_trigger_time = Arc::new(Mutex::new(
-            Instant::now() - Duration::from_secs(10),
-        ));
 
         let events_clone = events.clone();
         let master_volume_clone = master_volume.clone();
@@ -118,7 +103,6 @@ impl AudioEngineHandle {
             command_tx,
             events,
             master_volume,
-            last_trigger_time,
         })
     }
 
@@ -175,33 +159,6 @@ impl AudioEngineHandle {
         self.send_command(AudioCommand::SetSoundVolume { track_id, sound_id, volume })
     }
 
-    /// Create a new track.
-    pub fn create_track(&self, track_id: TrackId) -> Result<(), String> {
-        self.send_command(AudioCommand::CreateTrack { track_id })
-    }
-
-    /// Remove a track.
-    pub fn remove_track(&self, track_id: TrackId) -> Result<(), String> {
-        self.send_command(AudioCommand::RemoveTrack { track_id })
-    }
-
-    /// Drain pending events from the audio thread.
-    pub fn drain_events(&self) -> Vec<AudioEvent> {
-        let mut events = self.events.lock().unwrap();
-        events.drain(..).collect()
-    }
-
-    /// Check if the cooldown has elapsed.
-    pub fn check_cooldown(&self, cooldown_ms: u32) -> bool {
-        let last = self.last_trigger_time.lock().unwrap();
-        last.elapsed() >= Duration::from_millis(cooldown_ms as u64)
-    }
-
-    /// Update the last trigger time.
-    pub fn update_trigger_time(&self) {
-        *self.last_trigger_time.lock().unwrap() = Instant::now();
-    }
-
     /// Set the audio output device. None = follow system default.
     pub fn set_audio_device(&self, device_name: Option<String>) -> Result<(), String> {
         self.send_command(AudioCommand::SetAudioDevice { device_name })
@@ -217,10 +174,6 @@ impl AudioEngineHandle {
         self.send_command(AudioCommand::PlayErrorSound)
     }
 
-    /// Shutdown the audio engine.
-    pub fn shutdown(&self) {
-        let _ = self.send_command(AudioCommand::Shutdown);
-    }
 }
 
 /// List available audio output devices.
@@ -341,7 +294,7 @@ fn audio_thread_main(
                     }
                     tracks.insert(
                         track_id.clone(),
-                        AudioTrack::new(track_id.clone(), stream_handle.clone()),
+                        AudioTrack::new(stream_handle.clone()),
                     );
                 }
 
@@ -435,44 +388,9 @@ fn audio_thread_main(
                     }
                 }
             }
-            Ok(AudioCommand::CreateTrack { track_id }) => {
-                if tracks.len() < 20 && !tracks.contains_key(&track_id) {
-                    tracks.insert(
-                        track_id.clone(),
-                        AudioTrack::new(track_id, stream_handle.clone()),
-                    );
-                }
-            }
-            Ok(AudioCommand::RemoveTrack { track_id }) => {
-                if let Some(mut track) = tracks.remove(&track_id) {
-                    track.stop();
-                }
-            }
             Ok(AudioCommand::SetAudioDevice { device_name }) => {
-                // Capture resume info for all playing tracks
-                let mut resume_list: Vec<TrackResumeInfo> = Vec::new();
                 let mv = *master_volume.lock().unwrap();
-                for (tid, track) in tracks.iter() {
-                    if let (Some(sid), Some(fp)) = (&track.currently_playing, &track.file_path) {
-                        if track.is_playing() {
-                            let sv = sound_volumes.get(sid).copied().unwrap_or(1.0);
-                            resume_list.push(TrackResumeInfo {
-                                track_id: tid.clone(),
-                                sound_id: sid.clone(),
-                                file_path: fp.clone(),
-                                position: track.get_position(),
-                                sound_volume: sv,
-                                track_volume: track.volume,
-                            });
-                        }
-                    }
-                }
-
-                // Stop and clear all tracks
-                for (_, track) in tracks.iter_mut() {
-                    track.stop();
-                }
-                tracks.clear();
+                let resume_list = capture_and_stop_tracks(&mut tracks, &sound_volumes);
 
                 // Rebuild the output stream
                 match create_output_stream(&device_name) {
@@ -498,29 +416,7 @@ fn audio_thread_main(
                     }
                 }
 
-                // Resume playback on the new device
-                for info in resume_list {
-                    let mut new_track = AudioTrack::new(info.track_id.clone(), stream_handle.clone());
-                    new_track.volume = info.track_volume;
-                    match new_track.play(
-                        info.sound_id.clone(),
-                        &info.file_path,
-                        info.position,
-                        info.sound_volume,
-                        mv,
-                        0, // no crossfade for resume
-                    ) {
-                        Ok(()) => {}
-                        Err(e) => {
-                            emit_event(&events, AudioEvent::Error {
-                                message: format!("Failed to resume track {}: {}", info.track_id, e),
-                            });
-                        }
-                    }
-                    tracks.insert(info.track_id.clone(), new_track);
-                    sound_volumes.insert(info.sound_id.clone(), info.sound_volume);
-                    track_sounds.insert(info.track_id, info.sound_id);
-                }
+                resume_tracks(resume_list, &mut tracks, &mut sound_volumes, &mut track_sounds, &stream_handle, mv, &events);
             }
             Ok(AudioCommand::SetErrorSoundPath { path }) => {
                 error_sound_path = Some(path);
@@ -567,60 +463,13 @@ fn audio_thread_main(
             let new_default = get_default_device_name();
             if new_default != last_default_device_name {
                 last_default_device_name = new_default;
-
-                // Capture resume info for all playing tracks
-                let mut resume_list: Vec<TrackResumeInfo> = Vec::new();
                 let mv = *master_volume.lock().unwrap();
-                for (tid, track) in tracks.iter() {
-                    if let (Some(sid), Some(fp)) = (&track.currently_playing, &track.file_path) {
-                        if track.is_playing() {
-                            let sv = sound_volumes.get(sid).copied().unwrap_or(1.0);
-                            resume_list.push(TrackResumeInfo {
-                                track_id: tid.clone(),
-                                sound_id: sid.clone(),
-                                file_path: fp.clone(),
-                                position: track.get_position(),
-                                sound_volume: sv,
-                                track_volume: track.volume,
-                            });
-                        }
-                    }
-                }
+                let resume_list = capture_and_stop_tracks(&mut tracks, &sound_volumes);
 
-                // Stop and clear all tracks
-                for (_, track) in tracks.iter_mut() {
-                    track.stop();
-                }
-                tracks.clear();
-
-                // Rebuild output on new default device
                 if let Ok((new_stream, new_handle)) = create_output_stream(&None) {
                     _stream = new_stream;
                     stream_handle = new_handle;
-
-                    // Resume playback
-                    for info in resume_list {
-                        let mut new_track = AudioTrack::new(info.track_id.clone(), stream_handle.clone());
-                        new_track.volume = info.track_volume;
-                        match new_track.play(
-                            info.sound_id.clone(),
-                            &info.file_path,
-                            info.position,
-                            info.sound_volume,
-                            mv,
-                            0,
-                        ) {
-                            Ok(()) => {}
-                            Err(e) => {
-                                emit_event(&events, AudioEvent::Error {
-                                    message: format!("Failed to resume track {}: {}", info.track_id, e),
-                                });
-                            }
-                        }
-                        tracks.insert(info.track_id.clone(), new_track);
-                        sound_volumes.insert(info.sound_id.clone(), info.sound_volume);
-                        track_sounds.insert(info.track_id, info.sound_id);
-                    }
+                    resume_tracks(resume_list, &mut tracks, &mut sound_volumes, &mut track_sounds, &stream_handle, mv, &events);
                 }
             }
         }
@@ -682,5 +531,67 @@ fn audio_thread_main(
 fn emit_event(events: &Arc<Mutex<Vec<AudioEvent>>>, event: AudioEvent) {
     if let Ok(mut events) = events.lock() {
         events.push(event);
+    }
+}
+
+/// Capture resume info from all playing tracks, then stop and clear them.
+fn capture_and_stop_tracks(
+    tracks: &mut HashMap<TrackId, AudioTrack>,
+    sound_volumes: &HashMap<SoundId, f32>,
+) -> Vec<TrackResumeInfo> {
+    let mut resume_list = Vec::new();
+    for (tid, track) in tracks.iter() {
+        if let (Some(sid), Some(fp)) = (&track.currently_playing, &track.file_path) {
+            if track.is_playing() {
+                let sv = sound_volumes.get(sid).copied().unwrap_or(1.0);
+                resume_list.push(TrackResumeInfo {
+                    track_id: tid.clone(),
+                    sound_id: sid.clone(),
+                    file_path: fp.clone(),
+                    position: track.get_position(),
+                    sound_volume: sv,
+                    track_volume: track.volume,
+                });
+            }
+        }
+    }
+    for (_, track) in tracks.iter_mut() {
+        track.stop();
+    }
+    tracks.clear();
+    resume_list
+}
+
+/// Resume previously playing tracks on a new stream handle.
+fn resume_tracks(
+    resume_list: Vec<TrackResumeInfo>,
+    tracks: &mut HashMap<TrackId, AudioTrack>,
+    sound_volumes: &mut HashMap<SoundId, f32>,
+    track_sounds: &mut HashMap<TrackId, SoundId>,
+    stream_handle: &OutputStreamHandle,
+    master_volume: f32,
+    events: &Arc<Mutex<Vec<AudioEvent>>>,
+) {
+    for info in resume_list {
+        let mut new_track = AudioTrack::new(stream_handle.clone());
+        new_track.volume = info.track_volume;
+        match new_track.play(
+            info.sound_id.clone(),
+            &info.file_path,
+            info.position,
+            info.sound_volume,
+            master_volume,
+            0, // no crossfade for resume
+        ) {
+            Ok(()) => {}
+            Err(e) => {
+                emit_event(events, AudioEvent::Error {
+                    message: format!("Failed to resume track {}: {}", info.track_id, e),
+                });
+            }
+        }
+        tracks.insert(info.track_id.clone(), new_track);
+        sound_volumes.insert(info.sound_id.clone(), info.sound_volume);
+        track_sounds.insert(info.track_id, info.sound_id);
     }
 }

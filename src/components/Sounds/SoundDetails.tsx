@@ -6,17 +6,13 @@ import { keyCodeToDisplay, getKeyCode, recordKeyLayout, buildComboFromPressedKey
 import { formatDuration } from "../../utils/fileHelpers";
 import { AddSoundModal } from "./AddSoundModal";
 import * as commands from "../../utils/tauriCommands";
+import { getSoundFilePath } from "../../utils/soundHelpers";
 import type { LoopMode, Sound } from "../../types";
 
 interface SoundDetailsProps {
   selectedKey: string;
   onClose: () => void;
   onKeyChanged?: (newKey: string) => void;
-}
-
-function getSoundFilePath(sound: Sound): string {
-  if (sound.source.type === "local") return sound.source.path;
-  return sound.source.cachedPath;
 }
 
 export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetailsProps) {
@@ -32,6 +28,15 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   const [capturingKeyFor, setCapturingKeyFor] = useState<"binding" | string | null>(null);
   const [capturedDisplay, setCapturedDisplay] = useState("");
   const pressedKeysRef = useRef<Set<string>>(new Set());
+
+  // Clear timers on unmount to prevent leaks
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+    };
+  // volumeDebounceRef is created later (after binding check), cleared in that scope
+  }, []);
 
   const handleCapturedKey = useCallback(async (newKeyCode: string) => {
     if (!currentProfile) return;
@@ -188,11 +193,15 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     addToast(`Sound "${name}" removed`, "info");
   };
 
+  const volumeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleVolumeChange = (soundId: string, volume: number) => {
     updateSound(soundId, { volume });
-    // Update volume on currently playing sound in real-time
-    commands.setSoundVolume(binding.trackId, soundId, volume).catch(() => {});
-    setTimeout(() => saveCurrentProfile(), 500);
+    // Debounce the backend IPC call
+    if (volumeDebounceRef.current) clearTimeout(volumeDebounceRef.current);
+    volumeDebounceRef.current = setTimeout(() => {
+      commands.setSoundVolume(binding.trackId, soundId, volume).catch(() => {});
+      saveCurrentProfile();
+    }, 100);
   };
 
   const handleMomentumChange = (soundId: string, momentum: number) => {

@@ -3,12 +3,7 @@ import { useAudioStore } from "../../stores/audioStore";
 import { useProfileStore } from "../../stores/profileStore";
 import { formatDuration } from "../../utils/fileHelpers";
 import * as commands from "../../utils/tauriCommands";
-import type { Sound } from "../../types";
-
-function getSoundFilePath(sound: Sound): string {
-  if (sound.source.type === "local") return sound.source.path;
-  return sound.source.cachedPath;
-}
+import { getSoundFilePath } from "../../utils/soundHelpers";
 
 export function NowPlaying() {
   const playingTracks = useAudioStore((s) => s.playingTracks);

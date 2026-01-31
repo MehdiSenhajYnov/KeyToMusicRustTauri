@@ -4,7 +4,7 @@
 
 use std::sync::mpsc::{channel, Sender};
 use std::sync::OnceLock;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use windows::Win32::Devices::HumanInterfaceDevice::{
     HID_USAGE_GENERIC_KEYBOARD, HID_USAGE_PAGE_GENERIC,
 };
@@ -28,9 +28,6 @@ pub enum WinKeyEvent {
 
 /// Global sender for the keyboard events
 static KEY_SENDER: OnceLock<Sender<WinKeyEvent>> = OnceLock::new();
-
-/// Global window handle for raw input
-static mut RAW_INPUT_HWND: HWND = HWND(std::ptr::null_mut());
 
 /// Start listening for global keyboard events using Raw Input API.
 /// This function blocks and runs the Windows message loop.
@@ -100,7 +97,6 @@ where
             return;
         }
 
-        RAW_INPUT_HWND = hwnd;
         info!("[WinRawInput] Window created: {:?}", hwnd);
 
         // Register for raw keyboard input
@@ -191,7 +187,7 @@ unsafe fn process_raw_input(hrawinput: HRAWINPUT) {
 
         let key_code = vk_to_code(vk_code as u32, scan_code as u32, is_extended);
 
-        info!(
+        debug!(
             "[WinRawInput] Raw input: vk=0x{:02X} scan=0x{:02X} flags=0x{:02X} extended={} keyup={} code={}",
             vk_code, scan_code, flags, is_extended, is_key_up, key_code
         );
@@ -203,7 +199,7 @@ unsafe fn process_raw_input(hrawinput: HRAWINPUT) {
                 WinKeyEvent::Press(key_code)
             };
 
-            info!("[WinRawInput] Sending event: {:?}", event);
+            debug!("[WinRawInput] Sending event: {:?}", event);
             let _ = sender.send(event);
         }
     }

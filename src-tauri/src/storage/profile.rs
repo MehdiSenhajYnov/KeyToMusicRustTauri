@@ -76,18 +76,15 @@ pub fn save_profile(profile: &Profile) -> Result<(), String> {
     let profile_path = get_app_data_dir()
         .join("profiles")
         .join(format!("{}.json", profile.id));
+    let tmp_path = profile_path.with_extension("json.tmp");
 
     let json = serde_json::to_string_pretty(profile)
         .map_err(|e| format!("Failed to serialize profile: {}", e))?;
 
-    fs::write(&profile_path, json).map_err(|e| format!("Failed to write profile: {}", e))?;
+    fs::write(&tmp_path, json).map_err(|e| format!("Failed to write profile temp file: {}", e))?;
+    fs::rename(&tmp_path, &profile_path).map_err(|e| format!("Failed to rename profile file: {}", e))?;
 
     Ok(())
-}
-
-pub fn profile_exists(id: &str) -> bool {
-    let profile_path = get_app_data_dir().join("profiles").join(format!("{}.json", id));
-    profile_path.exists()
 }
 
 pub fn delete_profile(id: String) -> Result<(), String> {

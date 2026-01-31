@@ -20,10 +20,7 @@ fn yt_dlp_command(bin: &PathBuf) -> Command {
 
     // Hide console window on Windows
     #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
     cmd
 }
@@ -75,11 +72,6 @@ pub fn is_valid_youtube_url(url: &str) -> bool {
         && extract_video_id(url).is_some()
 }
 
-
-/// Check if yt-dlp is installed and accessible (locally or in PATH).
-pub async fn check_yt_dlp_installed() -> bool {
-    yt_dlp_manager::is_installed().await
-}
 
 /// Get the yt-dlp binary path, or return an error message.
 fn get_yt_dlp_bin() -> Result<PathBuf, String> {

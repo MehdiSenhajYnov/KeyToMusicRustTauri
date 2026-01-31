@@ -1,38 +1,15 @@
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
-
-use crate::types::SoundId;
 
 /// Metadata about an audio file.
 pub struct AudioMetadata {
     pub duration_secs: f64,
-    pub sample_rate: u32,
-    pub channels: u16,
 }
 
-/// Pre-loaded audio buffer segments for a sound.
-pub struct BufferedSound {
-    pub sound_id: SoundId,
-    pub file_path: String,
-    pub duration_secs: f64,
-    pub sample_rate: u32,
-    pub channels: u16,
-}
-
-/// Manages pre-loaded audio buffers for fast playback startup.
-pub struct BufferManager {
-    pub buffers: HashMap<SoundId, BufferedSound>,
-}
+/// Provides audio file metadata reading and duration computation.
+pub struct BufferManager;
 
 impl BufferManager {
-    pub fn new() -> Self {
-        Self {
-            buffers: HashMap::new(),
-        }
-    }
-
     /// Read audio metadata (duration, sample rate, channels) from a file.
     pub fn read_audio_metadata(path: &str) -> Result<AudioMetadata, String> {
         let file = File::open(path).map_err(|e| format!("Failed to open audio file: {}", e))?;
@@ -55,8 +32,6 @@ impl BufferManager {
 
         Ok(AudioMetadata {
             duration_secs,
-            sample_rate,
-            channels,
         })
     }
 
@@ -100,50 +75,4 @@ impl BufferManager {
         }
     }
 
-    /// Register a sound in the buffer manager (stores metadata, not full audio data).
-    pub fn register_sound(&mut self, sound_id: SoundId, file_path: String) -> Result<(), String> {
-        if !Path::new(&file_path).exists() {
-            return Err(format!("Sound file not found: {}", file_path));
-        }
-
-        let metadata = Self::read_audio_metadata(&file_path)?;
-
-        self.buffers.insert(
-            sound_id.clone(),
-            BufferedSound {
-                sound_id,
-                file_path,
-                duration_secs: metadata.duration_secs,
-                sample_rate: metadata.sample_rate,
-                channels: metadata.channels,
-            },
-        );
-
-        Ok(())
-    }
-
-    /// Remove a sound from the buffer manager.
-    pub fn unregister_sound(&mut self, sound_id: &str) {
-        self.buffers.remove(sound_id);
-    }
-
-    /// Check if a sound is registered.
-    pub fn has_sound(&self, sound_id: &str) -> bool {
-        self.buffers.contains_key(sound_id)
-    }
-
-    /// Get the file path for a registered sound.
-    pub fn get_file_path(&self, sound_id: &str) -> Option<&str> {
-        self.buffers.get(sound_id).map(|b| b.file_path.as_str())
-    }
-
-    /// Get the duration of a registered sound.
-    pub fn get_duration(&self, sound_id: &str) -> Option<f64> {
-        self.buffers.get(sound_id).map(|b| b.duration_secs)
-    }
-
-    /// Clear all buffers.
-    pub fn clear(&mut self) {
-        self.buffers.clear();
-    }
 }

@@ -26,7 +26,7 @@ keytomusic/
 │   ├── stores/                   # Zustand state management (profile, settings, error, export, toast, confirm)
 │   ├── hooks/                    # Custom React hooks (useAudioEvents, useKeyDetection)
 │   ├── types/                    # TypeScript type definitions
-│   └── utils/                    # Frontend utilities (errorMessages, keyMapping, fileHelpers, tauriCommands)
+│   └── utils/                    # Frontend utilities (errorMessages, keyMapping, fileHelpers, tauriCommands, soundHelpers, inputHelpers)
 ├── src-tauri/                    # Rust backend
 │   ├── src/
 │   │   ├── main.rs               # Tauri entry point, logging init, event forwarding
@@ -103,7 +103,7 @@ Uses platform-specific global keyboard capture (works both when app is focused A
 
 **Frontend Key Detection Guard:** The `handleKeyPress` function checks `config.keyDetectionEnabled` before processing any key event, ensuring the toggle actually disables detection.
 
-**Auto-disable:** Key detection is automatically disabled when text input fields are focused in the UI.
+**Auto-disable:** Key detection is automatically disabled (via `useTextInputFocus` hook calling `setKeyDetection(false)` on the backend) when text-like input fields are focused in the UI. Non-text inputs like `<input type="range">` (sliders) and `<input type="checkbox">` are excluded so that key detection continues working when interacting with volume sliders, momentum sliders, etc. The `isTextInput()` helper checks the input's `type` attribute to distinguish text inputs from non-text controls.
 
 **Keyboard Layout Support (AZERTY etc.):** Uses `charToKeyCode(e.key) || e.code` pattern for layout-independent key codes. A dynamic `layoutMap` records actual characters from keydown events via `recordKeyLayout()`. The `keyCodeToDisplay()` function checks layoutMap first for correct display, falling back to QWERTY map.
 
@@ -174,6 +174,8 @@ Each key binding associates:
 
 **Global Config:** `data/config.json` stores app-wide settings (master volume, auto-momentum, key detection enabled, master stop shortcut, auto-momentum shortcut, key detection shortcut, crossfade duration, key cooldown, audio device).
 
+**Atomic Writes:** Both `save_config()` and `save_profile()` use the write-to-temp-then-rename pattern (`file.json.tmp` → `file.json`) to prevent corruption if the process is interrupted mid-write.
+
 **Auto-save:** Configuration saves automatically on changes (with 1-second debounce), on app close, and every 5 minutes.
 
 ### Import/Export
@@ -209,7 +211,7 @@ npm install -D tailwindcss postcss autoprefixer
 npx tailwindcss init -p
 
 # Add Rust dependencies to src-tauri/Cargo.toml:
-# tauri, serde, serde_json, rodio, rdev, tokio, uuid, walkdir, sanitize-filename
+# tauri, serde, serde_json, rodio, rdev, tokio, uuid
 ```
 
 ### Development
@@ -505,8 +507,6 @@ cpal = "0.15"          # Audio device enumeration
 symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "wav", "pcm", "aac", "isomp4"] }  # Fast seeking + M4A
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
-walkdir = "2"          # File traversal
-sanitize-filename = "0.5"
 zip = { version = "2", default-features = false, features = ["deflate"] }  # ffmpeg ZIP extraction
 tracing = "0.1"        # Structured logging
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }  # Log formatting

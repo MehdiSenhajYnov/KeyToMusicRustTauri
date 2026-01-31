@@ -107,6 +107,7 @@ impl ComboTrie {
     }
 
     /// Check if extensions exist for this combo prefix
+    #[cfg(test)]
     pub fn has_extensions(&self, parts: &[String]) -> bool {
         self.find_node(parts)
             .map(|n| !n.children.is_empty())
@@ -194,16 +195,6 @@ impl ChordDetector {
     fn is_modifier(key: &str) -> bool {
         matches!(key, "ControlLeft" | "ControlRight" | "ShiftLeft" | "ShiftRight"
                     | "AltLeft" | "AltRight" | "MetaLeft" | "MetaRight")
-    }
-
-    /// Convert modifier key codes to simple names
-    fn modifier_to_name(key: &str) -> &'static str {
-        match key {
-            "ControlLeft" | "ControlRight" => "Ctrl",
-            "ShiftLeft" | "ShiftRight" => "Shift",
-            "AltLeft" | "AltRight" => "Alt",
-            _ => "",
-        }
     }
 
     /// Build the current combo string from pressed keys
@@ -313,20 +304,9 @@ impl ChordDetector {
     }
 
     /// Check if we have a pending combo waiting for timer
+    #[cfg(test)]
     pub fn has_pending(&self) -> bool {
         self.pending_combo.is_some()
-    }
-
-    /// Get remaining time until timer expires (in ms)
-    pub fn time_until_trigger(&self) -> u64 {
-        if self.pending_combo.is_some() {
-            let elapsed = self.last_key_time.elapsed().as_millis() as u64;
-            let window = self.chord_window_ms as u64;
-            if elapsed < window {
-                return window - elapsed;
-            }
-        }
-        0
     }
 }
 
@@ -372,14 +352,6 @@ impl ChordDetectorHandle {
 
     pub fn clear(&self) {
         self.inner.lock().unwrap().clear();
-    }
-
-    pub fn has_pending(&self) -> bool {
-        self.inner.lock().unwrap().has_pending()
-    }
-
-    pub fn time_until_trigger(&self) -> u64 {
-        self.inner.lock().unwrap().time_until_trigger()
     }
 }
 

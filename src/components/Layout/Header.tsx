@@ -1,3 +1,4 @@
+import { useRef, useCallback } from "react";
 import { useSettingsStore } from "../../stores/settingsStore";
 
 interface HeaderProps {
@@ -6,6 +7,19 @@ interface HeaderProps {
 
 export function Header({ onSettingsClick }: HeaderProps) {
   const { config, setMasterVolume } = useSettingsStore();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleVolumeChange = useCallback((volume: number) => {
+    // Update store immediately for responsive UI
+    useSettingsStore.setState((state) => ({
+      config: { ...state.config, masterVolume: volume },
+    }));
+    // Debounce the backend call
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setMasterVolume(volume);
+    }, 100);
+  }, [setMasterVolume]);
 
   return (
     <header className="h-12 bg-bg-secondary border-b border-border-color flex items-center px-4 gap-4 shrink-0">
@@ -25,7 +39,7 @@ export function Header({ onSettingsClick }: HeaderProps) {
           min="0"
           max="100"
           value={Math.round(config.masterVolume * 100)}
-          onChange={(e) => setMasterVolume(Number(e.target.value) / 100)}
+          onChange={(e) => handleVolumeChange(Number(e.target.value) / 100)}
           className="w-24 h-1 accent-accent-primary"
         />
         <span className="text-text-secondary text-xs w-8">

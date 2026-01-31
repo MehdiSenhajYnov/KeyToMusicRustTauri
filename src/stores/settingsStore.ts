@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { AppConfig, MomentumModifier } from "../types";
 import * as commands from "../utils/tauriCommands";
+import { useToastStore } from "./toastStore";
 
 interface SettingsState {
   config: AppConfig;
@@ -50,133 +51,156 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   updateConfig: async (updates) => {
-    const newConfig = { ...get().config, ...updates };
-    set({ config: newConfig });
+    const prev = get().config;
+    set({ config: { ...prev, ...updates } });
     try {
       await commands.updateConfig(updates);
     } catch (e) {
-      console.error("Failed to update config:", e);
+      set({ config: prev });
+      useToastStore.getState().addToast("Failed to save settings", "error");
     }
   },
 
   setMasterVolume: async (volume) => {
+    const prev = get().config.masterVolume;
     set((state) => ({ config: { ...state.config, masterVolume: volume } }));
     try {
       await commands.setMasterVolume(volume);
     } catch (e) {
-      console.error("Failed to set master volume:", e);
+      set((state) => ({ config: { ...state.config, masterVolume: prev } }));
+      useToastStore.getState().addToast("Failed to set master volume", "error");
     }
   },
 
   toggleAutoMomentum: async () => {
-    const newValue = !get().config.autoMomentum;
+    const prev = get().config.autoMomentum;
+    const newValue = !prev;
     set((state) => ({
       config: { ...state.config, autoMomentum: newValue },
     }));
     try {
       await commands.updateConfig({ autoMomentum: newValue });
     } catch (e) {
-      console.error("Failed to toggle auto momentum:", e);
+      set((state) => ({ config: { ...state.config, autoMomentum: prev } }));
+      useToastStore.getState().addToast("Failed to toggle auto momentum", "error");
     }
   },
 
   toggleKeyDetection: async () => {
-    const newValue = !get().config.keyDetectionEnabled;
+    const prev = get().config.keyDetectionEnabled;
+    const newValue = !prev;
     set((state) => ({
       config: { ...state.config, keyDetectionEnabled: newValue },
     }));
     try {
       await commands.setKeyDetection(newValue);
     } catch (e) {
-      console.error("Failed to toggle key detection:", e);
+      set((state) => ({ config: { ...state.config, keyDetectionEnabled: prev } }));
+      useToastStore.getState().addToast("Failed to toggle key detection", "error");
     }
   },
 
   setMasterStopShortcut: async (keys) => {
+    const prev = get().config.masterStopShortcut;
     set((state) => ({
       config: { ...state.config, masterStopShortcut: keys },
     }));
     try {
       await commands.setMasterStopShortcut(keys);
     } catch (e) {
-      console.error("Failed to set master stop shortcut:", e);
+      set((state) => ({ config: { ...state.config, masterStopShortcut: prev } }));
+      useToastStore.getState().addToast("Failed to set master stop shortcut", "error");
     }
   },
 
   setAutoMomentumShortcut: async (keys) => {
+    const prev = get().config.autoMomentumShortcut;
     set((state) => ({
       config: { ...state.config, autoMomentumShortcut: keys },
     }));
     try {
       await commands.updateConfig({ autoMomentumShortcut: keys });
     } catch (e) {
-      console.error("Failed to set auto momentum shortcut:", e);
+      set((state) => ({ config: { ...state.config, autoMomentumShortcut: prev } }));
+      useToastStore.getState().addToast("Failed to set auto momentum shortcut", "error");
     }
   },
 
   setKeyDetectionShortcut: async (keys) => {
+    const prev = get().config.keyDetectionShortcut;
     set((state) => ({
       config: { ...state.config, keyDetectionShortcut: keys },
     }));
     try {
       await commands.updateConfig({ keyDetectionShortcut: keys });
     } catch (e) {
-      console.error("Failed to set key detection shortcut:", e);
+      set((state) => ({ config: { ...state.config, keyDetectionShortcut: prev } }));
+      useToastStore.getState().addToast("Failed to set key detection shortcut", "error");
     }
   },
 
   setCrossfadeDuration: async (duration) => {
+    const prev = get().config.crossfadeDuration;
     set((state) => ({
       config: { ...state.config, crossfadeDuration: duration },
     }));
     try {
       await commands.updateConfig({ crossfadeDuration: duration });
     } catch (e) {
-      console.error("Failed to set crossfade duration:", e);
+      set((state) => ({ config: { ...state.config, crossfadeDuration: prev } }));
+      useToastStore.getState().addToast("Failed to set crossfade duration", "error");
     }
   },
 
   setKeyCooldown: async (cooldown) => {
+    const prev = get().config.keyCooldown;
     set((state) => ({
       config: { ...state.config, keyCooldown: cooldown },
     }));
     try {
       await commands.setKeyCooldown(cooldown);
     } catch (e) {
-      console.error("Failed to set key cooldown:", e);
+      set((state) => ({ config: { ...state.config, keyCooldown: prev } }));
+      useToastStore.getState().addToast("Failed to set key cooldown", "error");
     }
   },
 
   setAudioDevice: async (device) => {
+    const prev = get().config.audioDevice;
     set((state) => ({
       config: { ...state.config, audioDevice: device },
     }));
     try {
       await commands.setAudioDevice(device);
     } catch (e) {
-      console.error("Failed to set audio device:", e);
+      set((state) => ({ config: { ...state.config, audioDevice: prev } }));
+      useToastStore.getState().addToast("Failed to set audio device", "error");
     }
   },
 
   setChordWindowMs: async (ms) => {
+    const prev = get().config.chordWindowMs;
     set((state) => ({
       config: { ...state.config, chordWindowMs: ms },
     }));
     try {
       await commands.updateConfig({ chordWindowMs: ms });
     } catch (e) {
-      console.error("Failed to set chord window:", e);
+      set((state) => ({ config: { ...state.config, chordWindowMs: prev } }));
+      useToastStore.getState().addToast("Failed to set chord window", "error");
     }
   },
 
   setMomentumModifier: async (modifier) => {
+    const prev = get().config.momentumModifier;
     set((state) => ({
       config: { ...state.config, momentumModifier: modifier },
     }));
     try {
       await commands.updateConfig({ momentumModifier: modifier });
     } catch (e) {
-      console.error("Failed to set momentum modifier:", e);
+      set((state) => ({ config: { ...state.config, momentumModifier: prev } }));
+      useToastStore.getState().addToast("Failed to set momentum modifier", "error");
     }
   },
 }));

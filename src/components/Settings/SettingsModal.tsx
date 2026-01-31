@@ -9,6 +9,7 @@ import {
   getKeyCode,
   findMomentumConflicts,
   keyCodeToDisplay,
+  buildShortcutsList,
   type MomentumModifierType,
 } from "../../utils/keyMapping";
 import * as commands from "../../utils/tauriCommands";
@@ -56,11 +57,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   }, []);
 
   // Build shortcuts array for conflict detection
-  const shortcuts = useMemo(() => [
-    { name: "Master Stop", keys: config.masterStopShortcut },
-    { name: "Auto-Momentum", keys: config.autoMomentumShortcut },
-    { name: "Key Detection", keys: config.keyDetectionShortcut },
-  ], [config.masterStopShortcut, config.autoMomentumShortcut, config.keyDetectionShortcut]);
+  const shortcuts = useMemo(() => buildShortcutsList(config),
+    [config.masterStopShortcut, config.autoMomentumShortcut, config.keyDetectionShortcut]);
 
   // Detect conflicts between momentum modifier and shortcuts
   const momentumConflicts = useMemo(() => {

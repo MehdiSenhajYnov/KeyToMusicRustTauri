@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useProfileStore } from "../stores/profileStore";
 import { useHistoryStore } from "../stores/historyStore";
 import { useToastStore } from "../stores/toastStore";
+import { isTextInput } from "../utils/inputHelpers";
 
 /**
  * Hook to handle Ctrl+Z (Undo) and Ctrl+Y (Redo) keyboard shortcuts.
@@ -17,13 +18,8 @@ export function useUndoRedo() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip if focused on text input
-      const target = e.target as HTMLElement;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement
-      ) {
+      // Skip if focused on text input (but not sliders/checkboxes)
+      if (isTextInput(e.target)) {
         return;
       }
 

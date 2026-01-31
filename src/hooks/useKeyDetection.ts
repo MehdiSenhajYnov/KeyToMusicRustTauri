@@ -7,6 +7,8 @@ import { useToastStore } from "../stores/toastStore";
 import * as commands from "../utils/tauriCommands";
 import { getKeyCode, recordKeyLayout } from "../utils/keyMapping";
 import { formatErrorMessage } from "../utils/errorMessages";
+import { getSoundFilePath } from "../utils/soundHelpers";
+import { isTextInput } from "../utils/inputHelpers";
 import type { LoopMode, Sound, MomentumModifier } from "../types";
 
 /** Check if the momentum modifier is present in the key combo */
@@ -69,11 +71,6 @@ function selectSound(
       return { sound: available[idx], nextIndex: idx };
     }
   }
-}
-
-function getSoundFilePath(sound: Sound): string {
-  if (sound.source.type === "local") return sound.source.path;
-  return sound.source.cachedPath;
 }
 
 export function useKeyDetection() {
@@ -195,13 +192,8 @@ export function useKeyDetection() {
 
   useEffect(() => {
     const handleBrowserKeyDown = (e: KeyboardEvent) => {
-      // Skip if focused on text input
-      const target = e.target as HTMLElement;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement
-      ) {
+      // Skip text inputs (but not sliders/checkboxes) to allow normal typing
+      if (isTextInput(e.target)) {
         return;
       }
 

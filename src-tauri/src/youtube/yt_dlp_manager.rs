@@ -123,10 +123,7 @@ pub async fn download_yt_dlp() -> Result<PathBuf, String> {
     cmd.arg("--version").stdin(Stdio::null());
 
     #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
     let output = match cmd.output().await {
         Ok(output) => output,

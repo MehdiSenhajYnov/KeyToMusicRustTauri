@@ -1,24 +1,14 @@
 use std::time::{Duration, Instant};
 
-use crate::types::SoundId;
-
 /// State of a crossfade transition between two sounds on the same track.
 pub struct CrossfadeState {
-    pub outgoing_sound_id: Option<SoundId>,
-    pub incoming_sound_id: SoundId,
     pub start_time: Instant,
     pub duration: Duration,
 }
 
 impl CrossfadeState {
-    pub fn new(
-        outgoing_sound_id: Option<SoundId>,
-        incoming_sound_id: SoundId,
-        duration_ms: u32,
-    ) -> Self {
+    pub fn new(duration_ms: u32) -> Self {
         Self {
-            outgoing_sound_id,
-            incoming_sound_id,
             start_time: Instant::now(),
             duration: Duration::from_millis(duration_ms as u64),
         }

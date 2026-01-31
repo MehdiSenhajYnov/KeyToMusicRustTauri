@@ -1,17 +1,16 @@
 import { useEffect, useRef } from "react";
 import { setKeyDetection } from "../utils/tauriCommands";
+import { useSettingsStore } from "../stores/settingsStore";
+import { isTextInput } from "../utils/inputHelpers";
 
 export function useTextInputFocus() {
   const isDisabled = useRef(false);
 
   useEffect(() => {
-    const isTextInput = (el: EventTarget | null): boolean =>
-      el instanceof HTMLInputElement ||
-      el instanceof HTMLTextAreaElement ||
-      el instanceof HTMLSelectElement;
 
     const handleFocusIn = (e: FocusEvent) => {
-      if (isTextInput(e.target) && !isDisabled.current) {
+      // Don't override if user has manually disabled key detection
+      if (isTextInput(e.target) && !isDisabled.current && useSettingsStore.getState().config.keyDetectionEnabled) {
         isDisabled.current = true;
         setKeyDetection(false).catch(console.error);
       }

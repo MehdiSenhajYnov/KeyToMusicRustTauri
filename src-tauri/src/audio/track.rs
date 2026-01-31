@@ -4,11 +4,10 @@ use rodio::{OutputStreamHandle, Sink};
 
 use crate::audio::crossfade::CrossfadeState;
 use crate::audio::symphonia_source::SymphoniaSource;
-use crate::types::{SoundId, TrackId};
+use crate::types::SoundId;
 
 /// An active audio track that can play one sound at a time with crossfade support.
 pub struct AudioTrack {
-    pub id: TrackId,
     pub volume: f32,
     pub currently_playing: Option<SoundId>,
     pub start_time: Option<Instant>,
@@ -27,9 +26,8 @@ pub struct AudioTrack {
 }
 
 impl AudioTrack {
-    pub fn new(id: TrackId, stream_handle: OutputStreamHandle) -> Self {
+    pub fn new(stream_handle: OutputStreamHandle) -> Self {
         Self {
-            id,
             volume: 1.0,
             currently_playing: None,
             start_time: None,
@@ -78,11 +76,7 @@ impl AudioTrack {
             new_sink.set_volume(0.0); // incoming starts at 0
 
             // Initialize crossfade state
-            self.crossfade = Some(CrossfadeState::new(
-                self.currently_playing.clone(),
-                sound_id.clone(),
-                crossfade_duration_ms,
-            ));
+            self.crossfade = Some(CrossfadeState::new(crossfade_duration_ms));
         } else {
             // No crossfade, just stop current and play new
             if let Some(ref sink) = self.sink {

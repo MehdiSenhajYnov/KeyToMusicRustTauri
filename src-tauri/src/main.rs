@@ -3,7 +3,6 @@
 
 mod audio;
 mod commands;
-mod errors;
 mod import_export;
 mod keys;
 mod state;
@@ -176,14 +175,6 @@ fn main() {
                                 let _ = app_handle_audio.emit("playback_progress", serde_json::json!({
                                     "trackId": track_id,
                                     "position": position,
-                                }));
-                            }
-                            AudioEvent::SoundNotFound { track_id, sound_id, file_path } => {
-                                tracing::warn!("Sound not found: {} (track: {}, sound: {})", file_path, track_id, sound_id);
-                                let _ = app_handle_audio.emit("sound_not_found", serde_json::json!({
-                                    "soundId": sound_id,
-                                    "path": file_path,
-                                    "trackId": track_id,
                                 }));
                             }
                             AudioEvent::Error { message } => {

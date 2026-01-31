@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useProfileStore } from "../../stores/profileStore";
 import { setTrackVolume } from "../../utils/tauriCommands";
 import { useToastStore } from "../../stores/toastStore";
@@ -14,6 +14,13 @@ export function TrackView() {
   const [editingTrackId, setEditingTrackId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear timer on unmount to prevent leaks
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
 
   const handleRenameStart = (trackId: string, currentName: string) => {
     setEditingTrackId(trackId);
@@ -61,14 +68,17 @@ export function TrackView() {
     addToast(`Track "${trackName}" deleted`, "info");
   };
 
-  const handleVolumeChange = async (trackId: string, volume: number) => {
+  const volumeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleVolumeChange = useCallback((trackId: string, volume: number) => {
+    // Update store immediately for responsive UI
     updateTrack(trackId, { volume });
-    try {
-      await setTrackVolume(trackId, volume);
-    } catch (e) {
-      console.error("Failed to set track volume:", e);
-    }
-  };
+    // Debounce the backend call
+    if (volumeDebounceRef.current) clearTimeout(volumeDebounceRef.current);
+    volumeDebounceRef.current = setTimeout(() => {
+      setTrackVolume(trackId, volume).catch(console.error);
+    }, 100);
+  }, [updateTrack]);
 
   return (
     <div className="space-y-2">

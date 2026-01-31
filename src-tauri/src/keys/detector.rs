@@ -195,7 +195,7 @@ impl KeyDetector {
                 use crate::keys::mapping::key_to_code;
 
                 let handler = handle_key_event;
-                listen(move |event| {
+                if let Err(e) = listen(move |event| {
                     match event.event_type {
                         EventType::KeyPress(key) => {
                             let code = key_to_code(key);
@@ -207,8 +207,9 @@ impl KeyDetector {
                         }
                         _ => {}
                     }
-                })
-                .expect("Failed to listen to keyboard events");
+                }) {
+                    tracing::warn!("Global keyboard listener failed: {:?}", e);
+                }
             }
         });
     }
@@ -260,11 +261,6 @@ impl KeyDetector {
             // Clear chord detector state when disabled
             self.chord_detector.clear();
         }
-    }
-
-    /// Check if key detection is enabled.
-    pub fn is_enabled(&self) -> bool {
-        *self.enabled.lock().unwrap()
     }
 
     /// Update the cooldown duration.

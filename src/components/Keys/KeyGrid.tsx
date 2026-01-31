@@ -4,6 +4,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import {
   keyCodeToDisplay,
   getKeyMomentumConflict,
+  buildShortcutsList,
   type MomentumModifierType,
 } from "../../utils/keyMapping";
 import { WarningTooltip } from "../common/WarningTooltip";
@@ -24,11 +25,7 @@ export function KeyGrid({ selectedKey, onKeySelect }: KeyGridProps) {
   const { keyBindings, sounds } = currentProfile;
 
   // Build shortcuts array for conflict detection
-  const shortcuts = [
-    { name: "Master Stop", keys: config.masterStopShortcut },
-    { name: "Auto-Momentum", keys: config.autoMomentumShortcut },
-    { name: "Key Detection", keys: config.keyDetectionShortcut },
-  ];
+  const shortcuts = buildShortcutsList(config);
 
   return (
     <div className="space-y-2">

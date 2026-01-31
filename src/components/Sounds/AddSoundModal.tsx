@@ -47,6 +47,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   const unlistenRef = useRef<(() => void) | null>(null);
   const downloadIdCounter = useRef(0);
   const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectedTrackIdRef = useRef(currentProfile?.tracks[0]?.id || "");
   // Key assignment: array of key codes (e.g., ["KeyA", "Ctrl+KeyB"])
   const [assignedKeys, setAssignedKeys] = useState<string[]>(targetKey ? [targetKey] : [""]);
   const [selectedTrackId, setSelectedTrackId] = useState(
@@ -87,6 +88,13 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     }
   }, [initialFiles]);
 
+  const handleStopPreview = useCallback(() => {
+    if (selectedTrackId) {
+      commands.stopSound(selectedTrackId).catch(() => {});
+    }
+    setPreviewingIndex(null);
+  }, [selectedTrackId]);
+
   // Close on Escape
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -97,16 +105,21 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     };
     window.addEventListener("keydown", handleEscape);
     return () => window.removeEventListener("keydown", handleEscape);
-  }, [onClose]);
+  }, [onClose, handleStopPreview]);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    selectedTrackIdRef.current = selectedTrackId;
+  }, [selectedTrackId]);
 
   // Stop preview on unmount
   useEffect(() => {
     return () => {
-      if (selectedTrackId) {
-        commands.stopSound(selectedTrackId).catch(() => {});
+      if (selectedTrackIdRef.current) {
+        commands.stopSound(selectedTrackIdRef.current).catch(() => {});
       }
     };
-  }, [selectedTrackId]);
+  }, []);
 
   // Listen for download progress events
   useEffect(() => {
@@ -238,13 +251,6 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
       }, 150);
     }
   };
-
-  const handleStopPreview = useCallback(() => {
-    if (selectedTrackId) {
-      commands.stopSound(selectedTrackId).catch(() => {});
-    }
-    setPreviewingIndex(null);
-  }, [selectedTrackId]);
 
   const handlePreviewToggle = async (index: number) => {
     if (previewingIndex === index) {

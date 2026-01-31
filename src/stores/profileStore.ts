@@ -4,11 +4,7 @@ import * as commands from "../utils/tauriCommands";
 import type { ProfileSummary } from "../utils/tauriCommands";
 import { useErrorStore } from "./errorStore";
 import { useHistoryStore, captureProfileState, applyHistoryState } from "./historyStore";
-
-function getSoundFilePath(sound: Sound): string {
-  if (sound.source.type === "local") return sound.source.path;
-  return sound.source.cachedPath;
-}
+import { getSoundFilePath } from "../utils/soundHelpers";
 
 /** Compute missing durations for all sounds in a profile (background). */
 async function computeProfileDurations(

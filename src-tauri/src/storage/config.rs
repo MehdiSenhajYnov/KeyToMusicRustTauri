@@ -3,22 +3,22 @@ use std::fs;
 use std::path::PathBuf;
 
 pub fn get_app_data_dir() -> PathBuf {
+    let base = dirs::data_dir()
+        .expect("Could not determine system data directory — the app cannot function without it");
+
     #[cfg(target_os = "windows")]
     {
-        // C:\Users\{user}\AppData\Roaming\KeyToMusic\
-        dirs::data_dir().unwrap().join("KeyToMusic")
+        base.join("KeyToMusic")
     }
 
     #[cfg(target_os = "macos")]
     {
-        // /Users/{user}/Library/Application Support/KeyToMusic/
-        dirs::data_dir().unwrap().join("KeyToMusic")
+        base.join("KeyToMusic")
     }
 
     #[cfg(target_os = "linux")]
     {
-        // /home/{user}/.local/share/keytomusic/
-        dirs::data_dir().unwrap().join("keytomusic")
+        base.join("keytomusic")
     }
 }
 
@@ -53,11 +53,13 @@ pub fn load_config() -> Result<AppConfig, String> {
 
 pub fn save_config(config: &AppConfig) -> Result<(), String> {
     let config_path = get_app_data_dir().join("config.json");
+    let tmp_path = config_path.with_extension("json.tmp");
 
     let json = serde_json::to_string_pretty(config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
-    fs::write(&config_path, json).map_err(|e| format!("Failed to write config: {}", e))?;
+    fs::write(&tmp_path, json).map_err(|e| format!("Failed to write config temp file: {}", e))?;
+    fs::rename(&tmp_path, &config_path).map_err(|e| format!("Failed to rename config file: {}", e))?;
 
     Ok(())
 }

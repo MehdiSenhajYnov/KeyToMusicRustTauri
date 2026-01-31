@@ -6,8 +6,6 @@ interface ProfileSummary {
   name: string;
   created_at: string;
   updated_at: string;
-  sound_count: number;
-  track_count: number;
 }
 
 // ─── Config ────────────────────────────────────────────────────────────────
