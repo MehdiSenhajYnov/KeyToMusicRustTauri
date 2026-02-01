@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useProfileStore } from "../../stores/profileStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useConfirmStore } from "../../stores/confirmStore";
@@ -27,7 +27,13 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [waveforms, setWaveforms] = useState<Map<string, WaveformData>>(new Map());
-  const playingTracks = useAudioStore((s) => s.playingTracks);
+
+  // Subscribe only to the track entry for this binding's track (not all tracks)
+  const bindingTrackId = currentProfile?.keyBindings.find((kb) => kb.keyCode === selectedKey)?.trackId;
+  const trackPlayback = useAudioStore((s) =>
+    bindingTrackId ? s.playingTracks.get(bindingTrackId) ?? null : null
+  );
+
   // "binding" = reassign entire key, soundId string = move that sound to another key
   const [capturingKeyFor, setCapturingKeyFor] = useState<"binding" | string | null>(null);
   const [capturedDisplay, setCapturedDisplay] = useState("");
@@ -42,21 +48,38 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   // volumeDebounceRef is created later (after binding check), cleared in that scope
   }, []);
 
-  // Fetch waveforms for sounds in this binding
-  useEffect(() => {
-    if (!currentProfile) return;
+  // Derive stable list of sound paths that need waveforms
+  const waveformPaths = useMemo(() => {
+    if (!currentProfile) return [];
     const binding = currentProfile.keyBindings.find((kb) => kb.keyCode === selectedKey);
-    if (!binding) return;
+    if (!binding) return [];
+    const paths: { soundId: string; path: string }[] = [];
     for (const soundId of binding.soundIds) {
       const sound = currentProfile.sounds.find((s) => s.id === soundId);
       if (!sound || sound.duration <= 0) continue;
-      const path = getSoundFilePath(sound);
+      paths.push({ soundId, path: getSoundFilePath(sound) });
+    }
+    return paths;
+    // Re-derive only when the binding's sound list or sounds array changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    currentProfile?.id,
+    selectedKey,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    currentProfile?.keyBindings.find((kb) => kb.keyCode === selectedKey)?.soundIds.join(","),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    currentProfile?.sounds.map((s) => `${s.id}:${s.duration}`).join(","),
+  ]);
+
+  // Fetch waveforms for sounds in this binding
+  useEffect(() => {
+    for (const { path } of waveformPaths) {
       if (waveforms.has(path)) continue;
       commands.getWaveform(path, 200).then((data) => {
         setWaveforms((prev) => new Map(prev).set(path, data));
       }).catch(() => {});
     }
-  }, [currentProfile, selectedKey]);
+  }, [waveformPaths]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCapturedKey = useCallback(async (newKeyCode: string) => {
     if (!currentProfile) return;
@@ -382,8 +405,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
             {(() => {
               const path = getSoundFilePath(sound);
               const waveform = waveforms.get(path);
-              const trackEntry = playingTracks.get(binding.trackId);
-              const playbackPos = trackEntry?.soundId === sound.id ? trackEntry.position : undefined;
+              const playbackPos = trackPlayback?.soundId === sound.id ? trackPlayback.position : undefined;
               return waveform ? (
                 <WaveformDisplay
                   waveformData={waveform}

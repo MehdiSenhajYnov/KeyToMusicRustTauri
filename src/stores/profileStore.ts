@@ -6,11 +6,11 @@ import { useErrorStore } from "./errorStore";
 import { useHistoryStore, captureProfileState, applyHistoryState } from "./historyStore";
 import { getSoundFilePath } from "../utils/soundHelpers";
 
-/** Compute missing durations for all sounds in a profile (background). */
+/** Compute missing durations for all sounds in a profile (background).
+ *  Returns a map of soundId -> duration, or null if nothing needed. */
 async function computeProfileDurations(
   profile: Profile,
-  updateSoundFn: (soundId: string, updates: Partial<Sound>) => void
-) {
+): Promise<Record<string, number> | null> {
   const entries = profile.sounds
     .filter((sound) => sound.duration === 0)
     .map((sound) => ({
@@ -19,15 +19,14 @@ async function computeProfileDurations(
       needsDuration: true,
     }));
 
-  if (entries.length === 0) return;
+  if (entries.length === 0) return null;
 
   try {
     const durations = await commands.preloadProfileSounds(entries);
-    for (const [soundId, duration] of Object.entries(durations)) {
-      updateSoundFn(soundId, { duration });
-    }
+    return Object.keys(durations).length > 0 ? durations : null;
   } catch (e) {
     console.error("Failed to compute durations:", e);
+    return null;
   }
 }
 
@@ -123,15 +122,16 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       } catch (e) {
         console.error("Failed to verify profile sounds:", e);
       }
-      // Compute durations in background
-      computeProfileDurations(profile, (soundId, updates) => {
+      // Compute durations in background — single batched update
+      computeProfileDurations(profile).then((durations) => {
+        if (!durations) return;
         set((state) => {
           if (!state.currentProfile) return state;
           return {
             currentProfile: {
               ...state.currentProfile,
               sounds: state.currentProfile.sounds.map((s) =>
-                s.id === soundId ? { ...s, ...updates } : s
+                durations[s.id] != null ? { ...s, duration: durations[s.id] } : s
               ),
             },
           };

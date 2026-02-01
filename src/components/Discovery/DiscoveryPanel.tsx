@@ -77,6 +77,26 @@ export function DiscoveryPanel() {
     };
   }, [profile]);
 
+  // Listen for partial discovery results (streaming)
+  useEffect(() => {
+    const unlisten = listen<DiscoverySuggestion[]>(
+      "discovery_partial",
+      (event) => {
+        const state = useDiscoveryStore.getState();
+        if (
+          state.isGenerating &&
+          state.visibleSuggestions.length === 0 &&
+          event.payload.length > 0
+        ) {
+          setSuggestions(event.payload, buildEnricher());
+        }
+      }
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [setSuggestions, buildEnricher]);
+
   // Load cached suggestions when profile changes, auto-discover if empty
   useEffect(() => {
     if (!profile) {
@@ -119,6 +139,13 @@ export function DiscoveryPanel() {
   const handleGenerate = async () => {
     if (!profile || isGenerating) return;
     setGenerating(true);
+    // Clear old suggestions so partials from this run can populate fresh
+    useDiscoveryStore.setState({
+      allSuggestions: [],
+      visibleSuggestions: [],
+      revealedCount: 10,
+      currentIndex: 0,
+    });
     try {
       const results = await commands.startDiscovery(profile.id);
       setSuggestions(results, buildEnricher());
@@ -330,7 +357,7 @@ export function DiscoveryPanel() {
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
-      {/* Header */}
+      {/* Header: [Discover (1/30) Refresh]  ...  [X] */}
       <div className="px-3 pt-2 pb-1 flex items-center justify-between">
         <div className="flex items-center gap-1">
           <h3 className="text-text-muted text-xs font-semibold uppercase tracking-wider">
@@ -340,32 +367,6 @@ export function DiscoveryPanel() {
             <span className="text-accent-primary text-[10px]">
               ({currentIndex + 1}/{total})
             </span>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          {showing > 0 && (
-            <>
-              <button
-                onClick={handlePrev}
-                disabled={currentIndex <= 0}
-                className="w-5 h-5 flex items-center justify-center rounded text-text-muted hover:text-text-primary hover:bg-bg-hover disabled:opacity-30 disabled:cursor-default transition-colors"
-                title="Previous"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </button>
-              <button
-                onClick={handleNext}
-                disabled={currentIndex >= showing - 1}
-                className="w-5 h-5 flex items-center justify-center rounded text-text-muted hover:text-text-primary hover:bg-bg-hover disabled:opacity-30 disabled:cursor-default transition-colors"
-                title="Next"
-              >
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </>
           )}
           {hasYoutubeSounds && (
             isGenerating ? (
@@ -388,6 +389,17 @@ export function DiscoveryPanel() {
             )
           )}
         </div>
+        {current && (
+          <button
+            onClick={() => handleDismiss(current.videoId)}
+            className="w-5 h-5 flex items-center justify-center rounded text-text-muted hover:text-accent-error hover:bg-accent-error/10 transition-colors"
+            title="Dismiss suggestion"
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -434,12 +446,15 @@ export function DiscoveryPanel() {
           suggestion={current}
           profile={profile}
           config={config}
-          onDismiss={handleDismiss}
           onAdd={handleAdd}
           onPreview={handlePreview}
           onSeekPreview={handleSeekPreview}
           onUpdateAssignment={updateSuggestionAssignment}
           onCapturingChange={setIsCapturingKey}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          hasPrev={currentIndex > 0}
+          hasNext={currentIndex < showing - 1}
         />}
       </div>
     </div>
@@ -452,7 +467,6 @@ interface SuggestionCardProps {
   suggestion: EnrichedSuggestion;
   profile: NonNullable<ReturnType<typeof useProfileStore.getState>["currentProfile"]>;
   config: ReturnType<typeof useSettingsStore.getState>["config"];
-  onDismiss: (videoId: string) => void;
   onAdd: (s: EnrichedSuggestion) => void;
   onPreview: (s: EnrichedSuggestion) => void;
   onSeekPreview: (s: EnrichedSuggestion, position: number) => void;
@@ -465,18 +479,25 @@ interface SuggestionCardProps {
     }>
   ) => void;
   onCapturingChange: (capturing: boolean) => void;
+  onPrev: () => void;
+  onNext: () => void;
+  hasPrev: boolean;
+  hasNext: boolean;
 }
 
 function SuggestionCard({
   suggestion: s,
   profile,
   config,
-  onDismiss,
   onAdd,
   onPreview,
   onSeekPreview,
   onUpdateAssignment,
   onCapturingChange,
+  onPrev,
+  onNext,
+  hasPrev,
+  hasNext,
 }: SuggestionCardProps) {
   const playingTracks = useAudioStore((st) => st.playingTracks);
   const addToast = useToastStore((st) => st.addToast);
@@ -592,29 +613,10 @@ function SuggestionCard({
 
   return (
     <div className="space-y-1.5 group">
-      {/* Row 1: Title + dismiss */}
-      <div className="flex items-center gap-1">
-        <p className="text-text-primary text-sm truncate flex-1" title={titleTooltip}>
-          {s.title}
-        </p>
-        {s.occurrenceCount > 1 && (
-          <span
-            className="text-accent-primary text-[10px] shrink-0"
-            title={`Found via: ${s.sourceSeedNames.join(", ")}`}
-          >
-            {"·".repeat(Math.min(s.occurrenceCount, 3))}
-          </span>
-        )}
-        <button
-          onClick={() => onDismiss(s.videoId)}
-          className="shrink-0 w-4 h-4 flex items-center justify-center text-text-muted hover:text-accent-error opacity-0 group-hover:opacity-100 transition-all"
-          title="Dismiss"
-        >
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
+      {/* Row 1: Title */}
+      <p className="text-text-primary text-sm truncate" title={titleTooltip}>
+        {s.title}
+      </p>
 
       {/* Row 2: Play button + Waveform */}
       <div className="flex items-center gap-1.5">
@@ -717,6 +719,27 @@ function SuggestionCard({
           {timingDisplay}
         </span>
         <div className="flex-1" />
+        {/* Navigation */}
+        <button
+          onClick={onPrev}
+          disabled={!hasPrev}
+          className="w-5 h-5 flex items-center justify-center rounded text-text-muted hover:text-text-primary hover:bg-bg-hover disabled:opacity-30 disabled:cursor-default transition-colors"
+          title="Previous"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <button
+          onClick={onNext}
+          disabled={!hasNext}
+          className="w-5 h-5 flex items-center justify-center rounded text-text-muted hover:text-text-primary hover:bg-bg-hover disabled:opacity-30 disabled:cursor-default transition-colors"
+          title="Next"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
         {/* Add button */}
         <button
           onClick={() => onAdd(s)}

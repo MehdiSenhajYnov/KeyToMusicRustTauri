@@ -403,7 +403,7 @@ pub async fn get_waveform(
 
     let path_clone = path.clone();
     let result = tokio::task::spawn_blocking(move || {
-        analysis::compute_waveform(&path_clone, num_points)
+        analysis::compute_waveform_sampled(&path_clone, num_points)
     })
     .await
     .map_err(|e| format!("Waveform task failed: {}", e))??;
@@ -468,7 +468,7 @@ pub async fn get_waveforms_batch(
                 let new_results = &new_results;
                 scope.spawn(move || {
                     for entry in chunk {
-                        if let Ok(data) = analysis::compute_waveform(&entry.path, entry.num_points)
+                        if let Ok(data) = analysis::compute_waveform_sampled(&entry.path, entry.num_points)
                         {
                             new_results
                                 .lock()
@@ -873,15 +873,24 @@ pub async fn start_discovery(
 
     let engine = discovery::engine::DiscoveryEngine::new(cancel_flag.clone());
 
-    let app_handle = app.clone();
+    let app_progress = app.clone();
+    let app_partial = app.clone();
     let suggestions = engine
-        .generate_suggestions(seeds.clone(), existing_ids, yt_dlp_bin, |current, total, seed_name| {
-            let _ = app_handle.emit("discovery_progress", serde_json::json!({
-                "current": current,
-                "total": total,
-                "seedName": seed_name,
-            }));
-        })
+        .generate_suggestions(
+            seeds.clone(),
+            existing_ids,
+            yt_dlp_bin,
+            |current, total, seed_name| {
+                let _ = app_progress.emit("discovery_progress", serde_json::json!({
+                    "current": current,
+                    "total": total,
+                    "seedName": seed_name,
+                }));
+            },
+            |partial_suggestions| {
+                let _ = app_partial.emit("discovery_partial", partial_suggestions);
+            },
+        )
         .await;
 
     if cancel_flag.load(Ordering::Relaxed) {

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -29,6 +29,57 @@ pub struct DiscoverySuggestion {
     pub source_seed_ids: Vec<String>,
 }
 
+// video_id -> (title, channel, duration, url, source_seed_names, source_seed_ids, count)
+type OccurrenceMap = HashMap<
+    String,
+    (
+        String,      // title
+        String,      // channel
+        f64,         // duration
+        String,      // url
+        Vec<String>, // source_seed_names
+        Vec<String>, // source_seed_ids
+        usize,       // count
+    ),
+>;
+
+/// Build sorted, filtered suggestions from the occurrence map.
+/// Uses `.iter()` + clone so the map survives between iterations.
+fn build_suggestions(
+    occurrence_map: &OccurrenceMap,
+    existing_set: &HashSet<String>,
+) -> Vec<DiscoverySuggestion> {
+    let mut suggestions: Vec<DiscoverySuggestion> = occurrence_map
+        .iter()
+        .filter(|(video_id, (_, _, duration, _, _, _, _))| {
+            !existing_set.contains(*video_id)
+                && *duration >= 30.0
+                && *duration <= 900.0 // 15 minutes
+        })
+        .map(
+            |(video_id, (title, channel, duration, url, source_seed_names, source_seed_ids, count))| {
+                DiscoverySuggestion {
+                    video_id: video_id.clone(),
+                    title: title.clone(),
+                    channel: channel.clone(),
+                    duration: *duration,
+                    url: url.clone(),
+                    occurrence_count: *count,
+                    source_seed_names: source_seed_names.clone(),
+                    source_seed_ids: source_seed_ids.clone(),
+                }
+            },
+        )
+        .collect();
+
+    // Sort by occurrence count descending
+    suggestions.sort_by(|a, b| b.occurrence_count.cmp(&a.occurrence_count));
+
+    // Return top 30
+    suggestions.truncate(30);
+    suggestions
+}
+
 pub struct DiscoveryEngine {
     pub cancel_flag: Arc<AtomicBool>,
 }
@@ -42,12 +93,14 @@ impl DiscoveryEngine {
     /// `seeds`: YouTube videos already in the profile.
     /// `existing_ids`: video IDs already in the profile (to filter out).
     /// `progress_callback`: called after each seed is processed (current, total, seed_name).
+    /// `partial_callback`: called after each seed with the current partial suggestions.
     pub async fn generate_suggestions(
         &self,
         seeds: Vec<SeedInfo>,
         existing_ids: Vec<String>,
         yt_dlp_bin: PathBuf,
         progress_callback: impl Fn(usize, usize, &str) + Send + Sync,
+        partial_callback: impl Fn(&[DiscoverySuggestion]) + Send + Sync,
     ) -> Vec<DiscoverySuggestion> {
         let seeds = if seeds.len() > 15 {
             seeds[..15].to_vec()
@@ -56,26 +109,15 @@ impl DiscoveryEngine {
         };
 
         let total = seeds.len();
+        let existing_set: HashSet<String> = existing_ids.into_iter().collect();
 
-        // video_id -> (info, set of source_seed_names, source_seed_ids, count)
-        let mut occurrence_map: HashMap<
-            String,
-            (
-                String,      // title
-                String,      // channel
-                f64,         // duration
-                String,      // url
-                Vec<String>, // source_seed_names
-                Vec<String>, // source_seed_ids
-                usize,       // count
-            ),
-        > = HashMap::new();
+        let mut occurrence_map: OccurrenceMap = HashMap::new();
 
         let completed = Arc::new(AtomicUsize::new(0));
         let cancel = self.cancel_flag.clone();
         let progress_callback = Arc::new(progress_callback);
 
-        let results: Vec<_> = stream::iter(seeds.into_iter())
+        let mut stream = stream::iter(seeds.into_iter())
             .map(|seed| {
                 let bin = yt_dlp_bin.clone();
                 let cancel = cancel.clone();
@@ -91,11 +133,13 @@ impl DiscoveryEngine {
                     (seed, mix)
                 }
             })
-            .buffer_unordered(4)
-            .collect()
-            .await;
+            .buffer_unordered(10);
 
-        for (seed, mix) in results {
+        while let Some((seed, mix)) = stream.next().await {
+            if self.cancel_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
             for result in mix {
                 let entry = occurrence_map
                     .entry(result.video_id.clone())
@@ -118,40 +162,12 @@ impl DiscoveryEngine {
                 }
                 entry.6 += 1;
             }
+
+            // Emit partial suggestions after each seed
+            let partial = build_suggestions(&occurrence_map, &existing_set);
+            partial_callback(&partial);
         }
 
-        // Filter and sort
-        let existing_set: std::collections::HashSet<String> =
-            existing_ids.into_iter().collect();
-
-        let mut suggestions: Vec<DiscoverySuggestion> = occurrence_map
-            .into_iter()
-            .filter(|(video_id, (_, _, duration, _, _, _, _))| {
-                !existing_set.contains(video_id)
-                    && *duration >= 30.0
-                    && *duration <= 900.0 // 15 minutes
-            })
-            .map(
-                |(video_id, (title, channel, duration, url, source_seed_names, source_seed_ids, count))| {
-                    DiscoverySuggestion {
-                        video_id,
-                        title,
-                        channel,
-                        duration,
-                        url,
-                        occurrence_count: count,
-                        source_seed_names,
-                        source_seed_ids,
-                    }
-                },
-            )
-            .collect();
-
-        // Sort by occurrence count descending
-        suggestions.sort_by(|a, b| b.occurrence_count.cmp(&a.occurrence_count));
-
-        // Return top 30
-        suggestions.truncate(30);
-        suggestions
+        build_suggestions(&occurrence_map, &existing_set)
     }
 }

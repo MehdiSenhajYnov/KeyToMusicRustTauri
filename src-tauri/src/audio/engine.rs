@@ -257,7 +257,7 @@ fn audio_thread_main(
 
     // Progress emission timer
     let mut last_progress_emit = Instant::now();
-    let progress_interval = Duration::from_millis(100);
+    let progress_interval = Duration::from_millis(250);
 
     loop {
         // Use shorter timeout when actively playing (crossfade needs ~60fps),

@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useProfileStore } from "../../stores/profileStore";
 import { useAudioStore } from "../../stores/audioStore";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -15,9 +16,28 @@ interface KeyGridProps {
   onSelectAll: () => void;
 }
 
+/** Extract only the set of playing sound IDs from playingTracks.
+ *  Uses shallow comparison to avoid re-renders on position-only changes. */
+function usePlayingSoundIds(): Set<string> {
+  const prevRef = useRef<Set<string>>(new Set());
+  return useAudioStore((state) => {
+    const next = new Set<string>();
+    for (const pt of state.playingTracks.values()) {
+      next.add(pt.soundId);
+    }
+    // Return previous reference if contents are identical (prevents re-render)
+    const prev = prevRef.current;
+    if (next.size === prev.size && [...next].every((id) => prev.has(id))) {
+      return prev;
+    }
+    prevRef.current = next;
+    return next;
+  });
+}
+
 export function KeyGrid({ selectedKeys, onKeySelect, onSelectAll }: KeyGridProps) {
   const currentProfile = useProfileStore((s) => s.currentProfile);
-  const playingTracks = useAudioStore((s) => s.playingTracks);
+  const playingSoundIds = usePlayingSoundIds();
   const lastKeyPressed = useAudioStore((s) => s.lastKeyPressed);
   const config = useSettingsStore((s) => s.config);
 
@@ -52,9 +72,7 @@ export function KeyGrid({ selectedKeys, onKeySelect, onSelectAll }: KeyGridProps
             const displayName = kb.name || firstSound?.name || "No sound";
             const soundCount = kb.soundIds.length;
             const isSelected = selectedKeys.has(kb.keyCode);
-            const isPlaying = Array.from(playingTracks.values()).some(
-              (pt) => kb.soundIds.includes(pt.soundId)
-            );
+            const isPlaying = kb.soundIds.some((id) => playingSoundIds.has(id));
             const isJustPressed = lastKeyPressed === kb.keyCode;
 
             // Check for momentum conflict

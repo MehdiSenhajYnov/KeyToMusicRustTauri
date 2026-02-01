@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fs::File;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use symphonia::core::audio::SampleBuffer;
@@ -377,28 +378,61 @@ fn detect_momentum_point(points: &[f32], duration: f64) -> Option<f64> {
     None
 }
 
-/// In-memory cache for waveform data with LRU eviction.
+/// A single disk-cache entry: waveform data + file modification timestamp for invalidation.
+#[derive(Clone, Serialize, Deserialize)]
+struct CacheEntry {
+    data: WaveformData,
+    file_modified: u64, // seconds since epoch
+}
+
+/// In-memory cache for waveform data with LRU eviction and disk persistence.
 pub struct WaveformCache {
-    entries: HashMap<String, WaveformData>,
+    entries: HashMap<String, CacheEntry>,
     access_order: Vec<String>,
     max_entries: usize,
+    disk_path: Option<PathBuf>,
 }
 
 impl WaveformCache {
+    #[allow(dead_code)]
     pub fn new(max_entries: usize) -> Self {
         Self {
             entries: HashMap::new(),
             access_order: Vec::new(),
             max_entries,
+            disk_path: None,
         }
     }
 
+    /// Create a cache and load persisted entries from disk.
+    pub fn new_with_disk(max_entries: usize, disk_path: PathBuf) -> Self {
+        let mut cache = Self {
+            entries: HashMap::new(),
+            access_order: Vec::new(),
+            max_entries,
+            disk_path: Some(disk_path),
+        };
+        cache.load_from_disk();
+        cache
+    }
+
     pub fn get(&mut self, key: &str) -> Option<&WaveformData> {
+        // Check if the source file has changed since caching
+        if let Some(entry) = self.entries.get(key) {
+            let current_mtime = file_mtime(key);
+            if current_mtime != entry.file_modified {
+                // File changed — invalidate
+                self.entries.remove(key);
+                self.access_order.retain(|k| k != key);
+                return None;
+            }
+        }
+
         if self.entries.contains_key(key) {
             // Move to end (most recently used)
             self.access_order.retain(|k| k != key);
             self.access_order.push(key.to_string());
-            self.entries.get(key)
+            self.entries.get(key).map(|e| &e.data)
         } else {
             None
         }
@@ -412,8 +446,87 @@ impl WaveformCache {
                 self.access_order.remove(0);
             }
         }
+        let file_modified = file_mtime(&key);
         self.access_order.retain(|k| k != &key);
         self.access_order.push(key.clone());
-        self.entries.insert(key, data);
+        self.entries.insert(key, CacheEntry { data, file_modified });
+        self.save_to_disk();
     }
+
+    /// Load cache entries from disk (best-effort).
+    fn load_from_disk(&mut self) {
+        let path = match &self.disk_path {
+            Some(p) => p.clone(),
+            None => return,
+        };
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        #[derive(Deserialize)]
+        struct DiskCache {
+            entries: HashMap<String, CacheEntry>,
+            access_order: Vec<String>,
+        }
+
+        if let Ok(disk) = serde_json::from_str::<DiskCache>(&content) {
+            self.entries = disk.entries;
+            self.access_order = disk.access_order;
+            // Trim to max_entries (keep most recent)
+            while self.entries.len() > self.max_entries {
+                if let Some(oldest) = self.access_order.first().cloned() {
+                    self.entries.remove(&oldest);
+                    self.access_order.remove(0);
+                } else {
+                    break;
+                }
+            }
+            tracing::info!("Loaded {} waveform cache entries from disk", self.entries.len());
+        }
+    }
+
+    /// Persist cache to disk (atomic write: tmp + rename).
+    fn save_to_disk(&self) {
+        let path = match &self.disk_path {
+            Some(p) => p.clone(),
+            None => return,
+        };
+
+        #[derive(Serialize)]
+        struct DiskCache<'a> {
+            entries: &'a HashMap<String, CacheEntry>,
+            access_order: &'a Vec<String>,
+        }
+
+        let disk = DiskCache {
+            entries: &self.entries,
+            access_order: &self.access_order,
+        };
+
+        let tmp = path.with_extension("json.tmp");
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match serde_json::to_string(&disk) {
+            Ok(json) => {
+                if std::fs::write(&tmp, &json).is_ok() {
+                    let _ = std::fs::rename(&tmp, &path);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to serialize waveform cache: {}", e);
+            }
+        }
+    }
+}
+
+/// Get file modification time as seconds since epoch (0 if unavailable).
+fn file_mtime(path: &str) -> u64 {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }

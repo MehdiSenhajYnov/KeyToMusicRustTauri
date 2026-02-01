@@ -24,13 +24,14 @@ export function WaveformDisplay({
   onAcceptSuggestion,
   height = 60,
 }: WaveformDisplayProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const staticCanvasRef = useRef<HTMLCanvasElement>(null);
+  const cursorCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
 
   const posToTime = useCallback(
     (clientX: number): number => {
-      const canvas = canvasRef.current;
+      const canvas = staticCanvasRef.current;
       if (!canvas || !waveformData || waveformData.duration <= 0) return 0;
       const rect = canvas.getBoundingClientRect();
       const x = clientX - rect.left;
@@ -68,9 +69,9 @@ export function WaveformDisplay({
     [waveformData, posToTime, onMomentumChange, onDragEnd]
   );
 
-  // Draw waveform
+  // Draw static waveform (only when data, momentum, or suggested momentum changes)
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = staticCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
@@ -84,7 +85,6 @@ export function WaveformDisplay({
     const w = rect.width;
     const h = rect.height;
 
-    // Clear
     ctx.clearRect(0, 0, w, h);
 
     if (!waveformData || waveformData.points.length === 0) {
@@ -155,10 +155,33 @@ export function WaveformDisplay({
       ctx.lineWidth = 2;
       ctx.stroke();
     }
+  }, [waveformData, momentum, suggestedMomentum, height]);
 
-    // Draw playback cursor (thin green line)
-    if (playbackPosition != null && playbackPosition > 0 && duration > 0) {
-      const px = (playbackPosition / duration) * w;
+  // Draw playback cursor on overlay canvas (lightweight, runs on progress updates)
+  useEffect(() => {
+    const canvas = cursorCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const w = rect.width;
+    const h = rect.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    if (
+      playbackPosition != null &&
+      playbackPosition > 0 &&
+      waveformData &&
+      waveformData.duration > 0
+    ) {
+      const px = (playbackPosition / waveformData.duration) * w;
       ctx.beginPath();
       ctx.moveTo(px, 0);
       ctx.lineTo(px, h);
@@ -166,7 +189,7 @@ export function WaveformDisplay({
       ctx.lineWidth = 1.5;
       ctx.stroke();
     }
-  }, [waveformData, momentum, playbackPosition, suggestedMomentum, height]);
+  }, [playbackPosition, waveformData]);
 
   if (isLoading) {
     return (
@@ -188,9 +211,13 @@ export function WaveformDisplay({
       style={{ height }}
     >
       <canvas
-        ref={canvasRef}
+        ref={staticCanvasRef}
         className="w-full h-full"
         onMouseDown={handleMouseDown}
+      />
+      <canvas
+        ref={cursorCanvasRef}
+        className="absolute inset-0 w-full h-full pointer-events-none"
       />
       {/* Click hint for suggested momentum */}
       {suggestedMomentum != null &&
