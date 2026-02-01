@@ -7,7 +7,8 @@ import { keyCodeToDisplay } from "../../utils/keyMapping";
 import { formatDuration } from "../../utils/fileHelpers";
 import * as commands from "../../utils/tauriCommands";
 import { KeyCaptureSlot } from "../Keys/KeyCaptureSlot";
-import type { LoopMode, SoundSource } from "../../types";
+import type { LoopMode, SoundSource, YoutubeSearchResult, YoutubePlaylist, WaveformData } from "../../types";
+import { WaveformDisplay } from "../common/WaveformDisplay";
 
 type SourceMode = "local" | "youtube";
 
@@ -44,6 +45,16 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   >(new Map());
   const [isInstallingYtDlp, setIsInstallingYtDlp] = useState(false);
   const [ytDlpInstalled, setYtDlpInstalled] = useState<boolean | null>(null);
+  const [searchResults, setSearchResults] = useState<YoutubeSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [playlist, setPlaylist] = useState<YoutubePlaylist | null>(null);
+  const [playlistSelected, setPlaylistSelected] = useState<Set<string>>(new Set());
+  const [isFetchingPlaylist, setIsFetchingPlaylist] = useState(false);
+  const [downloadEntirePlaylist, setDownloadEntirePlaylist] = useState(
+    useSettingsStore.getState().config.playlistImportEnabled
+  );
+  const [waveforms, setWaveforms] = useState<Map<string, WaveformData>>(new Map());
+  const [loadingWaveforms, setLoadingWaveforms] = useState<Set<string>>(new Set());
   const unlistenRef = useRef<(() => void) | null>(null);
   const downloadIdCounter = useRef(0);
   const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -87,6 +98,29 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
       }).catch(() => {});
     }
   }, [initialFiles]);
+
+  const fetchWaveform = useCallback((path: string) => {
+    if (waveforms.has(path) || loadingWaveforms.has(path)) return;
+    setLoadingWaveforms((prev) => new Set(prev).add(path));
+    commands.getWaveform(path, 200).then((data) => {
+      setWaveforms((prev) => new Map(prev).set(path, data));
+    }).catch(() => {}).finally(() => {
+      setLoadingWaveforms((prev) => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+    });
+  }, [waveforms, loadingWaveforms]);
+
+  // Fetch waveforms when file durations become known
+  useEffect(() => {
+    for (const file of files) {
+      if (file.duration > 0 && file.path && !waveforms.has(file.path)) {
+        fetchWaveform(file.path);
+      }
+    }
+  }, [files, fetchWaveform]);
 
   const handleStopPreview = useCallback(() => {
     if (selectedTrackId) {
@@ -167,6 +201,112 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     } finally {
       setIsInstallingYtDlp(false);
     }
+  };
+
+  const isYoutubeUrl = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    return lower.includes("youtube.com") || lower.includes("youtu.be");
+  };
+
+  const handleYoutubeSearch = async () => {
+    const query = youtubeUrl.trim();
+    if (!query) return;
+    setIsSearching(true);
+    try {
+      const results = await commands.searchYoutube(query, 10);
+      setSearchResults(results);
+    } catch (e) {
+      addToast(`Search failed: ${e}`, "error");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const hasPlaylistParam = (url: string): boolean => url.includes("list=");
+  const hasVideoId = (url: string): boolean => url.includes("v=") || url.includes("youtu.be/");
+
+  const handleFetchPlaylist = async (url: string) => {
+    setIsFetchingPlaylist(true);
+    try {
+      const pl = await commands.fetchPlaylist(url);
+      setPlaylist(pl);
+      setPlaylistSelected(new Set(pl.entries.map((e) => e.videoId)));
+    } catch (e) {
+      addToast(`Failed to fetch playlist: ${e}`, "error");
+    } finally {
+      setIsFetchingPlaylist(false);
+    }
+  };
+
+  const handlePlaylistDownloadSelected = () => {
+    if (!playlist) return;
+    const selected = playlist.entries.filter((e) => playlistSelected.has(e.videoId));
+    for (const entry of selected) {
+      handleSearchResultAdd(entry);
+    }
+    setPlaylist(null);
+  };
+
+  const handleYoutubeInput = () => {
+    const input = youtubeUrl.trim();
+    if (!input) return;
+    if (isYoutubeUrl(input)) {
+      if (hasPlaylistParam(input)) {
+        if (!hasVideoId(input)) {
+          // Pure playlist URL (no video ID)
+          handleFetchPlaylist(input);
+        } else if (downloadEntirePlaylist) {
+          // Video + playlist, user wants entire playlist
+          handleFetchPlaylist(input);
+        } else {
+          // Video + playlist, download single video (strip list param)
+          handleYoutubeDownload();
+        }
+      } else {
+        handleYoutubeDownload();
+      }
+    } else {
+      handleYoutubeSearch();
+    }
+  };
+
+  const handleSearchResultAdd = (result: YoutubeSearchResult) => {
+    // Use the result URL to download
+    const downloadId = `dl_${Date.now()}_${downloadIdCounter.current++}`;
+    setActiveDownloads((prev) => {
+      const next = new Map(prev);
+      next.set(downloadId, { url: result.url, status: "Starting...", progress: null });
+      return next;
+    });
+
+    commands.addSoundFromYoutube(result.url, downloadId)
+      .then((sound) => {
+        const entry: FileEntry = {
+          path: sound.source.type === "youtube" ? sound.source.cachedPath : "",
+          momentum: 0,
+          duration: sound.duration,
+          name: sound.name,
+          source: sound.source,
+        };
+        setFiles((prev) => [...prev, entry]);
+        addToast(`Downloaded: ${sound.name}`, "success");
+        // Mark as downloaded in results
+        setSearchResults((prev) =>
+          prev.map((r) =>
+            r.videoId === result.videoId ? { ...r, alreadyDownloaded: true } : r
+          )
+        );
+      })
+      .catch((e) => {
+        addToast(String(e), "error");
+      })
+      .finally(() => {
+        setActiveDownloads((prev) => {
+          const next = new Map(prev);
+          next.delete(downloadId);
+          return next;
+        });
+      });
   };
 
   const handleYoutubeDownload = async () => {
@@ -496,17 +636,17 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                     value={youtubeUrl}
                     onChange={(e) => setYoutubeUrl(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && youtubeUrl.trim()) handleYoutubeDownload();
+                      if (e.key === "Enter" && youtubeUrl.trim()) handleYoutubeInput();
                     }}
-                    placeholder="https://youtube.com/watch?v=..."
+                    placeholder="Paste YouTube URL or search..."
                     className="flex-1 bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary focus:border-border-focus outline-none"
                   />
                   <button
-                    onClick={handleYoutubeDownload}
-                    disabled={!youtubeUrl.trim()}
+                    onClick={handleYoutubeInput}
+                    disabled={!youtubeUrl.trim() || isSearching}
                     className="px-3 py-1.5 bg-accent-primary/20 text-accent-primary rounded text-sm hover:bg-accent-primary/30 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                   >
-                    Download
+                    {isSearching ? "Searching..." : isYoutubeUrl(youtubeUrl) ? "Download" : "Search"}
                   </button>
                 </div>
                 {activeDownloads.size > 0 && (
@@ -530,6 +670,135 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                         )}
                       </div>
                     ))}
+                  </div>
+                )}
+                {/* Search results */}
+                {searchResults.length > 0 && (
+                  <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                    {searchResults.map((result) => (
+                      <div
+                        key={result.videoId}
+                        className="flex items-center gap-2 bg-bg-tertiary rounded p-2 hover:bg-bg-hover transition-colors"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="text-text-primary text-xs truncate">{result.title}</p>
+                          <div className="flex items-center gap-2 text-text-muted text-[10px]">
+                            {result.channel && <span className="truncate">{result.channel}</span>}
+                            {result.duration > 0 && (
+                              <span className="shrink-0">{formatDuration(result.duration)}</span>
+                            )}
+                            {result.alreadyDownloaded && (
+                              <span className="text-green-400 shrink-0">Downloaded</span>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleSearchResultAdd(result)}
+                          disabled={activeDownloads.size > 0 && [...activeDownloads.values()].some(d => d.url === result.url)}
+                          className="px-2 py-1 bg-accent-primary/20 text-accent-primary rounded text-xs hover:bg-accent-primary/30 disabled:opacity-50 shrink-0"
+                        >
+                          {result.alreadyDownloaded ? "Add" : "Add"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Playlist checkbox for video+playlist URLs */}
+                {isYoutubeUrl(youtubeUrl) && hasPlaylistParam(youtubeUrl) && hasVideoId(youtubeUrl) && (
+                  <label className="flex items-center gap-2 text-text-secondary text-xs bg-bg-tertiary rounded p-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={downloadEntirePlaylist}
+                      onChange={(e) => {
+                        setDownloadEntirePlaylist(e.target.checked);
+                        useSettingsStore.getState().setPlaylistImportEnabled(e.target.checked);
+                      }}
+                      className="accent-accent-primary"
+                    />
+                    Download entire playlist
+                  </label>
+                )}
+                {/* Playlist selector */}
+                {playlist && (
+                  <div className="space-y-2 border border-border-color rounded p-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-text-primary text-xs font-semibold">{playlist.title}</p>
+                        <p className="text-text-muted text-[10px]">{playlist.totalCount} videos</p>
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => setPlaylistSelected(new Set(playlist.entries.map((e) => e.videoId)))}
+                          className="text-accent-primary text-[10px] hover:underline"
+                        >
+                          All
+                        </button>
+                        <span className="text-text-muted text-[10px]">/</span>
+                        <button
+                          onClick={() => setPlaylistSelected(new Set())}
+                          className="text-accent-primary text-[10px] hover:underline"
+                        >
+                          None
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-0.5 max-h-[180px] overflow-y-auto">
+                      {playlist.entries.map((entry) => (
+                        <label
+                          key={entry.videoId}
+                          className="flex items-center gap-2 p-1.5 rounded hover:bg-bg-hover cursor-pointer text-xs"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={playlistSelected.has(entry.videoId)}
+                            onChange={(e) => {
+                              setPlaylistSelected((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) {
+                                  next.add(entry.videoId);
+                                } else {
+                                  next.delete(entry.videoId);
+                                }
+                                return next;
+                              });
+                            }}
+                            className="accent-accent-primary shrink-0"
+                          />
+                          <span className="text-text-primary truncate flex-1">{entry.title}</span>
+                          {entry.duration > 0 && (
+                            <span className="text-text-muted text-[10px] shrink-0">
+                              {formatDuration(entry.duration)}
+                            </span>
+                          )}
+                          {entry.alreadyDownloaded && (
+                            <span className="text-green-400 text-[10px] shrink-0">DL'd</span>
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handlePlaylistDownloadSelected}
+                        disabled={playlistSelected.size === 0}
+                        className="flex-1 px-3 py-1.5 bg-accent-primary/20 text-accent-primary rounded text-xs hover:bg-accent-primary/30 disabled:opacity-50"
+                      >
+                        Add {playlistSelected.size} selected
+                      </button>
+                      <button
+                        onClick={() => setPlaylist(null)}
+                        className="px-3 py-1.5 text-text-muted hover:text-text-primary text-xs rounded hover:bg-bg-hover"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {(isSearching || isFetchingPlaylist) && (
+                  <div className="flex items-center justify-center gap-2 py-3">
+                    <div className="w-4 h-4 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
+                    <span className="text-text-muted text-xs">
+                      {isFetchingPlaylist ? "Fetching playlist..." : "Searching YouTube..."}
+                    </span>
                   </div>
                 )}
               </>
@@ -564,6 +833,21 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                       &times;
                     </button>
                   </div>
+                  {/* Waveform display */}
+                  {(waveforms.has(file.path) || loadingWaveforms.has(file.path)) && (
+                    <WaveformDisplay
+                      waveformData={waveforms.get(file.path) || null}
+                      momentum={file.momentum}
+                      onMomentumChange={(m) => handleMomentumChange(i, m)}
+                      isLoading={loadingWaveforms.has(file.path)}
+                      suggestedMomentum={waveforms.get(file.path)?.suggestedMomentum}
+                      onAcceptSuggestion={() => {
+                        const suggested = waveforms.get(file.path)?.suggestedMomentum;
+                        if (suggested != null) handleMomentumChange(i, Math.round(suggested * 10) / 10);
+                      }}
+                      height={50}
+                    />
+                  )}
                   {/* Momentum editor */}
                   <div className="flex items-center gap-2 text-xs text-text-muted">
                     <span className="text-text-secondary whitespace-nowrap">Mom:</span>

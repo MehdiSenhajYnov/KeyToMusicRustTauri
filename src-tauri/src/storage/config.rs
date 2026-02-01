@@ -32,6 +32,8 @@ pub fn init_app_directories() -> Result<(), String> {
         .map_err(|e| format!("Failed to create cache dir: {}", e))?;
     fs::create_dir_all(app_dir.join("logs"))
         .map_err(|e| format!("Failed to create logs dir: {}", e))?;
+    fs::create_dir_all(app_dir.join("discovery"))
+        .map_err(|e| format!("Failed to create discovery dir: {}", e))?;
 
     Ok(())
 }

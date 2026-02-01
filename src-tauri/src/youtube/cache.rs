@@ -102,6 +102,36 @@ impl YouTubeCache {
         entry
     }
 
+    /// Remove cache entry (and file) for a specific video ID.
+    /// Best-effort: errors are logged but not propagated.
+    pub fn remove_entry_by_video_id(&mut self, video_id: &str) {
+        let to_remove: Vec<String> = self
+            .entries
+            .iter()
+            .filter(|(_, entry)| {
+                Path::new(&entry.cached_path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s == video_id)
+                    .unwrap_or(false)
+            })
+            .map(|(url, _)| url.clone())
+            .collect();
+
+        for url in &to_remove {
+            if let Some(entry) = self.entries.get(url) {
+                if let Err(e) = fs::remove_file(&entry.cached_path) {
+                    tracing::debug!("Could not remove cache file for {}: {}", video_id, e);
+                }
+            }
+            self.entries.remove(url);
+        }
+
+        if !to_remove.is_empty() {
+            self.save_index().ok();
+        }
+    }
+
     /// Verify cache integrity: remove entries whose files are missing.
     pub fn verify_integrity(&mut self) {
         let stale_urls: Vec<String> = self
@@ -118,9 +148,11 @@ impl YouTubeCache {
 
     /// Remove cache entries (and their files) that are not referenced by any profile.
     /// Scans all saved profiles to find which cached_paths are in use.
+    /// Also removes untracked audio files in the cache directory (not in the index).
     pub fn cleanup_unused(&mut self) {
         let used_paths = collect_used_cached_paths();
 
+        // 1. Clean up indexed entries no longer referenced by any profile
         let unused_urls: Vec<String> = self
             .entries
             .iter()
@@ -137,6 +169,40 @@ impl YouTubeCache {
 
         if !unused_urls.is_empty() {
             self.save_index().ok();
+        }
+
+        // 2. Clean up untracked files in the cache directory
+        self.cleanup_untracked_files(&used_paths);
+    }
+
+    /// Remove audio files in the cache directory that are not tracked by the index
+    /// and not referenced by any profile.
+    fn cleanup_untracked_files(&self, used_paths: &HashSet<String>) {
+        let dir_entries = match fs::read_dir(&self.cache_dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+
+        let audio_extensions = ["m4a", "mp3", "opus", "webm", "ogg", "wav", "flac", "aac"];
+        let indexed_paths: HashSet<String> = self
+            .entries
+            .values()
+            .map(|e| e.cached_path.clone())
+            .collect();
+
+        for entry in dir_entries.flatten() {
+            let path = entry.path();
+            let ext = path
+                .extension()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+            if !audio_extensions.contains(&ext) {
+                continue;
+            }
+            let path_str = path.to_string_lossy().to_string();
+            if !indexed_paths.contains(&path_str) && !used_paths.contains(&path_str) {
+                let _ = fs::remove_file(&path);
+            }
         }
     }
 }

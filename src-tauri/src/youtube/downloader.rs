@@ -13,7 +13,7 @@ use super::yt_dlp_manager;
 pub type ProgressCallback = Box<dyn Fn(&str, Option<f64>) + Send + Sync>;
 
 /// Create a Command for yt-dlp with proper platform settings.
-fn yt_dlp_command(bin: &PathBuf) -> Command {
+pub(crate) fn yt_dlp_command(bin: &PathBuf) -> Command {
     let mut cmd = Command::new(bin);
     cmd.stdin(Stdio::null());
     cmd.kill_on_drop(true);
@@ -74,13 +74,13 @@ pub fn is_valid_youtube_url(url: &str) -> bool {
 
 
 /// Get the yt-dlp binary path, or return an error message.
-fn get_yt_dlp_bin() -> Result<PathBuf, String> {
+pub(crate) fn get_yt_dlp_bin() -> Result<PathBuf, String> {
     yt_dlp_manager::find_yt_dlp()
         .ok_or_else(|| "yt-dlp is not installed".to_string())
 }
 
 /// Build a canonical YouTube URL from a video ID (for consistent cache lookups).
-fn canonical_url(video_id: &str) -> String {
+pub(crate) fn canonical_url(video_id: &str) -> String {
     format!("https://www.youtube.com/watch?v={}", video_id)
 }
 
@@ -147,6 +147,8 @@ pub async fn download_audio(
     // Retry loop for transient network errors
     let max_attempts = 3;
     let mut last_err = String::new();
+    let mut did_update_ytdlp = false;
+    let mut current_bin = yt_dlp_bin;
 
     for attempt in 1..=max_attempts {
         if attempt > 1 {
@@ -157,7 +159,7 @@ pub async fn download_audio(
         }
 
         // Build yt-dlp command with --write-info-json for title extraction
-        let mut cmd = yt_dlp_command(&yt_dlp_bin);
+        let mut cmd = yt_dlp_command(&current_bin);
         cmd.arg("-f").arg("bestaudio[ext=m4a]")
             .arg("-o").arg(&output_template)
             .arg("--write-info-json")
@@ -217,8 +219,28 @@ pub async fn download_audio(
             return finalize_download(&cache_url, &actual_path, &title, cache);
         }
 
-        // Download failed - check if it's a retryable network error
+        // Download failed
         let stderr_text = last_error_lines.join("\n");
+
+        // If error looks like outdated yt-dlp and we haven't updated yet, try that
+        if !did_update_ytdlp && is_likely_outdated_ytdlp(&stderr_text) {
+            did_update_ytdlp = true;
+            emit("Updating yt-dlp...", None);
+            tracing::info!("yt-dlp download failed (possibly outdated), attempting update. Error: {}", stderr_text);
+            match yt_dlp_manager::download_yt_dlp().await {
+                Ok(new_bin) => {
+                    current_bin = new_bin;
+                    // Don't count this as a retry — loop will increment and retry
+                    last_err = stderr_text;
+                    continue;
+                }
+                Err(update_err) => {
+                    tracing::warn!("yt-dlp update failed: {}", update_err);
+                    // Fall through to normal error handling
+                }
+            }
+        }
+
         let is_network_error = is_retryable_error(&stderr_text);
 
         if !is_network_error || attempt == max_attempts {
@@ -333,14 +355,40 @@ fn read_title_from_info_json(cache_dir: &PathBuf, video_id: &str) -> String {
 /// Check if a yt-dlp error is a transient network issue worth retrying.
 fn is_retryable_error(stderr: &str) -> bool {
     let lower = stderr.to_lowercase();
-    lower.contains("unable to download") ||
-    lower.contains("connection") ||
-    lower.contains("network") ||
+
+    // HTTP 403/429 are NOT transient network errors — they indicate
+    // YouTube is blocking the request (usually outdated yt-dlp)
+    if lower.contains("403") || lower.contains("forbidden") || lower.contains("429") {
+        return false;
+    }
+    // Extraction failures are yt-dlp bugs, not network issues
+    if lower.contains("unable to extract") || lower.contains("no video formats") {
+        return false;
+    }
+
     lower.contains("timed out") ||
     lower.contains("timeout") ||
     lower.contains("urlopen error") ||
     lower.contains("incomplete read") ||
-    lower.contains("errno 22")
+    lower.contains("getaddrinfo failed") ||
+    lower.contains("name or service not known") ||
+    lower.contains("errno 22") ||
+    // Only match actual connection resets/failures, not HTTP status errors
+    lower.contains("connection reset") ||
+    lower.contains("connection refused") ||
+    lower.contains("connection aborted")
+}
+
+/// Check if an error looks like it could be fixed by updating yt-dlp.
+fn is_likely_outdated_ytdlp(stderr: &str) -> bool {
+    let lower = stderr.to_lowercase();
+    lower.contains("403") ||
+    lower.contains("forbidden") ||
+    lower.contains("unable to extract") ||
+    lower.contains("no video formats") ||
+    lower.contains("unable to download webpage") ||
+    lower.contains("unsupported url") ||
+    lower.contains("sign in to confirm")
 }
 
 /// Parse yt-dlp error output into a user-friendly message.
@@ -353,14 +401,18 @@ fn parse_yt_dlp_error(stderr: &str) -> String {
     if lower.contains("not available") || lower.contains("unavailable") {
         return "This video is not available".to_string();
     }
-    if lower.contains("not a valid url") || lower.contains("unsupported url") {
+    if lower.contains("not a valid url") {
         return "Invalid YouTube URL".to_string();
-    }
-    if lower.contains("unable to download") || lower.contains("connection") || lower.contains("network") {
-        return "Network error. Check your internet connection".to_string();
     }
     if lower.contains("geo") || lower.contains("country") {
         return "This video is not available in your region".to_string();
+    }
+    // Only true network errors (after the outdated-yt-dlp ones are filtered)
+    if lower.contains("timed out") || lower.contains("timeout")
+        || lower.contains("getaddrinfo") || lower.contains("name or service not known")
+        || lower.contains("connection reset") || lower.contains("connection refused")
+    {
+        return "Network error. Check your internet connection".to_string();
     }
 
     // Fallback: return the first meaningful line

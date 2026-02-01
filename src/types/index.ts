@@ -70,6 +70,33 @@ export interface AppConfig {
   audioDevice: string | null;     // null = follow system default, string = force specific device
   chordWindowMs: number;          // Multi-key chord detection window in ms (default: 30, range: 20-100)
   momentumModifier: MomentumModifier; // Modifier key to trigger momentum (default: "Shift")
+  playlistImportEnabled: boolean;     // Remember "download entire playlist" checkbox state
+}
+
+// Waveform data
+export interface WaveformData {
+  points: number[];
+  duration: number;
+  sampleRate: number;
+  suggestedMomentum: number | null;
+}
+
+// YouTube search result
+export interface YoutubeSearchResult {
+  videoId: string;
+  title: string;
+  duration: number;
+  channel: string;
+  thumbnailUrl: string;
+  url: string;
+  alreadyDownloaded: boolean;
+}
+
+// YouTube playlist
+export interface YoutubePlaylist {
+  title: string;
+  entries: YoutubeSearchResult[];
+  totalCount: number;
 }
 
 // État "Now Playing" pour l'affichage

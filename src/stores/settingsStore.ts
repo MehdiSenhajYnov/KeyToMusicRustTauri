@@ -18,6 +18,7 @@ interface SettingsState {
   setAudioDevice: (device: string | null) => Promise<void>;
   setChordWindowMs: (ms: number) => Promise<void>;
   setMomentumModifier: (modifier: MomentumModifier) => Promise<void>;
+  setPlaylistImportEnabled: (enabled: boolean) => Promise<void>;
   loadConfig: () => Promise<void>;
 }
 
@@ -34,6 +35,7 @@ const defaultConfig: AppConfig = {
   audioDevice: null,
   chordWindowMs: 30,
   momentumModifier: "Shift",
+  playlistImportEnabled: false,
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -201,6 +203,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     } catch (e) {
       set((state) => ({ config: { ...state.config, momentumModifier: prev } }));
       useToastStore.getState().addToast("Failed to set momentum modifier", "error");
+    }
+  },
+
+  setPlaylistImportEnabled: async (enabled) => {
+    const prev = get().config.playlistImportEnabled;
+    set((state) => ({
+      config: { ...state.config, playlistImportEnabled: enabled },
+    }));
+    try {
+      await commands.updateConfig({ playlistImportEnabled: enabled });
+    } catch (e) {
+      set((state) => ({ config: { ...state.config, playlistImportEnabled: prev } }));
     }
   },
 }));

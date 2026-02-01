@@ -17,6 +17,8 @@ import { useAudioEvents } from "./hooks/useAudioEvents";
 import { useKeyDetection } from "./hooks/useKeyDetection";
 import { useTextInputFocus } from "./hooks/useTextInputFocus";
 import { useUndoRedo } from "./hooks/useUndoRedo";
+import { useDiscovery } from "./hooks/useDiscovery";
+import { useDiscoveryPredownload } from "./hooks/useDiscoveryPredownload";
 
 function App() {
   const [showSettings, setShowSettings] = useState(false);
@@ -29,6 +31,8 @@ function App() {
   useKeyDetection();
   useTextInputFocus();
   useUndoRedo();
+  useDiscovery();
+  useDiscoveryPredownload();
 
   // Load config and profiles on mount
   useEffect(() => {

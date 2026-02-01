@@ -306,12 +306,27 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
 
     set((state) => {
       if (!state.currentProfile) return state;
+      const remainingBindings = state.currentProfile.keyBindings.filter(
+        (kb) => kb.trackId !== trackId
+      );
+      // Collect all sound IDs still referenced by remaining bindings
+      const referencedSoundIds = new Set(
+        remainingBindings.flatMap((kb) => kb.soundIds)
+      );
+      // Find sounds from removed bindings that are no longer referenced
+      const removedBindings = state.currentProfile.keyBindings.filter(
+        (kb) => kb.trackId === trackId
+      );
+      const orphanedIds = removedBindings
+        .flatMap((kb) => kb.soundIds)
+        .filter((id) => !referencedSoundIds.has(id));
       return {
         currentProfile: {
           ...state.currentProfile,
           tracks: state.currentProfile.tracks.filter((t) => t.id !== trackId),
-          keyBindings: state.currentProfile.keyBindings.filter(
-            (kb) => kb.trackId !== trackId
+          keyBindings: remainingBindings,
+          sounds: state.currentProfile.sounds.filter(
+            (s) => !orphanedIds.includes(s.id)
           ),
         },
       };

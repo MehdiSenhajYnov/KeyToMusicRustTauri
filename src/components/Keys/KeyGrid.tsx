@@ -10,11 +10,12 @@ import {
 import { WarningTooltip } from "../common/WarningTooltip";
 
 interface KeyGridProps {
-  selectedKey: string | null;
-  onKeySelect: (key: string | null) => void;
+  selectedKeys: Set<string>;
+  onKeySelect: (keyCode: string, event: React.MouseEvent) => void;
+  onSelectAll: () => void;
 }
 
-export function KeyGrid({ selectedKey, onKeySelect }: KeyGridProps) {
+export function KeyGrid({ selectedKeys, onKeySelect, onSelectAll }: KeyGridProps) {
   const currentProfile = useProfileStore((s) => s.currentProfile);
   const playingTracks = useAudioStore((s) => s.playingTracks);
   const lastKeyPressed = useAudioStore((s) => s.lastKeyPressed);
@@ -34,12 +35,23 @@ export function KeyGrid({ selectedKey, onKeySelect }: KeyGridProps) {
           No keys assigned. Use "Add Sound" to create key bindings.
         </p>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div
+          className="flex flex-wrap gap-2 outline-none focus:outline-none"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+              const tag = (document.activeElement as HTMLElement)?.tagName;
+              if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+              e.preventDefault();
+              onSelectAll();
+            }
+          }}
+        >
           {keyBindings.map((kb) => {
             const firstSound = sounds.find((s) => kb.soundIds.includes(s.id));
             const displayName = kb.name || firstSound?.name || "No sound";
             const soundCount = kb.soundIds.length;
-            const isSelected = selectedKey === kb.keyCode;
+            const isSelected = selectedKeys.has(kb.keyCode);
             const isPlaying = Array.from(playingTracks.values()).some(
               (pt) => kb.soundIds.includes(pt.soundId)
             );
@@ -55,9 +67,7 @@ export function KeyGrid({ selectedKey, onKeySelect }: KeyGridProps) {
             return (
               <button
                 key={kb.keyCode}
-                onClick={() =>
-                  onKeySelect(isSelected ? null : kb.keyCode)
-                }
+                onClick={(e) => onKeySelect(kb.keyCode, e)}
                 title={keyCodeToDisplay(kb.keyCode)}
                 className={`
                   relative px-3 py-2 rounded border text-left min-w-[100px] max-w-[180px] transition-all

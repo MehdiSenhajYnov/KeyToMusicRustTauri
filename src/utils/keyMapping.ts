@@ -551,3 +551,32 @@ export function buildShortcutsList(config: AppConfig) {
     { name: "Key Detection", keys: config.keyDetectionShortcut },
   ];
 }
+
+/**
+ * Preferred order for auto-assigning keys to discovery suggestions.
+ */
+const AUTO_KEY_ORDER = [
+  "KeyA","KeyB","KeyC","KeyD","KeyE","KeyF","KeyG","KeyH","KeyI","KeyJ",
+  "KeyK","KeyL","KeyM","KeyN","KeyO","KeyP","KeyQ","KeyR","KeyS","KeyT",
+  "KeyU","KeyV","KeyW","KeyX","KeyY","KeyZ",
+  "Digit1","Digit2","Digit3","Digit4","Digit5","Digit6","Digit7","Digit8","Digit9","Digit0",
+  "F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12",
+  "Numpad0","Numpad1","Numpad2","Numpad3","Numpad4",
+  "Numpad5","Numpad6","Numpad7","Numpad8","Numpad9",
+];
+
+/**
+ * Find the next available key code that is not in `usedKeys` or `alreadySuggested`.
+ * Returns "" if all keys are taken.
+ */
+export function findNextAvailableKey(
+  usedKeys: Set<string>,
+  alreadySuggested?: Set<string>
+): string {
+  for (const key of AUTO_KEY_ORDER) {
+    if (!usedKeys.has(key) && (!alreadySuggested || !alreadySuggested.has(key))) {
+      return key;
+    }
+  }
+  return "";
+}

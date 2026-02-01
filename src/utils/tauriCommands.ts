@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppConfig, Profile, Sound } from "../types";
+import type { AppConfig, Profile, Sound, YoutubeSearchResult, YoutubePlaylist, WaveformData } from "../types";
 
 interface ProfileSummary {
   id: string;
@@ -136,6 +136,14 @@ export async function addSoundFromYoutube(url: string, downloadId: string): Prom
   return invoke<Sound>("add_sound_from_youtube", { url, downloadId });
 }
 
+export async function searchYoutube(query: string, maxResults: number): Promise<YoutubeSearchResult[]> {
+  return invoke<YoutubeSearchResult[]>("search_youtube", { query, maxResults });
+}
+
+export async function fetchPlaylist(url: string): Promise<YoutubePlaylist> {
+  return invoke<YoutubePlaylist>("fetch_playlist", { url });
+}
+
 export async function checkYtDlpInstalled(): Promise<boolean> {
   return invoke<boolean>("check_yt_dlp_installed");
 }
@@ -150,6 +158,21 @@ export async function checkFfmpegInstalled(): Promise<boolean> {
 
 export async function installFfmpeg(): Promise<void> {
   return invoke("install_ffmpeg");
+}
+
+// ─── Waveform ────────────────────────────────────────────────────────────
+
+export async function getWaveform(path: string, numPoints: number): Promise<WaveformData> {
+  return invoke<WaveformData>("get_waveform", { path, numPoints });
+}
+
+export interface WaveformBatchEntry {
+  path: string;
+  numPoints: number;
+}
+
+export async function getWaveformsBatch(entries: WaveformBatchEntry[]): Promise<Record<string, WaveformData>> {
+  return invoke<Record<string, WaveformData>>("get_waveforms_batch", { entries });
 }
 
 // ─── Audio Devices ───────────────────────────────────────────────────────
@@ -238,6 +261,46 @@ export async function getDataFolder(): Promise<string> {
 
 export async function openFolder(path: string): Promise<void> {
   return invoke<void>("open_folder", { path });
+}
+
+// ─── Discovery ───────────────────────────────────────────────────────────
+
+import type { DiscoverySuggestion } from "../stores/discoveryStore";
+
+export async function startDiscovery(profileId: string): Promise<DiscoverySuggestion[]> {
+  return invoke<DiscoverySuggestion[]>("start_discovery", { profileId });
+}
+
+export async function getDiscoverySuggestions(profileId: string): Promise<DiscoverySuggestion[] | null> {
+  return invoke<DiscoverySuggestion[] | null>("get_discovery_suggestions", { profileId });
+}
+
+export async function dismissDiscovery(profileId: string, videoId: string): Promise<void> {
+  return invoke("dismiss_discovery", { profileId, videoId });
+}
+
+export async function cancelDiscovery(): Promise<void> {
+  return invoke("cancel_discovery");
+}
+
+export interface PredownloadResult {
+  videoId: string;
+  cachedPath: string;
+  title: string;
+  duration: number;
+  waveform: WaveformData;
+}
+
+export async function predownloadSuggestion(
+  url: string,
+  videoId: string,
+  downloadId: string
+): Promise<PredownloadResult> {
+  return invoke<PredownloadResult>("predownload_suggestion", {
+    url,
+    videoId,
+    downloadId,
+  });
 }
 
 export { type ProfileSummary };

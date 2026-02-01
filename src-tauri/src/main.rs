@@ -3,6 +3,7 @@
 
 mod audio;
 mod commands;
+mod discovery;
 mod import_export;
 mod keys;
 mod state;
@@ -217,6 +218,8 @@ fn main() {
             set_profile_bindings,
             // YouTube commands
             add_sound_from_youtube,
+            search_youtube,
+            fetch_playlist,
             check_yt_dlp_installed,
             install_yt_dlp,
             check_ffmpeg_installed,
@@ -224,6 +227,9 @@ fn main() {
             // Audio device commands
             list_audio_devices,
             set_audio_device,
+            // Waveform commands
+            get_waveform,
+            get_waveforms_batch,
             // Import/Export commands
             export_profile,
             import_profile,
@@ -231,6 +237,12 @@ fn main() {
             pick_ktm_file,
             cleanup_export_temp,
             cancel_export,
+            // Discovery commands
+            start_discovery,
+            get_discovery_suggestions,
+            dismiss_discovery,
+            cancel_discovery,
+            predownload_suggestion,
             // Legacy import commands
             pick_legacy_file,
             import_legacy_save,

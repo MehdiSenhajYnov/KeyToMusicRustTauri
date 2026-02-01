@@ -1,3 +1,4 @@
+pub mod analysis;
 pub mod buffer;
 pub mod crossfade;
 pub mod engine;

@@ -12,7 +12,11 @@ export function NowPlaying() {
   const [seekingTrack, setSeekingTrack] = useState<string | null>(null);
   const [seekPosition, setSeekPosition] = useState(0);
 
-  if (!currentProfile || playingTracks.size === 0) {
+  const hasNonPreviewTracks = Array.from(playingTracks.keys()).some(
+    (id) => id !== "__preview__"
+  );
+
+  if (!currentProfile || !hasNonPreviewTracks) {
     return (
       <div className="p-3">
         <h3 className="text-text-muted text-xs font-semibold uppercase tracking-wider mb-2">
@@ -23,7 +27,9 @@ export function NowPlaying() {
     );
   }
 
-  const entries = Array.from(playingTracks.values());
+  const entries = Array.from(playingTracks.values()).filter(
+    (entry) => entry.trackId !== "__preview__"
+  );
 
   const handleSeek = async (trackId: string, soundId: string, position: number) => {
     const sound = currentProfile.sounds.find((s) => s.id === soundId);

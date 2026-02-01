@@ -1,6 +1,8 @@
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use crate::audio::AudioEngineHandle;
+use crate::audio::analysis::WaveformCache;
 use crate::keys::KeyDetector;
 use crate::types::AppConfig;
 use crate::youtube::YouTubeCache;
@@ -12,6 +14,8 @@ pub struct AppState {
     pub audio_engine: AudioEngineHandle,
     pub key_detector: KeyDetector,
     pub youtube_cache: Arc<Mutex<YouTubeCache>>,
+    pub waveform_cache: Arc<Mutex<WaveformCache>>,
+    pub discovery_cancel: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -21,6 +25,8 @@ impl AppState {
             audio_engine,
             key_detector,
             youtube_cache: Arc::new(Mutex::new(youtube_cache)),
+            waveform_cache: Arc::new(Mutex::new(WaveformCache::new(50))),
+            discovery_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 

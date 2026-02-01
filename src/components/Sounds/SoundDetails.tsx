@@ -7,7 +7,9 @@ import { formatDuration } from "../../utils/fileHelpers";
 import { AddSoundModal } from "./AddSoundModal";
 import * as commands from "../../utils/tauriCommands";
 import { getSoundFilePath } from "../../utils/soundHelpers";
-import type { LoopMode, Sound } from "../../types";
+import type { LoopMode, Sound, WaveformData } from "../../types";
+import { useAudioStore } from "../../stores/audioStore";
+import { WaveformDisplay } from "../common/WaveformDisplay";
 
 interface SoundDetailsProps {
   selectedKey: string;
@@ -24,6 +26,8 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   const [previewingSoundId, setPreviewingSoundId] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [waveforms, setWaveforms] = useState<Map<string, WaveformData>>(new Map());
+  const playingTracks = useAudioStore((s) => s.playingTracks);
   // "binding" = reassign entire key, soundId string = move that sound to another key
   const [capturingKeyFor, setCapturingKeyFor] = useState<"binding" | string | null>(null);
   const [capturedDisplay, setCapturedDisplay] = useState("");
@@ -37,6 +41,22 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     };
   // volumeDebounceRef is created later (after binding check), cleared in that scope
   }, []);
+
+  // Fetch waveforms for sounds in this binding
+  useEffect(() => {
+    if (!currentProfile) return;
+    const binding = currentProfile.keyBindings.find((kb) => kb.keyCode === selectedKey);
+    if (!binding) return;
+    for (const soundId of binding.soundIds) {
+      const sound = currentProfile.sounds.find((s) => s.id === soundId);
+      if (!sound || sound.duration <= 0) continue;
+      const path = getSoundFilePath(sound);
+      if (waveforms.has(path)) continue;
+      commands.getWaveform(path, 200).then((data) => {
+        setWaveforms((prev) => new Map(prev).set(path, data));
+      }).catch(() => {});
+    }
+  }, [currentProfile, selectedKey]);
 
   const handleCapturedKey = useCallback(async (newKeyCode: string) => {
     if (!currentProfile) return;
@@ -358,6 +378,28 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
                 <span>{Math.round(sound.volume * 100)}%</span>
               </div>
             </div>
+            {/* Waveform display */}
+            {(() => {
+              const path = getSoundFilePath(sound);
+              const waveform = waveforms.get(path);
+              const trackEntry = playingTracks.get(binding.trackId);
+              const playbackPos = trackEntry?.soundId === sound.id ? trackEntry.position : undefined;
+              return waveform ? (
+                <WaveformDisplay
+                  waveformData={waveform}
+                  momentum={sound.momentum}
+                  onMomentumChange={(m) => handleMomentumChange(sound.id, m)}
+                  playbackPosition={playbackPos}
+                  suggestedMomentum={waveform.suggestedMomentum}
+                  onAcceptSuggestion={() => {
+                    if (waveform.suggestedMomentum != null) {
+                      handleMomentumChange(sound.id, Math.round(waveform.suggestedMomentum * 10) / 10);
+                    }
+                  }}
+                  height={40}
+                />
+              ) : null;
+            })()}
             {/* Momentum mini-player */}
             <div className="flex items-center gap-2 text-xs text-text-muted">
               <span className="text-text-secondary whitespace-nowrap">Mom:</span>

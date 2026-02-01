@@ -107,6 +107,8 @@ pub struct AppConfig {
     pub chord_window_ms: u32,
     #[serde(default)]
     pub momentum_modifier: MomentumModifier,
+    #[serde(default)]
+    pub playlist_import_enabled: bool,
 }
 
 fn default_chord_window_ms() -> u32 {
@@ -132,6 +134,7 @@ impl Default for AppConfig {
             audio_device: None,
             chord_window_ms: 30,
             momentum_modifier: MomentumModifier::default(),
+            playlist_import_enabled: false,
         }
     }
 }

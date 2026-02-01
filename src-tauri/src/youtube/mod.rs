@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod downloader;
 pub mod ffmpeg_manager;
+pub mod search;
 pub mod yt_dlp_manager;
 
 pub use cache::YouTubeCache;

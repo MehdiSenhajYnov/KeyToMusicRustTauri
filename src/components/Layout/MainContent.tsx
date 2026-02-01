@@ -3,13 +3,15 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { TrackView } from "../Tracks/TrackView";
 import { KeyGrid } from "../Keys/KeyGrid";
 import { SoundDetails } from "../Sounds/SoundDetails";
+import { MultiKeyDetails } from "../Sounds/MultiKeyDetails";
 import { AddSoundModal } from "../Sounds/AddSoundModal";
 import { useProfileStore } from "../../stores/profileStore";
 import { isAudioFile } from "../../utils/fileHelpers";
 
 export function MainContent() {
   const currentProfile = useProfileStore((s) => s.currentProfile);
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [anchorKey, setAnchorKey] = useState<string | null>(null);
   const [showAddSound, setShowAddSound] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<string[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -83,6 +85,59 @@ export function MainContent() {
     };
   }, [currentProfile]);
 
+  // Reset selection when profile changes
+  useEffect(() => {
+    setSelectedKeys(new Set());
+    setAnchorKey(null);
+  }, [currentProfile?.id]);
+
+  // Filter out stale keys (e.g. after undo/redo removes bindings)
+  const validSelectedKeys = currentProfile
+    ? new Set([...selectedKeys].filter((k) => currentProfile.keyBindings.some((kb) => kb.keyCode === k)))
+    : new Set<string>();
+
+  const handleKeySelect = useCallback((keyCode: string, event: React.MouseEvent) => {
+    if (!currentProfile) return;
+    const bindings = currentProfile.keyBindings;
+
+    if (event.ctrlKey || event.metaKey) {
+      // Ctrl+Click: toggle in selection
+      setSelectedKeys((prev) => {
+        const next = new Set(prev);
+        if (next.has(keyCode)) next.delete(keyCode);
+        else next.add(keyCode);
+        return next;
+      });
+      setAnchorKey(keyCode);
+    } else if (event.shiftKey && anchorKey) {
+      // Shift+Click: range selection
+      const anchorIdx = bindings.findIndex((kb) => kb.keyCode === anchorKey);
+      const targetIdx = bindings.findIndex((kb) => kb.keyCode === keyCode);
+      if (anchorIdx !== -1 && targetIdx !== -1) {
+        const start = Math.min(anchorIdx, targetIdx);
+        const end = Math.max(anchorIdx, targetIdx);
+        const rangeKeys = bindings.slice(start, end + 1).map((kb) => kb.keyCode);
+        setSelectedKeys(new Set(rangeKeys));
+      }
+      // anchorKey doesn't change on Shift+Click
+    } else {
+      // Simple click: single selection (toggle if already the only one selected)
+      if (selectedKeys.size === 1 && selectedKeys.has(keyCode)) {
+        setSelectedKeys(new Set());
+        setAnchorKey(null);
+      } else {
+        setSelectedKeys(new Set([keyCode]));
+        setAnchorKey(keyCode);
+      }
+    }
+  }, [currentProfile, anchorKey, selectedKeys]);
+
+  const handleSelectAll = useCallback(() => {
+    if (!currentProfile) return;
+    const allKeys = currentProfile.keyBindings.map((kb) => kb.keyCode);
+    setSelectedKeys(new Set(allKeys));
+  }, [currentProfile]);
+
   const handleCloseModal = () => {
     setShowAddSound(false);
     setDroppedFiles([]);
@@ -130,8 +185,9 @@ export function MainContent() {
         </div>
 
         <KeyGrid
-          selectedKey={selectedKey}
-          onKeySelect={setSelectedKey}
+          selectedKeys={validSelectedKeys}
+          onKeySelect={handleKeySelect}
+          onSelectAll={handleSelectAll}
         />
 
         {currentProfile.tracks.length === 0 && (
@@ -141,7 +197,7 @@ export function MainContent() {
         )}
       </div>
 
-      {selectedKey && (
+      {validSelectedKeys.size > 0 && (
         <>
           <div
             onMouseDown={handleResizeStart}
@@ -152,11 +208,21 @@ export function MainContent() {
             style={{ height: panelHeight }}
             className="overflow-y-auto shrink-0"
           >
-            <SoundDetails
-              selectedKey={selectedKey}
-              onClose={() => setSelectedKey(null)}
-              onKeyChanged={setSelectedKey}
-            />
+            {validSelectedKeys.size === 1 ? (
+              <SoundDetails
+                selectedKey={[...validSelectedKeys][0]}
+                onClose={() => setSelectedKeys(new Set())}
+                onKeyChanged={(newKey) => {
+                  setSelectedKeys(new Set([newKey]));
+                  setAnchorKey(newKey);
+                }}
+              />
+            ) : (
+              <MultiKeyDetails
+                selectedKeys={validSelectedKeys}
+                onClose={() => setSelectedKeys(new Set())}
+              />
+            )}
           </div>
         </>
       )}

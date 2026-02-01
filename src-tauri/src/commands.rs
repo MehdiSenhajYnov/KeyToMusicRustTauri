@@ -1,4 +1,5 @@
-use crate::audio::{self, buffer::BufferManager};
+use crate::audio::{self, analysis, buffer::BufferManager};
+use crate::discovery;
 use crate::import_export;
 use crate::state::AppState;
 use crate::storage;
@@ -80,6 +81,9 @@ pub fn update_config(
                 _ => MomentumModifier::Shift, // default fallback
             };
         }
+        if let Some(v) = updates.get("playlistImportEnabled").and_then(|v| v.as_bool()) {
+            config.playlist_import_enabled = v;
+        }
     });
 
     // Sync audio device to audio engine
@@ -141,17 +145,14 @@ pub fn load_profile(id: String) -> Result<Profile, String> {
 }
 
 #[tauri::command]
-pub fn save_profile(state: State<'_, AppState>, profile: Profile) -> Result<(), String> {
-    storage::save_profile(&profile)?;
-    // Cleanup cached YouTube files no longer referenced by any profile
-    if let Ok(mut cache) = state.youtube_cache.lock() {
-        cache.cleanup_unused();
-    }
-    Ok(())
+pub fn save_profile(profile: Profile) -> Result<(), String> {
+    storage::save_profile(&profile)
 }
 
 #[tauri::command]
 pub fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    // Clean up discovery cache for this profile
+    discovery::cache::DiscoveryCache::delete(&id);
     storage::delete_profile(id)?;
     // Cleanup cached YouTube files no longer referenced by any profile
     if let Ok(mut cache) = state.youtube_cache.lock() {
@@ -384,6 +385,118 @@ pub fn set_audio_device(
     storage::save_config(&config)
 }
 
+// ─── Waveform Commands ────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_waveform(
+    state: State<'_, AppState>,
+    path: String,
+    num_points: usize,
+) -> Result<analysis::WaveformData, String> {
+    // Check cache first
+    {
+        let mut cache = state.waveform_cache.lock().unwrap();
+        if let Some(data) = cache.get(&path) {
+            return Ok(data.clone());
+        }
+    }
+
+    let path_clone = path.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        analysis::compute_waveform(&path_clone, num_points)
+    })
+    .await
+    .map_err(|e| format!("Waveform task failed: {}", e))??;
+
+    // Cache result
+    {
+        let mut cache = state.waveform_cache.lock().unwrap();
+        cache.insert(path, result.clone());
+    }
+
+    Ok(result)
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WaveformBatchEntry {
+    pub path: String,
+    pub num_points: usize,
+}
+
+#[tauri::command]
+pub async fn get_waveforms_batch(
+    state: State<'_, AppState>,
+    entries: Vec<WaveformBatchEntry>,
+) -> Result<std::collections::HashMap<String, analysis::WaveformData>, String> {
+    let waveform_cache = state.waveform_cache.clone();
+
+    // Separate cached from uncached
+    let mut results: std::collections::HashMap<String, analysis::WaveformData> =
+        std::collections::HashMap::new();
+    let mut to_compute: Vec<WaveformBatchEntry> = Vec::new();
+
+    {
+        let mut cache = waveform_cache.lock().unwrap();
+        for entry in &entries {
+            if let Some(data) = cache.get(&entry.path) {
+                results.insert(entry.path.clone(), data.clone());
+            } else {
+                to_compute.push(WaveformBatchEntry {
+                    path: entry.path.clone(),
+                    num_points: entry.num_points,
+                });
+            }
+        }
+    }
+
+    if to_compute.is_empty() {
+        return Ok(results);
+    }
+
+    let computed = tokio::task::spawn_blocking(move || {
+        use std::sync::Mutex;
+
+        let new_results: Mutex<std::collections::HashMap<String, analysis::WaveformData>> =
+            Mutex::new(std::collections::HashMap::new());
+
+        let thread_count = 4.min(to_compute.len());
+        let chunk_size = (to_compute.len() / thread_count).max(1);
+
+        std::thread::scope(|scope| {
+            for chunk in to_compute.chunks(chunk_size) {
+                let new_results = &new_results;
+                scope.spawn(move || {
+                    for entry in chunk {
+                        if let Ok(data) = analysis::compute_waveform(&entry.path, entry.num_points)
+                        {
+                            new_results
+                                .lock()
+                                .unwrap()
+                                .insert(entry.path.clone(), data);
+                        }
+                    }
+                });
+            }
+        });
+
+        new_results.into_inner().unwrap()
+    })
+    .await
+    .map_err(|e| format!("Waveform batch task failed: {}", e))?;
+
+    // Cache computed results
+    {
+        let mut cache = waveform_cache.lock().unwrap();
+        for (path, data) in &computed {
+            cache.insert(path.clone(), data.clone());
+        }
+    }
+
+    results.extend(computed);
+    Ok(results)
+}
+
 // ─── YouTube Commands ─────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -428,6 +541,25 @@ pub async fn add_sound_from_youtube(
     };
 
     Ok(sound)
+}
+
+#[tauri::command]
+pub async fn search_youtube(
+    state: State<'_, AppState>,
+    query: String,
+    max_results: u32,
+) -> Result<Vec<youtube::search::YoutubeSearchResult>, String> {
+    let cache = state.youtube_cache.clone();
+    youtube::search::search_youtube(&query, max_results, cache).await
+}
+
+#[tauri::command]
+pub async fn fetch_playlist(
+    state: State<'_, AppState>,
+    url: String,
+) -> Result<youtube::search::YoutubePlaylist, String> {
+    let cache = state.youtube_cache.clone();
+    youtube::search::fetch_playlist(&url, cache).await
 }
 
 #[tauri::command]
@@ -697,6 +829,205 @@ pub async fn import_legacy_save(path: String) -> Result<Profile, String> {
         profile.name, profile.sounds.len(), profile.key_bindings.len());
 
     Ok(profile)
+}
+
+// ─── Discovery Commands ──────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn start_discovery(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    profile_id: String,
+) -> Result<Vec<discovery::engine::DiscoverySuggestion>, String> {
+    use std::sync::atomic::Ordering;
+
+    // Reset cancel flag
+    state.discovery_cancel.store(false, Ordering::Relaxed);
+
+    // Load the profile to extract YouTube seeds
+    let profile = storage::load_profile(profile_id.clone())?;
+
+    let mut seeds = Vec::new();
+    let mut existing_ids = Vec::new();
+
+    for sound in &profile.sounds {
+        if let SoundSource::YouTube { url, .. } = &sound.source {
+            if let Some(video_id) = youtube::downloader::extract_video_id(url) {
+                seeds.push(discovery::engine::SeedInfo {
+                    video_id: video_id.clone(),
+                    sound_name: sound.name.clone(),
+                });
+                existing_ids.push(video_id);
+            }
+        }
+    }
+
+    if seeds.is_empty() {
+        return Err("No YouTube sounds found in profile".to_string());
+    }
+
+    let yt_dlp_bin = youtube::downloader::get_yt_dlp_bin()?;
+    let cancel_flag = state.discovery_cancel.clone();
+
+    let _ = app.emit("discovery_started", serde_json::json!({}));
+
+    let engine = discovery::engine::DiscoveryEngine::new(cancel_flag.clone());
+
+    let app_handle = app.clone();
+    let suggestions = engine
+        .generate_suggestions(seeds.clone(), existing_ids, yt_dlp_bin, |current, total, seed_name| {
+            let _ = app_handle.emit("discovery_progress", serde_json::json!({
+                "current": current,
+                "total": total,
+                "seedName": seed_name,
+            }));
+        })
+        .await;
+
+    if cancel_flag.load(Ordering::Relaxed) {
+        let _ = app.emit("discovery_error", serde_json::json!({
+            "message": "Discovery cancelled",
+        }));
+        return Err("Discovery cancelled".to_string());
+    }
+
+    // Cache results
+    let seed_ids: Vec<String> = seeds.iter().map(|s| s.video_id.clone()).collect();
+    let cache_data = discovery::cache::DiscoveryCacheData {
+        profile_id: profile_id.clone(),
+        seed_hash: discovery::cache::DiscoveryCache::compute_seed_hash(&seed_ids),
+        generated_at: chrono::Utc::now().to_rfc3339(),
+        suggestions: suggestions.clone(),
+        dismissed_ids: Vec::new(),
+    };
+    discovery::cache::DiscoveryCache::save(&cache_data).ok();
+
+    let _ = app.emit("discovery_complete", serde_json::json!({
+        "count": suggestions.len(),
+    }));
+
+    Ok(suggestions)
+}
+
+#[tauri::command]
+pub fn get_discovery_suggestions(
+    profile_id: String,
+) -> Result<Option<Vec<discovery::engine::DiscoverySuggestion>>, String> {
+    Ok(discovery::cache::DiscoveryCache::load(&profile_id).map(|d| d.suggestions))
+}
+
+#[tauri::command]
+pub fn dismiss_discovery(
+    state: State<'_, AppState>,
+    profile_id: String,
+    video_id: String,
+) -> Result<(), String> {
+    discovery::cache::DiscoveryCache::dismiss(&profile_id, &video_id)?;
+
+    // Clean up the cached audio file in background (best-effort)
+    let cache = state.youtube_cache.clone();
+    let vid = video_id.clone();
+    std::thread::spawn(move || {
+        if let Ok(mut cache) = cache.lock() {
+            cache.remove_entry_by_video_id(&vid);
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cancel_discovery(state: State<'_, AppState>) {
+    use std::sync::atomic::Ordering;
+    state.discovery_cancel.store(true, Ordering::Relaxed);
+}
+
+// ─── Pre-download Commands ───────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PredownloadResult {
+    pub video_id: String,
+    pub cached_path: String,
+    pub title: String,
+    pub duration: f64,
+    pub waveform: analysis::WaveformData,
+}
+
+/// Pre-download a suggestion's audio to cache WITHOUT adding it to the profile.
+/// Returns cached path, duration, and waveform data in one call.
+#[tauri::command]
+pub async fn predownload_suggestion(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    url: String,
+    video_id: String,
+    download_id: String,
+) -> Result<PredownloadResult, String> {
+    let cache = state.youtube_cache.clone();
+    let waveform_cache = state.waveform_cache.clone();
+
+    let app_handle = app.clone();
+    let did = download_id.clone();
+    let on_progress: youtube::downloader::ProgressCallback = Box::new(move |status, progress| {
+        let _ = app_handle.emit("youtube_download_progress", serde_json::json!({
+            "downloadId": did,
+            "status": status,
+            "progress": progress,
+        }));
+    });
+
+    let entry = youtube::download_audio(&url, cache, Some(on_progress)).await?;
+
+    let cached_path = entry.cached_path.clone();
+
+    // Check waveform cache before spawning work
+    let cached_waveform = {
+        let mut cache_guard = waveform_cache.lock().unwrap();
+        cache_guard.get(&cached_path).cloned()
+    };
+
+    // Compute duration and waveform in parallel
+    let duration_path = cached_path.clone();
+    let wf_path = cached_path.clone();
+    let need_waveform = cached_waveform.is_none();
+
+    let (duration_result, waveform_result) = tokio::join!(
+        tokio::task::spawn_blocking(move || {
+            BufferManager::get_audio_duration(&duration_path).unwrap_or(0.0)
+        }),
+        async {
+            if !need_waveform {
+                return Ok(None);
+            }
+            tokio::task::spawn_blocking(move || {
+                analysis::compute_waveform_sampled(&wf_path, 100).map(Some)
+            })
+            .await
+            .map_err(|e| format!("Waveform task failed: {}", e))?
+        }
+    );
+
+    let duration = duration_result.map_err(|e| format!("Duration task failed: {}", e))?;
+
+    let waveform = if let Some(w) = cached_waveform {
+        w
+    } else {
+        let result = waveform_result?;
+        let result = result.ok_or_else(|| "Waveform computation returned None".to_string())?;
+        // Cache the result
+        let mut cache_guard = waveform_cache.lock().unwrap();
+        cache_guard.insert(cached_path.clone(), result.clone());
+        result
+    };
+
+    Ok(PredownloadResult {
+        video_id,
+        cached_path,
+        title: entry.title,
+        duration,
+        waveform,
+    })
 }
 
 // ─── Error Handling Commands ──────────────────────────────────────────────
