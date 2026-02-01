@@ -9,6 +9,7 @@ export interface DiscoverySuggestion {
   url: string;
   occurrenceCount: number;
   sourceSeedNames: string[];
+  sourceSeedIds: string[];
 }
 
 export interface EnrichedSuggestion extends DiscoverySuggestion {

@@ -25,6 +25,8 @@ pub struct DiscoverySuggestion {
     pub url: String,
     pub occurrence_count: usize,
     pub source_seed_names: Vec<String>,
+    #[serde(default)]
+    pub source_seed_ids: Vec<String>,
 }
 
 pub struct DiscoveryEngine {
@@ -55,16 +57,17 @@ impl DiscoveryEngine {
 
         let total = seeds.len();
 
-        // video_id -> (info, set of source_seed_names, count)
+        // video_id -> (info, set of source_seed_names, source_seed_ids, count)
         let mut occurrence_map: HashMap<
             String,
             (
-                String,  // title
-                String,  // channel
-                f64,     // duration
-                String,  // url
+                String,      // title
+                String,      // channel
+                f64,         // duration
+                String,      // url
                 Vec<String>, // source_seed_names
-                usize,   // count
+                Vec<String>, // source_seed_ids
+                usize,       // count
             ),
         > = HashMap::new();
 
@@ -103,13 +106,17 @@ impl DiscoveryEngine {
                             result.duration,
                             result.url.clone(),
                             Vec::new(),
+                            Vec::new(),
                             0,
                         )
                     });
                 if !entry.4.contains(&seed.sound_name) {
                     entry.4.push(seed.sound_name.clone());
                 }
-                entry.5 += 1;
+                if !entry.5.contains(&seed.video_id) {
+                    entry.5.push(seed.video_id.clone());
+                }
+                entry.6 += 1;
             }
         }
 
@@ -119,13 +126,13 @@ impl DiscoveryEngine {
 
         let mut suggestions: Vec<DiscoverySuggestion> = occurrence_map
             .into_iter()
-            .filter(|(video_id, (_, _, duration, _, _, _))| {
+            .filter(|(video_id, (_, _, duration, _, _, _, _))| {
                 !existing_set.contains(video_id)
                     && *duration >= 30.0
                     && *duration <= 900.0 // 15 minutes
             })
             .map(
-                |(video_id, (title, channel, duration, url, source_seed_names, count))| {
+                |(video_id, (title, channel, duration, url, source_seed_names, source_seed_ids, count))| {
                     DiscoverySuggestion {
                         video_id,
                         title,
@@ -134,6 +141,7 @@ impl DiscoveryEngine {
                         url,
                         occurrence_count: count,
                         source_seed_names,
+                        source_seed_ids,
                     }
                 },
             )

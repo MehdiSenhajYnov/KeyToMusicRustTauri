@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   useDiscoveryStore,
+  type DiscoverySuggestion,
   type EnrichedSuggestion,
 } from "../../stores/discoveryStore";
 import { useProfileStore } from "../../stores/profileStore";
@@ -10,21 +11,20 @@ import { useToastStore } from "../../stores/toastStore";
 import { useAudioStore } from "../../stores/audioStore";
 import { formatDuration } from "../../utils/fileHelpers";
 import {
-  findNextAvailableKey,
   keyCodeToDisplay,
   getKeyCode,
   recordKeyLayout,
   buildComboFromPressedKeys,
   checkShortcutConflicts,
 } from "../../utils/keyMapping";
-import { findLeastUsedTrack } from "../../utils/soundHelpers";
 import { WaveformDisplay } from "../common/WaveformDisplay";
 import * as commands from "../../utils/tauriCommands";
 import type { SoundSource } from "../../types";
+import { analyzeProfile, computeAutoAssign } from "../../utils/profileAnalysis";
 
 export function DiscoveryPanel() {
   const profile = useProfileStore((s) => s.currentProfile);
-  const { addSound, addKeyBinding, saveCurrentProfile } = useProfileStore();
+  const { addSound, addKeyBinding, updateKeyBinding, saveCurrentProfile } = useProfileStore();
   const config = useSettingsStore((s) => s.config);
   const addToast = useToastStore((s) => s.addToast);
 
@@ -55,11 +55,11 @@ export function DiscoveryPanel() {
 
   // Build enricher function for auto-assignment
   const buildEnricher = useCallback(() => {
-    if (!profile) return (_s: unknown, _i: number) => ({ suggestedKey: "", suggestedTrackId: "" });
+    if (!profile) return (_s: DiscoverySuggestion, _i: number) => ({ suggestedKey: "", suggestedTrackId: "" });
 
     const usedKeys = new Set(profile.keyBindings.map((kb) => kb.keyCode));
     const alreadySuggested = new Set<string>();
-    const trackId = findLeastUsedTrack(profile.tracks, profile.keyBindings);
+    const mode = analyzeProfile(profile);
 
     // Also include keys already suggested in visible suggestions
     const vis = useDiscoveryStore.getState().visibleSuggestions;
@@ -67,10 +67,13 @@ export function DiscoveryPanel() {
       if (s.suggestedKey) alreadySuggested.add(s.suggestedKey);
     }
 
-    return (_s: unknown, _i: number) => {
-      const key = findNextAvailableKey(usedKeys, alreadySuggested);
-      if (key) alreadySuggested.add(key);
-      return { suggestedKey: key, suggestedTrackId: trackId };
+    return (s: DiscoverySuggestion, _i: number) => {
+      const assign = computeAutoAssign(s, profile, usedKeys, alreadySuggested);
+      // In single-sound mode, mark the key as taken for subsequent suggestions
+      if (mode === "single-sound" && assign.suggestedKey) {
+        alreadySuggested.add(assign.suggestedKey);
+      }
+      return assign;
     };
   }, [profile]);
 
@@ -206,6 +209,30 @@ export function DiscoveryPanel() {
     }
   };
 
+  /** Add sound to binding: merge into existing binding or create new one. */
+  const addToBinding = (soundId: string, suggestedKey: string, suggestedTrackId: string) => {
+    if (!suggestedKey || !profile) return;
+
+    const existingBinding = profile.keyBindings.find(
+      (kb) => kb.keyCode === suggestedKey
+    );
+    if (existingBinding) {
+      // Multi-sound: append to existing binding
+      updateKeyBinding(suggestedKey, {
+        soundIds: [...existingBinding.soundIds, soundId],
+      });
+    } else {
+      // New binding
+      addKeyBinding({
+        keyCode: suggestedKey,
+        trackId: suggestedTrackId,
+        soundIds: [soundId],
+        loopMode: "off",
+        currentIndex: 0,
+      });
+    }
+  };
+
   const handleAdd = async (s: EnrichedSuggestion) => {
     if (!profile) return;
 
@@ -229,15 +256,7 @@ export function DiscoveryPanel() {
         duration: s.duration,
       });
 
-      if (s.suggestedKey) {
-        addKeyBinding({
-          keyCode: s.suggestedKey,
-          trackId: s.suggestedTrackId,
-          soundIds: [soundId],
-          loopMode: "off",
-          currentIndex: 0,
-        });
-      }
+      addToBinding(soundId, s.suggestedKey, s.suggestedTrackId);
 
       setTimeout(() => saveCurrentProfile(), 100);
       removeSuggestion(s.videoId);
@@ -260,15 +279,7 @@ export function DiscoveryPanel() {
           duration: sound.duration,
         });
 
-        if (s.suggestedKey) {
-          addKeyBinding({
-            keyCode: s.suggestedKey,
-            trackId: s.suggestedTrackId,
-            soundIds: [soundId],
-            loopMode: "off",
-            currentIndex: 0,
-          });
-        }
+        addToBinding(soundId, s.suggestedKey, s.suggestedTrackId);
 
         setTimeout(() => saveCurrentProfile(), 100);
         removeSuggestion(s.videoId);
