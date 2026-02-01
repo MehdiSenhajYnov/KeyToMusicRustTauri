@@ -1,6 +1,7 @@
 # Section 2 — Import de playlists YouTube
 
-> **Statut:** ⏳ PLANIFIE
+> **Statut:** ✅ COMPLÉTÉ
+> **Date de complétion:** 2026-01-31
 > **Dépendance:** Section 1 (réutilise l'UI search et le type `YoutubeSearchResult`)
 > **Parent:** [SMART_DISCOVERY.md](./SMART_DISCOVERY.md)
 

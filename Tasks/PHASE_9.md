@@ -35,10 +35,13 @@
 
 ## 9.2 Optimisations UI
 
-- [ ] **9.2.1** Optimiser le rendering React
-  - [ ] Utiliser React.memo pour les composants fréquemment re-rendus
-  - [ ] Utiliser useMemo et useCallback pour éviter les recalculs
-  - [ ] Profiler avec React DevTools
+- [x] **9.2.1** Optimiser le rendering React ✅ (partiel)
+  - [x] KeyGrid re-render optimization: `usePlayingSoundIds()` hook extracts Set<string> of playing sound IDs with shallow comparison, prevents re-renders from position-only progress updates
+  - [x] SoundDetails targeted Zustand subscription: subscribes only to specific track's playback entry instead of full `playingTracks` map
+  - [x] WaveformDisplay dual-canvas: static canvas (waveform bars + markers) + cursor canvas (playback position), decouples expensive rendering from progress ticks
+  - [x] Batched duration updates: `computeProfileDurations()` returns all durations at once, applied in single `set()` call instead of N individual updates
+  - [x] Progress emission rate reduced from 100ms to 250ms
+  - [ ] Profiler avec React DevTools (complet)
   - [ ] Optimiser les listes (virtualisation si nécessaire)
 
 - [ ] **9.2.2** Optimiser les animations

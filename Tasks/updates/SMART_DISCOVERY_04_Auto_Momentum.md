@@ -1,6 +1,7 @@
 # Section 4 — Auto-Momentum (marqueur suggéré sur la waveform)
 
-> **Statut:** ⏳ PLANIFIE
+> **Statut:** ✅ COMPLÉTÉ
+> **Date de complétion:** 2026-01-31
 > **Dépendance:** Section 3 (Waveform RMS)
 > **Parent:** [SMART_DISCOVERY.md](./SMART_DISCOVERY.md)
 

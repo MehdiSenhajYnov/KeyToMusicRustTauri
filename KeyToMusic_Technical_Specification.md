@@ -15,7 +15,8 @@
 11. [Import/Export](#11-importexport)
 12. [Gestion des Erreurs](#12-gestion-des-erreurs)
 13. [Instructions de Développement](#13-instructions-de-développement)
-14. [Fonctionnalités Planifiées (Phase 8)](#14-fonctionnalités-planifiées-phase-8)
+14. [Fonctionnalités Phase 8](#14-fonctionnalités-phase-8)
+15. [Smart Discovery System (Phase 8+)](#15-smart-discovery-system-phase-8)
 
 ---
 
@@ -63,25 +64,39 @@
 
 ```toml
 [dependencies]
-tauri = { version = "2", features = ["shell-open"] }
+tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rodio = "0.19"  # Lecture audio
-cpal = "0.15"   # Énumération des périphériques audio
+rodio = "0.19"          # Lecture audio
+cpal = "0.15"           # Énumération des périphériques audio
 symphonia = { version = "0.5", features = ["mp3", "flac", "ogg", "wav", "pcm", "aac", "isomp4"] }  # Seeking rapide + M4A
 tokio = { version = "1", features = ["full"] }
-
-# Dépendances conditionnelles par plateforme:
-[target."cfg(not(target_os = \"macos\"))".dependencies]
-rdev = "0.5"    # Détection globale des touches (Windows/Linux uniquement)
-# Note: macOS utilise CoreGraphics CGEventTap directement via FFI (voir section 6.7)
-uuid = { version = "1", features = ["v4"] }
-walkdir = "2"   # Parcours de fichiers
-sanitize-filename = "0.5"  # Nettoyage noms de fichiers
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }  # Timestamps (discovery cache)
+dirs = "5"              # Répertoires système (app data dir)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }  # HTTP (yt-dlp/ffmpeg downloads)
+rfd = "0.15"            # Dialogues natifs (file picker)
+futures = "0.3"         # Async streams (buffer_unordered pour discovery)
 zip = { version = "2", default-features = false, features = ["deflate"] }  # Extraction ZIP ffmpeg
-tracing = "0.1"        # Structured logging
+tracing = "0.1"         # Structured logging
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }  # Log formatting
 tracing-appender = "0.2"  # Daily rolling log files
+
+# Dépendances conditionnelles par plateforme:
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-shell = "2"  # Shell open (folders, URLs)
+
+[target."cfg(not(any(target_os = \"macos\", target_os = \"windows\")))".dependencies]
+rdev = { git = "https://github.com/fufesou/rdev", branch = "master" }  # Détection globale des touches (Linux)
+
+[target."cfg(target_os = \"windows\")".dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader",
+    "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Input",
+    "Win32_Devices_HumanInterfaceDevice", "Win32_Graphics_Gdi"
+] }  # Raw Input API
+
+# Note: macOS utilise CoreGraphics CGEventTap directement via FFI (voir section 6.7)
 ```
 
 ### 2.3 Dépendances npm (package.json)
@@ -114,78 +129,123 @@ tracing-appender = "0.2"  # Daily rolling log files
 keytomusic/
 ├── src/                          # Code source React/TypeScript
 │   ├── components/               # Composants React
-│   │   ├── Layout/
-│   │   │   ├── Header.tsx
-│   │   │   ├── Sidebar.tsx
-│   │   │   └── MainContent.tsx
 │   │   ├── Tracks/
-│   │   │   ├── TrackList.tsx
-│   │   │   ├── TrackItem.tsx
-│   │   │   └── TrackVolumeSlider.tsx
+│   │   │   └── TrackView.tsx           # Vue des pistes (volume, rename, track management)
 │   │   ├── Sounds/
-│   │   │   ├── SoundList.tsx
-│   │   │   ├── SoundItem.tsx
-│   │   │   ├── SoundSettings.tsx
-│   │   │   └── AddSoundModal.tsx
+│   │   │   ├── SoundDetails.tsx        # Détails et édition d'un son (momentum, volume, preview)
+│   │   │   ├── MultiKeyDetails.tsx     # Sélection multi-touches (detail panel)
+│   │   │   └── AddSoundModal.tsx       # Modal ajout sons (local + YouTube + playlists)
 │   │   ├── Keys/
-│   │   │   ├── KeyGrid.tsx
-│   │   │   ├── KeyItem.tsx
-│   │   │   └── KeyAssignmentModal.tsx
+│   │   │   ├── KeyGrid.tsx             # Grille visuelle des touches assignées
+│   │   │   └── KeyCaptureSlot.tsx      # Capture de touche (binding + modifier support)
 │   │   ├── Controls/
-│   │   │   ├── MasterVolume.tsx
-│   │   │   ├── GlobalToggles.tsx
-│   │   │   └── NowPlaying.tsx
+│   │   │   ├── MasterStopButton.tsx    # Bouton Master Stop
+│   │   │   ├── GlobalToggles.tsx       # Toggles (key detection, auto-momentum)
+│   │   │   └── NowPlaying.tsx          # Tracks en cours de lecture (seekable)
 │   │   ├── Profiles/
-│   │   │   ├── ProfileSelector.tsx
-│   │   │   └── ProfileManager.tsx
-│   │   └── Settings/
-│   │       ├── SettingsModal.tsx
-│   │       └── MasterStopConfig.tsx
+│   │   │   └── ProfileSelector.tsx     # Sélecteur/gestion de profils (create, rename, duplicate, delete)
+│   │   ├── Settings/
+│   │   │   └── SettingsModal.tsx       # Modal settings (audio, keys, shortcuts, import/export)
+│   │   ├── Layout/
+│   │   │   ├── Header.tsx              # Barre supérieure (logo, master volume, settings)
+│   │   │   ├── MainContent.tsx         # Zone principale (tracks, key grid, sound details)
+│   │   │   └── Sidebar.tsx             # Barre latérale (profils, controls, now playing)
+│   │   ├── Toast/
+│   │   │   └── ToastContainer.tsx      # Notifications toast non-bloquantes
+│   │   ├── Export/
+│   │   │   └── ExportProgress.tsx      # Progress bar flottante d'export
+│   │   ├── Errors/
+│   │   │   └── FileNotFoundModal.tsx   # Modal fichier manquant (locate/re-download/remove)
+│   │   ├── Discovery/
+│   │   │   └── DiscoveryPanel.tsx      # Carousel de suggestions YouTube Mix
+│   │   ├── common/
+│   │   │   ├── WaveformDisplay.tsx     # Canvas waveform RMS (dual-canvas: static + cursor)
+│   │   │   └── WarningTooltip.tsx      # Icône warning avec tooltip
+│   │   └── ConfirmDialog.tsx           # Modal de confirmation custom (remplace confirm())
 │   ├── stores/                   # State management Zustand
-│   │   ├── audioStore.ts
 │   │   ├── profileStore.ts
-│   │   └── settingsStore.ts
+│   │   ├── settingsStore.ts
+│   │   ├── audioStore.ts         # Playing tracks state (usePlayingSoundIds hook)
+│   │   ├── historyStore.ts       # Undo/Redo stacks
+│   │   ├── discoveryStore.ts     # Discovery state & actions
+│   │   ├── errorStore.ts
+│   │   ├── exportStore.ts
+│   │   ├── toastStore.ts
+│   │   └── confirmStore.ts
 │   ├── hooks/                    # Custom React hooks
 │   │   ├── useKeyDetection.ts
-│   │   └── useAudioEngine.ts
+│   │   ├── useAudioEvents.ts
+│   │   ├── useTextInputFocus.ts          # Auto-disable key detection on text inputs
+│   │   ├── useUndoRedo.ts
+│   │   ├── useDiscovery.ts               # Discovery carousel/playback
+│   │   └── useDiscoveryPredownload.ts    # Background pre-download pipeline
 │   ├── types/                    # TypeScript types
 │   │   └── index.ts
 │   ├── utils/                    # Utilitaires
 │   │   ├── fileHelpers.ts
-│   │   └── keyMapping.ts
+│   │   ├── keyMapping.ts
+│   │   ├── tauriCommands.ts      # All invoke() wrappers
+│   │   ├── soundHelpers.ts
+│   │   ├── inputHelpers.ts
+│   │   ├── errorMessages.ts
+│   │   └── profileAnalysis.ts    # Smart auto-assignment profile analysis
 │   ├── App.tsx
 │   ├── main.tsx
 │   └── index.css
 ├── src-tauri/                    # Code source Rust/Tauri
 │   ├── src/
-│   │   ├── main.rs               # Point d'entrée Tauri
+│   │   ├── main.rs               # Point d'entrée Tauri, event forwarding, logging
+│   │   ├── commands.rs           # Commandes Tauri exposées au frontend
+│   │   ├── state.rs              # AppState (audio engine, key detector, waveform cache, etc.)
+│   │   ├── types.rs              # Toutes les structures de données sérialisables
 │   │   ├── audio/
 │   │   │   ├── mod.rs
 │   │   │   ├── engine.rs         # Moteur audio principal
 │   │   │   ├── track.rs          # Gestion des pistes
 │   │   │   ├── crossfade.rs      # Logique de crossfade
 │   │   │   ├── symphonia_source.rs # Source custom avec seeking rapide
-│   │   │   └── buffer.rs         # Métadonnées audio (durées)
+│   │   │   ├── buffer.rs         # Métadonnées audio (durées)
+│   │   │   └── analysis.rs       # Waveform RMS + auto-momentum detection
 │   │   ├── keys/
 │   │   │   ├── mod.rs
-│   │   │   ├── detector.rs       # Détection globale des touches
-│   │   │   └── mapping.rs        # Mapping touches -> actions
+│   │   │   ├── detector.rs       # Détection globale des touches + chords
+│   │   │   ├── mapping.rs        # Mapping touches -> actions, KeyEvent types
+│   │   │   ├── chord.rs          # Multi-key chord detection (Trie-based)
+│   │   │   ├── macos_listener.rs # macOS CGEventTap implementation
+│   │   │   └── windows_listener.rs # Windows Raw Input API implementation
 │   │   ├── youtube/
 │   │   │   ├── mod.rs
 │   │   │   ├── downloader.rs     # Téléchargement via yt-dlp (retry, canonical URLs)
-│   │   │   ├── cache.rs          # Système de cache
+│   │   │   ├── cache.rs          # Système de cache YouTube (file-to-profile mapping, cleanup)
+│   │   │   ├── search.rs         # YouTube search + playlist fetch via yt-dlp
 │   │   │   ├── yt_dlp_manager.rs # Auto-download/update yt-dlp binary
 │   │   │   └── ffmpeg_manager.rs # Auto-download ffmpeg for M4A remux
+│   │   ├── discovery/
+│   │   │   ├── mod.rs
+│   │   │   ├── engine.rs         # YouTube Mix discovery (streaming, cross-seed aggregation)
+│   │   │   ├── mix_fetcher.rs    # Fetch YouTube Mix playlists via yt-dlp
+│   │   │   └── cache.rs          # Per-profile discovery cache with seed hash
 │   │   ├── storage/
 │   │   │   ├── mod.rs
 │   │   │   ├── profile.rs        # Gestion des profils
 │   │   │   └── config.rs         # Configuration globale
-│   │   └── commands.rs           # Commandes Tauri exposées au frontend
+│   │   └── import_export/        # .ktm file handling
+│   │       ├── mod.rs
+│   │       ├── export.rs         # Export profil → .ktm (ZIP), cancellation, tracking
+│   │       └── import.rs         # Import .ktm → profil (new UUIDs, file extraction)
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── data/                         # Données utilisateur (créé au runtime)
 │   ├── profiles/                 # Fichiers de profil JSON
-│   ├── cache/                    # Sons téléchargés depuis YouTube
+│   ├── cache/
+│   │   ├── cache_index.json      # Index du cache YouTube
+│   │   ├── waveforms.json        # Disk-persisted waveform cache (LRU, mtime-validated)
+│   │   └── *.m4a                 # Fichiers audio cachés (video ID as filename)
+│   ├── bin/
+│   │   ├── yt-dlp.exe            # Auto-downloaded yt-dlp binary
+│   │   └── ffmpeg.exe            # Auto-downloaded ffmpeg binary
+│   ├── imported_sounds/          # Sons importés depuis .ktm
+│   ├── logs/                     # Daily rolling log files
 │   └── config.json               # Configuration globale
 └── resources/                    # Ressources statiques
     ├── sounds/
@@ -228,7 +288,7 @@ keytomusic/
 │                                                              │
 │                    Tauri emit() (events)                     │
 │                                                              │
-│  Audio Event Polling Thread (100ms):                         │
+│  Audio Event Polling Thread (100ms drain):                    │
 │    drains AudioEngine events → emits Tauri events            │
 │    (sound_started, sound_ended, playback_progress)           │
 └──────────────────────────────────────────────────────────────┘
@@ -298,6 +358,9 @@ interface Profile {
   keyBindings: KeyBinding[];
 }
 
+// Modificateur momentum configurable
+type MomentumModifier = "Shift" | "Ctrl" | "Alt" | "None";
+
 // Configuration globale de l'application
 interface AppConfig {
   masterVolume: number;           // 0.0 à 1.0
@@ -307,9 +370,12 @@ interface AppConfig {
   autoMomentumShortcut: KeyCode[];  // Shortcut pour toggle auto-momentum
   keyDetectionShortcut: KeyCode[];  // Shortcut pour toggle key detection (fonctionne même si désactivé)
   crossfadeDuration: number;      // Durée du crossfade en millisecondes (défaut: 500)
-  keyCooldown: number;            // Cooldown global entre pressions en millisecondes (défaut: 1500)
+  keyCooldown: number;            // Cooldown global entre pressions en millisecondes (défaut: 200)
   currentProfileId: ProfileId | null;
   audioDevice: string | null;     // null = follow system default, string = force specific device
+  chordWindowMs: number;          // Fenêtre de détection multi-key chords (défaut: 30ms)
+  momentumModifier: MomentumModifier; // Quel modifier déclenche le momentum (défaut: "Shift")
+  playlistImportEnabled: boolean; // Préférence persistée: checkbox "Download entire playlist"
 }
 
 // État "Now Playing" pour l'affichage
@@ -320,6 +386,53 @@ interface NowPlayingState {
   currentTime: number;
   duration: number;
   isPlaying: boolean;
+}
+
+// Résultat de recherche YouTube
+interface YoutubeSearchResult {
+  videoId: string;
+  title: string;
+  duration: number;       // Durée en secondes
+  channel: string;
+  thumbnailUrl: string;
+  url: string;
+  alreadyDownloaded: boolean;  // Déjà dans le cache YouTube
+}
+
+// Playlist YouTube
+interface YoutubePlaylist {
+  title: string;
+  entries: YoutubeSearchResult[];
+  totalCount: number;
+}
+
+// Données de waveform RMS
+interface WaveformData {
+  points: number[];           // 0.0-1.0 normalized RMS values
+  duration: number;           // total seconds
+  sampleRate: number;
+  suggestedMomentum: number | null;  // Auto-detected pre-peak point (seconds)
+}
+
+// Suggestion Discovery (définie dans discoveryStore.ts)
+interface DiscoverySuggestion {
+  videoId: string;
+  title: string;
+  channel: string;
+  duration: number;         // Durée en secondes
+  url: string;
+  occurrenceCount: number;  // Nombre de mixes où cette suggestion apparaît
+  sourceSeedNames: string[];  // Noms des sons sources
+  sourceSeedIds: string[];    // IDs des sons sources
+}
+
+// Résultat d'un pré-téléchargement Discovery
+interface PredownloadResult {
+  videoId: string;
+  cachedPath: string;
+  title: string;
+  duration: number;
+  waveform: WaveformData;
 }
 
 // Événements émis par le backend vers le frontend
@@ -334,7 +447,12 @@ type BackendEvent =
   | { type: "youtube_download_progress"; downloadId: string; status: string; progress: number | null }
   | { type: "sound_not_found"; soundId: SoundId; path: string; trackId: TrackId }
   | { type: "audio_error"; message: string }
-  | { type: "export_progress"; current: number; total: number; fileName: string };
+  | { type: "export_progress"; current: number; total: number; fileName: string }
+  | { type: "discovery_started" }
+  | { type: "discovery_progress"; current: number; total: number; seedName: string }
+  | { type: "discovery_partial"; suggestions: DiscoverySuggestion[] }
+  | { type: "discovery_complete"; count: number }
+  | { type: "discovery_error"; message: string };
 ```
 
 ### 4.2 Structures Rust (Backend)
@@ -415,6 +533,9 @@ pub struct Profile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum MomentumModifier { Shift, Ctrl, Alt, None }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub master_volume: f32,
@@ -430,6 +551,12 @@ pub struct AppConfig {
     pub current_profile_id: Option<ProfileId>,
     #[serde(default)]
     pub audio_device: Option<String>,
+    #[serde(default = "default_chord_window")]
+    pub chord_window_ms: u32,                    // Multi-key chord detection window (default: 30ms)
+    #[serde(default)]
+    pub momentum_modifier: MomentumModifier,     // Which modifier triggers momentum (default: Shift)
+    #[serde(default)]
+    pub playlist_import_enabled: bool,           // Persisted playlist checkbox preference
 }
 
 impl Default for AppConfig {
@@ -442,11 +569,89 @@ impl Default for AppConfig {
             auto_momentum_shortcut: vec![],
             key_detection_shortcut: vec![],
             crossfade_duration: 500,
-            key_cooldown: 1500,
+            key_cooldown: 200,
             current_profile_id: None,
             audio_device: None,
+            chord_window_ms: 30,
+            momentum_modifier: MomentumModifier::Shift,
+            playlist_import_enabled: false,
         }
     }
+}
+
+// Types additionnels pour waveform et discovery
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WaveformData {
+    pub points: Vec<f32>,
+    pub duration: f64,
+    pub sample_rate: u32,
+    pub suggested_momentum: Option<f64>,  // Auto-detected pre-peak point
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YoutubeSearchResult {
+    pub video_id: String,
+    pub title: String,
+    pub duration: f64,
+    pub channel: String,
+    pub thumbnail_url: String,
+    pub url: String,
+    pub already_downloaded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YoutubePlaylist {
+    pub title: String,
+    pub entries: Vec<YoutubeSearchResult>,
+    pub total_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoverySuggestion {
+    pub video_id: String,
+    pub title: String,
+    pub channel: String,
+    pub duration: f64,
+    pub url: String,
+    pub occurrence_count: usize,
+    pub source_seed_names: Vec<String>,
+    #[serde(default)]
+    pub source_seed_ids: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PredownloadResult {
+    pub video_id: String,
+    pub cached_path: String,
+    pub title: String,
+    pub duration: f64,
+    pub waveform: WaveformData,
+}
+
+// Discovery seed (backend-only, dans discovery/engine.rs)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeedInfo {
+    pub video_id: String,
+    pub sound_name: String,
+}
+
+// Cache des résultats discovery (backend-only, dans discovery/cache.rs)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveryCacheData {
+    pub profile_id: String,
+    pub seed_hash: String,           // Hash des seed IDs pour détecter les changements
+    pub generated_at: String,
+    pub suggestions: Vec<DiscoverySuggestion>,
+    #[serde(default)]
+    pub dismissed_ids: Vec<String>,  // Suggestions rejetées par l'utilisateur
 }
 ```
 
@@ -460,10 +665,15 @@ impl Default for AppConfig {
   "autoMomentum": false,
   "keyDetectionEnabled": true,
   "masterStopShortcut": ["ControlLeft", "ShiftLeft", "KeyS"],
+  "autoMomentumShortcut": [],
+  "keyDetectionShortcut": [],
   "crossfadeDuration": 500,
-  "keyCooldown": 1500,
+  "keyCooldown": 200,
   "currentProfileId": "550e8400-e29b-41d4-a716-446655440000",
-  "audioDevice": null
+  "audioDevice": null,
+  "chordWindowMs": 30,
+  "momentumModifier": "Shift",
+  "playlistImportEnabled": false
 }
 ```
 
@@ -613,7 +823,7 @@ QUAND touche_pressée(key_code):
     SI cooldown_actif:
         RETOURNER (ignorer la pression)
     
-    ACTIVER cooldown_global (1500ms par défaut)
+    ACTIVER cooldown_global (200ms par défaut)
     
     SI key_code == master_stop_shortcut:
         STOPPER tous les sons de toutes les pistes
@@ -903,10 +1113,9 @@ struct TrackResumeInfo {
 Le système capture les événements clavier au niveau système, permettant la détection même quand l'application est en arrière-plan.
 
 **Implémentation par plateforme:**
-- **Windows/Linux:** Utilise `rdev` pour la capture globale
-- **macOS:** Utilise une implémentation custom CGEventTap (voir section 6.7)
-
-La raison de cette séparation: sur macOS 13+, rdev crash car il appelle `TSMGetInputSourceProperty` depuis un thread background, ce qu'Apple interdit maintenant (doit être sur la main dispatch queue).
+- **Windows:** Utilise Raw Input API (`windows_listener.rs`) — `rdev` et `SetWindowsHookEx` ne reçoivent pas les événements quand la fenêtre Tauri/WebView2 est focalisée. Raw Input avec `RIDEV_INPUTSINK` contourne cette limitation.
+- **Linux:** Utilise `rdev` pour la capture globale
+- **macOS:** Utilise une implémentation custom CGEventTap (`macos_listener.rs`) — sur macOS 13+, rdev crash car il appelle `TSMGetInputSourceProperty` depuis un thread background.
 
 ```rust
 // src-tauri/src/keys/detector.rs
@@ -1053,19 +1262,19 @@ fn key_to_code(key: Key) -> String {
 
 ### 6.3 Comportement du Cooldown
 
-- **Cooldown global** : 1500ms par défaut (configurable)
+- **Cooldown global** : 200ms par défaut (configurable, plage 0-5000ms)
 - **Portée** : S'applique à TOUTES les touches (pas par touche individuelle)
 - **But** : Éviter les déclenchements accidentels par appui prolongé ou spam
 
 ```
 Timeline:
 ─────────────────────────────────────────────────────────────
-0ms        1000ms      1500ms      2000ms      2500ms
-│          │           │           │           │
-▼          ▼           ▼           ▼           ▼
-[A pressé] [A pressé]  │           [B pressé]  [A pressé]
-   ✓       (ignoré)    (cooldown   ✓           ✓
-                        fin)
+0ms      100ms    200ms     300ms     400ms
+│        │        │         │         │
+▼        ▼        ▼         ▼         ▼
+[A]      [A]      │         [B]       [A]
+ ✓     (ignoré)  (cooldown   ✓         ✓
+                   fin)
 ```
 
 ### 6.4 Shortcuts en Foreground
@@ -1845,15 +2054,16 @@ L'application a une taille minimale de 800x600 pixels. Elle peut être redimensi
 │   └── ...
 ├── cache/
 │   ├── cache_index.json     # Index du cache YouTube
+│   ├── waveforms.json       # Disk-persisted waveform cache (LRU, mtime-validated)
 │   ├── XXXXXXXXXXX.m4a      # Fichier audio caché (video ID as filename)
 │   └── ...
 ├── bin/
 │   ├── yt-dlp.exe           # Auto-downloaded yt-dlp binary
 │   └── ffmpeg.exe           # Auto-downloaded ffmpeg binary
-├── imported_sounds/        # Sons importés depuis .ktm
-│   └── {profile_uuid}/    # Dossier par profil importé
+├── imported_sounds/         # Sons importés depuis .ktm
+│   └── {profile_uuid}/     # Dossier par profil importé
 └── logs/
-    ├── keytomusic.log.2026-01-24  # Daily rolling log files
+    ├── keytomusic.log.2026-01-31  # Daily rolling log files
     └── ...
 ```
 
@@ -2241,7 +2451,7 @@ pub enum AppError {
 | Erreur | Message Affiché |
 |--------|-----------------|
 | `SoundFileNotFound` | "Le fichier audio n'a pas été trouvé. Voulez-vous mettre à jour son emplacement ?" |
-| `UnsupportedFormat` | "Ce format audio n'est pas supporté. Formats acceptés : MP3, WAV, OGG, FLAC, AAC" |
+| `UnsupportedFormat` | "Ce format audio n'est pas supporté. Formats acceptés : MP3, WAV, OGG, FLAC, M4A/AAC" |
 | `InvalidYouTubeUrl` | "L'URL YouTube n'est pas valide" |
 | `YouTubeDownloadFailed` | "Échec du téléchargement. Vérifiez votre connexion et l'URL" |
 | `YtDlpNotFound` | "yt-dlp n'est pas installé. Installez-le pour télécharger depuis YouTube" |
@@ -2475,10 +2685,16 @@ async fn get_audio_duration(path: String) -> Result<f64, String>;
 
 // Touches
 #[tauri::command]
+fn set_profile_bindings(state: State<AppState>, bindings: Vec<String>) -> Result<(), String>;
+
+#[tauri::command]
 async fn set_key_detection(enabled: bool) -> Result<(), String>;
 
 #[tauri::command]
 async fn set_master_stop_shortcut(keys: Vec<String>) -> Result<(), String>;
+
+#[tauri::command]
+fn set_key_cooldown(state: State<AppState>, cooldown_ms: u32) -> Result<(), String>;
 
 // Import/Export
 #[tauri::command]
@@ -2502,6 +2718,88 @@ async fn pick_ktm_file() -> Result<Option<String>, String>;
 // Utilitaires
 #[tauri::command]
 async fn pick_audio_files() -> Result<Vec<String>, String>;
+
+#[tauri::command]
+async fn pick_audio_file() -> Result<Option<String>, String>;
+
+#[tauri::command]
+fn get_logs_folder() -> Result<String, String>;
+
+#[tauri::command]
+fn get_data_folder() -> Result<String, String>;
+
+#[tauri::command]
+fn open_folder(path: String) -> Result<(), String>;
+
+// Profil supplémentaire
+#[tauri::command]
+fn duplicate_profile(id: String, new_name: Option<String>) -> Result<Profile, String>;
+
+#[tauri::command]
+fn verify_profile_sounds(profile: Profile) -> Vec<MissingSoundInfo>;
+
+#[tauri::command]
+async fn preload_profile_sounds(sounds: Vec<SoundPreloadEntry>) -> Result<HashMap<String, f64>, String>;
+
+// Audio: durée + périphériques
+#[tauri::command]
+async fn get_audio_duration(path: String) -> Result<f64, String>;
+
+#[tauri::command]
+fn list_audio_devices() -> Vec<String>;
+
+#[tauri::command]
+fn set_audio_device(device: Option<String>) -> Result<(), String>;
+
+// Waveform et analyse audio
+#[tauri::command]
+async fn get_waveform(path: String, num_points: u32) -> Result<WaveformData, String>;
+
+#[tauri::command]
+async fn get_waveforms_batch(entries: Vec<WaveformRequest>) -> Result<HashMap<String, WaveformData>, String>;
+
+// YouTube: recherche, playlist, binaires
+#[tauri::command]
+async fn search_youtube(query: String, max_results: u32) -> Result<Vec<YoutubeSearchResult>, String>;
+
+#[tauri::command]
+async fn fetch_playlist(url: String) -> Result<YoutubePlaylist, String>;
+
+#[tauri::command]
+async fn check_yt_dlp_installed() -> Result<bool, String>;
+
+#[tauri::command]
+async fn install_yt_dlp() -> Result<(), String>;
+
+#[tauri::command]
+async fn check_ffmpeg_installed() -> Result<bool, String>;
+
+#[tauri::command]
+async fn install_ffmpeg() -> Result<(), String>;
+
+// Discovery (YouTube Mix recommendations)
+#[tauri::command]
+async fn start_discovery(app: AppHandle, state: State<AppState>, profile_id: String) -> Result<Vec<DiscoverySuggestion>, String>;
+
+#[tauri::command]
+fn get_discovery_suggestions(profile_id: String) -> Result<Option<Vec<DiscoverySuggestion>>, String>;
+
+#[tauri::command]
+fn dismiss_discovery(state: State<AppState>, profile_id: String, video_id: String) -> Result<(), String>;
+
+#[tauri::command]
+fn cancel_discovery(state: State<AppState>);
+
+// Pre-download (background caching for discovery carousel)
+#[tauri::command]
+async fn predownload_suggestion(app: AppHandle, state: State<AppState>, url: String, video_id: String, download_id: String) -> Result<PredownloadResult, String>;
+
+// Legacy import
+#[tauri::command]
+async fn pick_legacy_file() -> Result<Option<String>, String>;
+
+#[tauri::command]
+async fn import_legacy_save(path: String) -> Result<Profile, String>;
 ```
 
 ### 13.4 Events Tauri (Backend → Frontend)
@@ -2529,13 +2827,20 @@ useEffect(() => {
 **Events disponibles:**
 - `sound_started` - `{ trackId, soundId }` - Un son commence à jouer
 - `sound_ended` - `{ trackId, soundId }` - Un son a fini de jouer
-- `playback_progress` - `{ trackId, position }` - Position de lecture mise à jour
+- `playback_progress` - `{ trackId, position }` - Position de lecture (émis toutes les 250ms)
 - `key_pressed` - `{ keyCode, withShift }` - Touche détectée
 - `master_stop_triggered` - `{}` - Master stop activé
 - `toggle_key_detection` - `{}` - Toggle raccourci détection
 - `toggle_auto_momentum` - `{}` - Toggle raccourci auto-momentum
+- `sound_not_found` - `{ soundId, path, trackId }` - Fichier audio introuvable
+- `audio_error` - `{ message }` - Erreur audio générique
 - `export_progress` - `{ current, total, filename }` - Progression de l'export
-- `youtube_download_progress` - `{ status, progress }` - Progression du téléchargement YouTube
+- `youtube_download_progress` - `{ downloadId, status, progress }` - Progression du téléchargement YouTube
+- `discovery_started` - `{}` - Début de la recherche Discovery
+- `discovery_progress` - `{ current, total, seedName }` - Progression des seeds traités
+- `discovery_partial` - `[DiscoverySuggestion[]]` - Résultats intermédiaires (streaming, après chaque seed)
+- `discovery_complete` - `{ count }` - Nombre de résultats finaux
+- `discovery_error` - `{ message }` - Erreur pendant la discovery
 
 ### 13.5 Configuration Tauri
 
@@ -2627,7 +2932,7 @@ useEffect(() => {
 
 ### 13.6 Notes Importantes pour le Développement
 
-1. **Latence audio** : Utiliser symphonia pour le seeking byte-level instantané (momentum), rodio pour la lecture à position 0
+1. **Latence audio** : Utiliser SymphoniaSource pour TOUTE la lecture (pas seulement le momentum seeking) pour un support de format consistant
 2. **Thread safety** : Le moteur audio doit tourner dans un thread séparé avec communication via channels
 3. **Mémoire** : Surveiller l'utilisation mémoire avec les fichiers longs
 4. **Cross-platform** : Tester régulièrement sur les 3 OS cibles
@@ -2638,7 +2943,7 @@ useEffect(() => {
 
 ---
 
-## 14. Phase 8 - Nouvelles Features
+## 14. Fonctionnalités Phase 8 ✅
 
 ### 14.1 Duplication de Profil ✅ IMPLÉMENTÉ
 
@@ -2675,7 +2980,7 @@ pub fn duplicate_profile(id: String, new_name: Option<String>) -> Result<Profile
 
 **Frontend (`ProfileSelector.tsx`):** Bouton "Duplicate" (icône SVG) à côté du bouton "Delete".
 
-### 14.2 Raccourcis Clavier Combinés (Modificateurs) 🔄 PARTIELLEMENT IMPLÉMENTÉ
+### 14.2 Raccourcis Clavier Combinés (Modificateurs) ✅ IMPLÉMENTÉ
 
 Permet d'utiliser des combinaisons de touches comme triggers (ex: `Ctrl+A`, `Shift+F1`, `Alt+1`).
 
@@ -2683,7 +2988,7 @@ Permet d'utiliser des combinaisons de touches comme triggers (ex: `Ctrl+A`, `Shi
 - ✅ Backend (`detector.rs`): Émet les codes combinés
 - ✅ Frontend detection (`useKeyDetection.ts`): Match les codes combinés avec fallback
 - ✅ Key mapping (`keyMapping.ts`): Fonctions d'affichage et validation
-- ⏳ Frontend UI (`AddSoundModal.tsx`): Utilise encore un input texte, pas de capture
+- ✅ Frontend UI (`AddSoundModal.tsx`): KeyCaptureSlot composant avec capture de touches
 
 **Format de stockage:** Notation combinée `keyCode: "Ctrl+KeyA"` (backward compatible).
 
@@ -2732,16 +3037,10 @@ export function checkKeyComboConflict(keyCode: string): { type: 'error' | 'warni
 }
 ```
 
-#### 14.2.1 Refonte UI AddSoundModal (EN ATTENTE)
+#### 14.2.1 UI AddSoundModal avec KeyCaptureSlot ✅
 
-L'UI actuelle utilise un input texte ("aze") qui ne supporte pas les combinaisons. Refonte nécessaire:
+L'UI utilise des composants `KeyCaptureSlot` pour capturer les touches avec support complet des modificateurs:
 
-**UI Actuelle:**
-```
-Keys: [aze________]  ← tape tout d'un coup
-```
-
-**UI Proposée:**
 ```
 Keys:
 ┌────────────────────────────────────────┐
@@ -2760,10 +3059,10 @@ Sounds (5):                  Assigned to:
 
 **Composant `KeyCaptureSlot`:**
 - Click → mode capture → "Press key..."
-- Capture touche(s) avec modifiers
+- Capture touche(s) avec modifiers (Ctrl, Shift, Alt)
 - Affiche "Ctrl+A" ou "Shift+F1"
 - Bouton × pour supprimer
-- Réutilisable (comme dans Settings pour global shortcuts)
+- Réutilisable (Settings global shortcuts, AddSoundModal, SoundDetails)
 
 ### 14.3 Système Undo/Redo ✅ IMPLÉMENTÉ
 
@@ -2861,9 +3160,9 @@ export function useUndoRedo() {
 
 **Intégration App.tsx:** `useUndoRedo()` est appelé dans le composant App.
 
-### 14.4 Multi-Key Chords (Accords) ⏳ PLANIFIÉ
+### 14.4 Multi-Key Chords (Accords) ✅ IMPLÉMENTÉ
 
-Permettre de presser plusieurs touches non-modifier simultanément (comme un accord de piano).
+Support pour presser plusieurs touches non-modifier simultanément (comme un accord de piano), avec un système de détection inspiré des jeux de combat (Street Fighter, Tekken).
 
 **Exemple:** `KeyA+KeyZ` = A et Z pressés en même temps.
 
@@ -2875,44 +3174,56 @@ Permettre de presser plusieurs touches non-modifier simultanément (comme un acc
 | 3 touches | C(50,3) = 19,600 |
 | + Modifiers (×8) | ×8 pour chaque |
 
-**Défi technique:** Les touches arrivent séquentiellement même si pressées "en même temps":
-```
-t=0ms    KeyA down
-t=3ms    KeyZ down    ← "simultané" mais 3ms d'écart
-```
+**Architecture: Trie (prefix tree)**
 
-**Solution proposée: Fenêtre de détection 30ms**
+Le système utilise un Trie pour une détection optimale des combos:
+
 ```rust
-// Pseudo-code backend
-fn on_key_press(key: String) {
-    pressed_keys.insert(key);
-    start_or_reset_timer(30ms);
-}
-
-fn on_timer_expire() {
-    let chord = pressed_keys.iter().sorted().join("+");  // "KeyA+KeyZ"
-    emit_key_event(chord);
+// src-tauri/src/keys/chord.rs
+pub struct ComboTrie { root: TrieNode }
+pub struct ChordDetector {
+    trie: ComboTrie,
+    current_combo: Vec<String>,
+    timer: Option<Instant>,
+    window_ms: u32,  // configurable (20-100ms, défaut: 30ms)
 }
 ```
 
-**Résolution de conflits:**
-- Si bindings pour "A", "A+Z", et "A+Z+M" existent
-- Priorité au binding avec le plus de touches
-- Pas de double-trigger
+**Algorithme de détection:**
+- Trigger immédiat quand le combo atteint un "leaf" (pas d'extensions possibles)
+- Timer uniquement quand des extensions existent (latence conditionnelle)
 
-**Trade-off:** +30-50ms de latence sur toutes les touches.
+```
+Bindings: A, A+Z, A+Z+E
 
-**Optimisation:** N'appliquer le délai que si des multi-key bindings existent dans le profil.
+A pressé → Extensions possibles (A+Z, A+Z+E) → Start 30ms timer
+Z pressé → Extensions possibles (A+Z+E) → Continue timer
+E pressé → Leaf node (pas de A+Z+E+*) → TRIGGER IMMÉDIAT "A+Z+E"
+```
 
-**Status:** Planifié pour plus tard si Modifier+Key ne suffit pas.
+**Latence optimisée:**
+- 0ms si la touche est un leaf (pas d'extensions dans le profil)
+- 0ms si le combo actuel est un leaf (trigger immédiat)
+- 30-50ms uniquement quand des extensions sont possibles
 
-### 14.5 Modificateur Momentum Configurable ⏳ EN DISCUSSION
+**Format:** Modifiers d'abord (Ctrl > Shift > Alt), puis base keys triées alphabétiquement.
+- `"KeyZ+KeyA"` → normalisé en `"KeyA+KeyZ"`
+- `"Ctrl+KeyZ+KeyA"` → normalisé en `"Ctrl+KeyA+KeyZ"`
 
-Permettre à l'utilisateur de choisir quel modificateur déclenche le momentum.
+**Configuration:** `config.chordWindowMs`: 20-100ms (configurable dans Settings, défaut: 30ms)
 
-**Problème:** Numpad + Shift ne fonctionne pas (limitation hardware - voir section 14.6).
+**Fichiers clés:**
+- `src-tauri/src/keys/chord.rs` - ComboTrie et ChordDetector
+- `src-tauri/src/keys/detector.rs` - Intégration avec la détection globale
+- `src/utils/keyMapping.ts` - `normalizeCombo()`, `buildComboFromPressedKeys()`
 
-**Solution proposée:**
+### 14.5 Modificateur Momentum Configurable ✅ IMPLÉMENTÉ
+
+L'utilisateur peut choisir quel modificateur déclenche le momentum playback.
+
+**Problème résolu:** Numpad + Shift ne fonctionne pas (limitation hardware - voir section 14.6).
+
+**Configuration:**
 ```typescript
 // config.json
 {
@@ -2926,11 +3237,29 @@ Permettre à l'utilisateur de choisir quel modificateur déclenche le momentum.
 | Shift (défaut) | Intuitif | Conflit Numpad |
 | Alt | Fonctionne partout | Moins naturel |
 | Ctrl | Fonctionne partout | Conflits système possibles |
-| None | Simple | Perd la flexibilité |
+| None | Désactivé | Perd la flexibilité |
 
 **UI:** Dropdown dans Settings, section "Key Detection".
 
-**Status:** En discussion - à décider si on implémente.
+**Règle de priorité:** Le match exact de binding a priorité. Ex: si "Ctrl+A" est un binding, presser Ctrl+A déclenche ce binding normalement, pas "A" avec momentum.
+
+**Détection de conflits:**
+- Quand on change le momentum modifier: vérifie si des shortcuts existants utilisent le modifier + une touche bindée
+- Quand on configure un shortcut: vérifie s'il utilise le momentum modifier + une touche bindée
+- Affiche des toasts d'avertissement et des icônes persistantes:
+  - À côté des shortcuts en conflit dans Settings
+  - À côté du dropdown Momentum Modifier si des conflits existent
+  - Sur les touches concernées dans le KeyGrid
+
+**Fichiers clés:**
+- `src/types/index.ts` - Type `MomentumModifier`
+- `src/stores/settingsStore.ts` - Action `setMomentumModifier()`
+- `src-tauri/src/types.rs` - Enum `MomentumModifier`
+- `src/hooks/useKeyDetection.ts` - `hasMomentumModifier()` check
+- `src/components/Settings/SettingsModal.tsx` - Dropdown UI avec détection de conflits
+- `src/components/Keys/KeyGrid.tsx` - Icônes d'avertissement sur les touches en conflit
+- `src/components/common/WarningTooltip.tsx` - Composant réutilisable
+- `src/utils/keyMapping.ts` - `findMomentumConflicts()`, `getKeyMomentumConflict()`
 
 ### 14.6 Limitations Connues
 
@@ -2953,6 +3282,164 @@ C'est un comportement standard des claviers depuis DOS, pas un bug de l'applicat
 
 ---
 
+## 15. Smart Discovery System (Phase 8+) ✅
+
+Le système Smart Discovery permet de découvrir de nouveaux sons basés sur les sons YouTube déjà présents dans le profil. Il combine plusieurs sous-systèmes : YouTube Search, Playlist Import, Waveform RMS, Auto-Momentum, et YouTube Mix Discovery.
+
+### 15.1 YouTube Search
+
+Recherche directe de vidéos YouTube depuis l'UI via yt-dlp:
+
+```rust
+#[tauri::command]
+async fn search_youtube(query: String, max_results: u32) -> Result<Vec<YoutubeSearchResult>, String>;
+```
+
+- Utilise `yt-dlp "ytsearch{N}:{query}" --flat-playlist --dump-json`
+- Retourne titre, durée, channel, thumbnail, URL
+- Intégré dans le tab YouTube de AddSoundModal
+
+### 15.2 YouTube Playlist Import
+
+Import en bulk depuis des playlists YouTube:
+
+```rust
+#[tauri::command]
+async fn fetch_playlist(url: String) -> Result<YoutubePlaylist, String>;
+```
+
+**Détection d'URL:**
+| Type | Exemple | Comportement |
+|------|---------|--------------|
+| Vidéo simple | `watch?v=abc` | Download direct |
+| Vidéo dans playlist | `watch?v=abc&list=PLxxx` | Checkbox "Download entire playlist" |
+| Playlist pure | `playlist?list=PLxxx` | Mode playlist direct |
+
+**Préférence persistée:** `playlistImportEnabled` dans `config.json` (cross-profil).
+
+### 15.3 Waveform RMS (Visualisation d'Énergie Audio)
+
+Affiche une courbe d'énergie dans l'éditeur de momentum pour positionner le point de départ visuellement.
+
+```rust
+// audio/analysis.rs
+pub fn compute_waveform(file_path: &str, num_points: u32) -> Result<WaveformData, String>;
+```
+
+**Algorithme:**
+1. Décode les samples via symphonia
+2. Calcule le RMS par segments (typiquement 250 points)
+3. Normalise entre 0.0 et 1.0
+4. Lisse avec moyenne mobile (fenêtre de 3)
+
+**Composant `WaveformDisplay.tsx`:**
+- Dual-canvas: canvas statique (waveform + marqueurs) + canvas curseur (position de lecture)
+- Marqueur momentum draggable (ligne jaune)
+- Clic direct sur la waveform = déplacer le marqueur
+- Curseur de lecture en temps réel pendant le preview
+- État loading (skeleton) et fallback (slider classique si erreur)
+
+**Cache:**
+- Disk-persisted dans `cache/waveforms.json` (LRU, max 50 entrées)
+- Invalidation par mtime du fichier audio
+- Vider au changement de profil (cache mémoire)
+
+### 15.4 Auto-Momentum Detection
+
+Détecte automatiquement le point de "pré-pic" (fin de l'intro calme, début du buildup) et place un marqueur visuel suggéré sur la waveform.
+
+```rust
+// audio/analysis.rs
+pub fn detect_momentum_point(waveform: &WaveformData) -> Option<f64>;
+```
+
+**Algorithme de gradient:**
+1. Calcule la dérivée des points RMS
+2. Parcourt depuis 5% du morceau
+3. Cherche le premier segment où:
+   - Le gradient est positif et significatif
+   - Les segments précédents avaient une énergie basse et stable
+4. Retourne `Some(timestamp_seconds)` ou `None`
+
+**Marqueur visuel:**
+- Ligne verticale en pointillés (blanc 30% opacity), distinct du marqueur momentum user (jaune solide)
+- Au clic: accepte la suggestion et met à jour le momentum
+- Pas affiché si: suggestion null, trop proche du momentum actuel, ou momentum déjà modifié manuellement
+
+### 15.5 YouTube Mix Discovery
+
+Recommandation de nouveaux sons basée sur les YouTube Mix des sons existants.
+
+```rust
+// discovery/engine.rs — DiscoveryEngine method
+pub async fn generate_suggestions(
+    &self,
+    seeds: Vec<SeedInfo>,                                    // max 15 seeds
+    existing_ids: Vec<String>,                               // IDs déjà dans le profil (filtrés)
+    yt_dlp_bin: PathBuf,                                     // chemin vers yt-dlp
+    progress_callback: impl Fn(usize, usize, &str) + Send + Sync,  // (current, total, seed_name)
+    partial_callback: impl Fn(&[DiscoverySuggestion]) + Send + Sync,
+) -> Vec<DiscoverySuggestion>;
+```
+
+**Algorithme:**
+1. Extrait les video IDs YouTube du profil comme "seeds" (max 15)
+2. Pour chaque seed: `fetch_mix(video_id)` via `yt-dlp --flat-playlist` sur YouTube Mix (`&list=RD{id}`)
+3. Concurrence via `buffer_unordered(10)` (10 seeds simultanés)
+4. Agrégation cross-seed via `OccurrenceMap`: les suggestions qui apparaissent dans plusieurs Mix reçoivent un `occurrence_count` plus élevé
+5. Filtre: durée 30-900s, exclut les sons déjà dans le profil
+6. Tri par occurrence_count décroissant, retourne top 30
+7. Streaming: émet `discovery_partial` après chaque seed traité via callback
+
+**Frontend (DiscoveryPanel.tsx):**
+- Bouton "Discover" dans la sidebar (nécessite ≥1 son YouTube dans le profil)
+- Carousel horizontal avec flèches de navigation
+- Preview audio (30s) avec contrôle play/pause
+- Bouton "Add" pour ajouter à un binding
+- Bouton "Dismiss" pour retirer de la liste
+
+**Smart Auto-Assignment:**
+- Analyse le profil pour détecter le mode (single-sound vs multi-sound)
+- Suggest la touche et piste appropriées basées sur les patterns existants
+- `profileAnalysis.ts`: analyse les distributions de tracks, loop modes, binding patterns
+
+**Pre-download Pipeline (`useDiscoveryPredownload.ts`):**
+- Background downloading autour de la position du carousel
+- Fenêtre asymétrique: [current-2, ..., current+3] (2 derrière, 3 devant)
+- Max 3 téléchargements concurrents
+- Chaque download retourne `PredownloadResult` (cachedPath, waveform, duration)
+- Le `suggestedMomentum` de la waveform est appliqué automatiquement
+
+**Commandes Tauri:**
+```rust
+start_discovery(profile_id: String)  // Lance la recherche (async, emits events)
+get_discovery_suggestions(profile_id: String)  // Récupère depuis le cache
+dismiss_discovery(profile_id: String, video_id: String)  // Retire une suggestion
+cancel_discovery()  // Annule la recherche en cours (AtomicBool)
+predownload_suggestion(url: String, video_id: String, download_id: String) -> PredownloadResult
+```
+
+### 15.6 Waveform Batch
+
+Pour les imports multiples (playlist ou multi-file), une commande batch parallélise le calcul:
+
+```rust
+#[tauri::command]
+async fn get_waveforms_batch(
+    entries: Vec<WaveformRequest>
+) -> Result<HashMap<String, WaveformData>, String>;
+
+pub struct WaveformRequest {
+    pub path: String,
+    pub num_points: u32,
+}
+```
+
+- Utilise un thread pool (2-4 threads)
+- Chaque résultat inclut `suggested_momentum`
+
+---
+
 ## Annexes
 
 ### A. Formats Audio Supportés
@@ -2964,6 +3451,7 @@ C'est un comportement standard des claviers depuis DOS, pas un bug de l'applicat
 | OGG | `.ogg` | Bonne qualité, open source |
 | FLAC | `.flac` | Sans perte, meilleure compression que WAV |
 | AAC | `.aac`, `.m4a` | Bonne qualité, commun sur YouTube |
+| WebM | `.webm` | Format conteneur ouvert, supporté par le frontend (drag & drop) |
 
 ### B. Raccourcis Clavier par Défaut
 
@@ -2972,6 +3460,7 @@ C'est un comportement standard des claviers depuis DOS, pas un bug de l'applicat
 | Master Stop | `Ctrl + Shift + S` (configurable) | Fonctionne même si Key Detection est off |
 | Toggle Key Detection | Configurable dans Settings | Fonctionne même si Key Detection est off |
 | Toggle Auto-Momentum | Configurable dans Settings | Fonctionne même si Key Detection est off |
+| Momentum Modifier | `Shift` (configurable: Shift/Ctrl/Alt/None) | Configurable dans Settings > Key Detection |
 | Undo | `Ctrl + Z` (Windows/Linux) / `Cmd + Z` (macOS) | Annule la dernière action de profil |
 | Redo | `Ctrl + Y` (Windows/Linux) / `Cmd + Shift + Z` (macOS) | Rétablit l'action annulée |
 
@@ -2987,20 +3476,34 @@ C'est un comportement standard des claviers depuis DOS, pas un bug de l'applicat
 | Cooldown maximum | 5000ms |
 | Crossfade minimum | 100ms |
 | Crossfade maximum | 2000ms |
+| Chord window | 20-100ms (défaut: 30ms) |
+| Waveform cache | 200 entrées max (LRU, disk-persisted) |
+| History (undo/redo) | 50 entrées max |
+| Progress emission | 250ms interval |
+| Discovery pre-download | 3 concurrent max |
 
 ---
 
 **Document généré le** : 2024-01-20
-**Dernière mise à jour** : 2026-01-25
-**Version** : 1.3.0
+**Dernière mise à jour** : 2026-02-01
+**Version** : 1.4.0
 **Auteur** : Document technique pour Claude Code
 
 ### Changelog
+- **v1.4.0** (2026-02-01):
+  - Phase 8 complétée: Combined Shortcuts UI (KeyCaptureSlot) ✅, Multi-Key Chords (Trie-based) ✅, Momentum Modifier Configurable ✅
+  - Smart Discovery System complet (section 15): YouTube Search, Playlist Import, Waveform RMS, Auto-Momentum Detection, YouTube Mix Discovery
+  - Nouveaux types: WaveformData, YoutubeSearchResult, YoutubePlaylist, DiscoverySuggestion, MomentumModifier
+  - Nouveaux champs AppConfig: chordWindowMs, momentumModifier, playlistImportEnabled
+  - Nouvelles commandes: discovery (start, get, dismiss, cancel), waveform (get, batch), search_youtube, fetch_playlist, predownload_suggestion, check/install yt-dlp/ffmpeg
+  - Nouveaux events: discovery_started, discovery_progress, discovery_partial, discovery_complete, discovery_error
+  - Structure de fichiers mise à jour: discovery/, analysis.rs, chord.rs, waveforms.json cache
+  - Optimisations UI: playback_progress réduit à 250ms, dual-canvas WaveformDisplay, batched duration updates
 - **v1.3.0** (2026-01-25):
-  - Phase 8 implémentée: Profile Duplication ✅, Undo/Redo ✅, Combined Shortcuts (backend ✅, UI ⏳)
-  - Ajout section 14.2.1 (UI refactor AddSoundModal)
-  - Ajout section 14.4 (Multi-Key Chords - planifié)
-  - Ajout section 14.5 (Momentum Modifier Configurable - en discussion)
+  - Phase 8 implémentée: Profile Duplication ✅, Undo/Redo ✅, Combined Shortcuts (backend ✅)
+  - Ajout section 14.2.1 (UI KeyCaptureSlot)
+  - Ajout section 14.4 (Multi-Key Chords)
+  - Ajout section 14.5 (Momentum Modifier Configurable)
   - Ajout section 14.6 (Limitations Connues - Numpad+Shift)
-- **v1.2.0** (2025-01-25): Ajout de la section 14 (Features planifiées: Profile Duplication, Combined Shortcuts, Undo/Redo)
+- **v1.2.0** (2025-01-25): Ajout de la section 14 (Features: Profile Duplication, Combined Shortcuts, Undo/Redo)
 - **v1.1.0** (2025-01-25): Ajout de l'implémentation macOS CGEventTap (section 6.7), ConfirmDialog (section 9.4.3), dépendances conditionnelles par plateforme

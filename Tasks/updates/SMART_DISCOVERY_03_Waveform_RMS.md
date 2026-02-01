@@ -1,6 +1,7 @@
 # Section 3 — Waveform RMS (visualisation d'énergie audio)
 
-> **Statut:** ⏳ PLANIFIE
+> **Statut:** ✅ COMPLÉTÉ
+> **Date de complétion:** 2026-01-31
 > **Dépendance:** Aucune
 > **Parent:** [SMART_DISCOVERY.md](./SMART_DISCOVERY.md)
 
