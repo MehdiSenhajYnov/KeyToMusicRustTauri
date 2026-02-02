@@ -225,34 +225,29 @@ export function useKeyDetection() {
       // Read config via getState() to avoid dependency on config changes
       const config = useSettingsStore.getState().config;
 
-      // Check key detection toggle shortcut (works even when detection is off)
+      // Prevent default for global shortcuts (actual handling is done by the
+      // backend global hook which emits Tauri events listened to above)
       if (
         config.keyDetectionShortcut.length > 0 &&
         config.keyDetectionShortcut.every((k) => pressedKeysRef.current.has(k))
       ) {
         e.preventDefault();
-        toggleKeyDetection();
         return;
       }
 
-      // Check master stop shortcut
       if (
         config.masterStopShortcut.length > 0 &&
         config.masterStopShortcut.every((k) => pressedKeysRef.current.has(k))
       ) {
         e.preventDefault();
-        commands.stopAllSounds().catch(console.error);
-        setLastKeyPressed(null);
         return;
       }
 
-      // Check auto momentum toggle shortcut
       if (
         config.autoMomentumShortcut.length > 0 &&
         config.autoMomentumShortcut.every((k) => pressedKeysRef.current.has(k))
       ) {
         e.preventDefault();
-        toggleAutoMomentum();
         return;
       }
 
@@ -290,5 +285,5 @@ export function useKeyDetection() {
       window.removeEventListener("keyup", handleBrowserKeyUp);
       window.removeEventListener("blur", handleWindowBlur);
     };
-  }, [setLastKeyPressed, toggleKeyDetection, toggleAutoMomentum]);
+  }, []);
 }
