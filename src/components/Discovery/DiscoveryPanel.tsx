@@ -292,11 +292,11 @@ export function DiscoveryPanel() {
     commands.cancelDiscovery().catch(() => {});
   };
 
-  const handleDismiss = (videoId: string) => {
+  const handleDislike = (videoId: string) => {
     if (!profile) return;
     stopPreview();
     removeSuggestion(videoId);
-    commands.dismissDiscovery(profile.id, videoId).catch(() => {});
+    commands.dislikeDiscovery(profile.id, videoId).catch(() => {});
     persistCursor();
   };
 
@@ -372,20 +372,20 @@ export function DiscoveryPanel() {
     }
   };
 
-  /** Add sound to binding: merge into existing binding or create new one. */
+  /** Add sound to binding: merge into existing binding on same key+track, or create new one. */
   const addToBinding = (soundId: string, suggestedKey: string, suggestedTrackId: string) => {
     if (!suggestedKey || !profile) return;
 
     const existingBinding = profile.keyBindings.find(
-      (kb) => kb.keyCode === suggestedKey
+      (kb) => kb.keyCode === suggestedKey && kb.trackId === suggestedTrackId
     );
     if (existingBinding) {
-      // Multi-sound: append to existing binding
-      updateKeyBinding(suggestedKey, {
+      // Same key + same track: append to existing binding
+      updateKeyBinding(suggestedKey, suggestedTrackId, {
         soundIds: [...existingBinding.soundIds, soundId],
       });
     } else {
-      // New binding
+      // New binding (new key, or same key but different track)
       addKeyBinding({
         keyCode: suggestedKey,
         trackId: suggestedTrackId,
@@ -535,12 +535,13 @@ export function DiscoveryPanel() {
         </div>
         {current && (
           <button
-            onClick={() => handleDismiss(current.videoId)}
+            onClick={() => handleDislike(current.videoId)}
             className="w-5 h-5 flex items-center justify-center rounded text-text-muted hover:text-accent-error hover:bg-accent-error/10 transition-colors"
-            title="Dismiss suggestion"
+            title="Dislike (never show again)"
           >
             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5" />
             </svg>
           </button>
         )}
@@ -624,7 +625,7 @@ function PreviewVolumeControl() {
   const previewVolume = useDiscoveryStore((s) => s.previewVolume);
   const setPreviewVolume = useDiscoveryStore((s) => s.setPreviewVolume);
 
-  const volWheelRef = useWheelSlider({
+  const { ref: volWheelRef, isWheelActive: volWheelActive } = useWheelSlider({
     value: previewVolume, min: 0, max: 1, step: 0.01,
     onChange: setPreviewVolume,
   });
@@ -653,7 +654,9 @@ function PreviewVolumeControl() {
         step={0.01}
         value={previewVolume}
         onChange={(e) => setPreviewVolume(parseFloat(e.target.value))}
-        className="flex-1 h-2 accent-accent-primary cursor-pointer"
+        className={`flex-1 h-2 accent-accent-primary cursor-pointer transition-all duration-200 ${
+          volWheelActive ? "scale-105 shadow-[0_0_8px_rgba(99,102,241,0.5)]" : ""
+        }`}
         title={`Preview volume: ${Math.round(previewVolume * 100)}%`}
       />
     </div>

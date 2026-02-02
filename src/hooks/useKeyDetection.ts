@@ -91,68 +91,78 @@ export function useKeyDetection() {
       const currentProfile = useProfileStore.getState().currentProfile;
       if (!currentProfile) return;
 
-      // Try to find binding with the exact combined key code first
-      let binding = currentProfile.keyBindings.find(
+      // Try to find all bindings with the exact combined key code first
+      let bindings = currentProfile.keyBindings.filter(
         (kb) => kb.keyCode === payload.keyCode
       );
 
       // If not found and keyCode has modifiers, try the base key
-      // (this allows [Modifier]+A to trigger "KeyA" binding with momentum)
+      // (this allows [Modifier]+A to trigger "KeyA" bindings with momentum)
       let useModifierForMomentum = false;
-      if (!binding && payload.keyCode.includes("+")) {
+      if (bindings.length === 0 && payload.keyCode.includes("+")) {
         const parts = payload.keyCode.split("+");
         const baseKey = parts[parts.length - 1];
-        binding = currentProfile.keyBindings.find((kb) => kb.keyCode === baseKey);
-        // If we found a base key binding and the configured momentum modifier was pressed, use momentum
-        if (binding && hasMomentumModifier(payload.keyCode, config.momentumModifier)) {
+        bindings = currentProfile.keyBindings.filter((kb) => kb.keyCode === baseKey);
+        // If we found base key bindings and the configured momentum modifier was pressed, use momentum
+        if (bindings.length > 0 && hasMomentumModifier(payload.keyCode, config.momentumModifier)) {
           useModifierForMomentum = true;
         }
       }
 
-      if (!binding) return;
+      if (bindings.length === 0) return;
 
-      // Cooldown: only block if a sound was recently triggered
+      // Cooldown: global per keyCode — one press triggers all tracks, cooldown prevents double-press
       const now = Date.now();
       if (now - lastTriggerTime.current < config.keyCooldown) {
         return;
       }
 
       const soundMap = new Map(currentProfile.sounds.map(s => [s.id, s]));
-      const { sound, nextIndex } = selectSound(
-        binding.soundIds,
-        soundMap,
-        binding.loopMode,
-        binding.currentIndex
-      );
-      if (!sound) return;
 
-      // Update currentIndex for off/sequential/random
-      if (binding.loopMode !== "single") {
-        useProfileStore.getState().updateKeyBinding(binding.keyCode, { currentIndex: nextIndex });
-      }
-
-      // Use momentum if autoMomentum is on, or if Shift was used with a non-Shift binding
-      const startPosition =
-        config.autoMomentum || useModifierForMomentum ? sound.momentum : 0;
-
-      const filePath = getSoundFilePath(sound);
-
-      try {
-        await commands.playSound(
-          binding.trackId,
-          sound.id,
-          filePath,
-          startPosition,
-          sound.volume
+      // Prepare all playback commands, then fire them concurrently for simultaneous multi-track playback
+      const playTasks = bindings.map(async (binding) => {
+        const { sound, nextIndex } = selectSound(
+          binding.soundIds,
+          soundMap,
+          binding.loopMode,
+          binding.currentIndex
         );
-        // Cooldown starts only on successful play
-        lastTriggerTime.current = Date.now();
-      } catch (e) {
-        // File-not-found errors are handled by the sound_not_found event listener
-        const errMsg = String(e);
-        if (!errMsg.includes("not found")) {
-          useToastStore.getState().addToast(formatErrorMessage(errMsg), "error");
+        if (!sound) return false;
+
+        // Update currentIndex for off/sequential/random
+        if (binding.loopMode !== "single") {
+          useProfileStore.getState().updateKeyBinding(binding.keyCode, binding.trackId, { currentIndex: nextIndex });
         }
+
+        const startPosition =
+          config.autoMomentum || useModifierForMomentum ? sound.momentum : 0;
+
+        const filePath = getSoundFilePath(sound);
+
+        try {
+          await commands.playSound(
+            binding.trackId,
+            sound.id,
+            filePath,
+            startPosition,
+            sound.volume
+          );
+          return true;
+        } catch (e) {
+          const errMsg = String(e);
+          if (!errMsg.includes("not found")) {
+            useToastStore.getState().addToast(formatErrorMessage(errMsg), "error");
+          }
+          return false;
+        }
+      });
+
+      const results = await Promise.allSettled(playTasks);
+      const anyPlayed = results.some((r) => r.status === "fulfilled" && r.value === true);
+
+      // Cooldown starts only if at least one sound played
+      if (anyPlayed) {
+        lastTriggerTime.current = Date.now();
       }
     },
     [setLastKeyPressed]

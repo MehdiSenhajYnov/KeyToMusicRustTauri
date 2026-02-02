@@ -5,8 +5,11 @@ import { KeyGrid, usePlayingSoundIds } from "../Keys/KeyGrid";
 import { SoundDetails } from "../Sounds/SoundDetails";
 import { MultiKeyDetails } from "../Sounds/MultiKeyDetails";
 import { useProfileStore } from "../../stores/profileStore";
+import { useSettingsStore } from "../../stores/settingsStore";
+import { useToastStore } from "../../stores/toastStore";
 import { isAudioFile } from "../../utils/fileHelpers";
 import { SearchFilterBar, type SearchFilterBarHandle } from "../common/SearchFilterBar";
+import { EmptyStateAction } from "../common/EmptyStateAction";
 import { keyCodeToDisplay } from "../../utils/keyMapping";
 import type { KeyGridFilter } from "../../types";
 
@@ -30,6 +33,153 @@ function MainContentSkeleton() {
         ))}
       </div>
     </main>
+  );
+}
+
+function NoProfileCTA() {
+  const { createProfile, loadProfile } = useProfileStore();
+  const { updateConfig } = useSettingsStore();
+  const addToast = useToastStore((s) => s.addToast);
+  const [isCreating, setIsCreating] = useState(false);
+  const [name, setName] = useState("");
+
+  const handleCreate = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const profile = await createProfile(trimmed);
+    if (profile) {
+      await loadProfile(profile.id);
+      await updateConfig({ currentProfileId: profile.id });
+      addToast(`Profile "${trimmed}" created`, "success");
+      setName("");
+      setIsCreating(false);
+    }
+  };
+
+  if (isCreating) {
+    return (
+      <div className="flex flex-col items-center gap-4 max-w-[400px] px-4 animate-fadeIn">
+        <div className="text-accent-primary/60">
+          <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.06-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V8.25a2.25 2.25 0 00-2.25-2.25h-5.38a1.5 1.5 0 01-1.06-.44z" />
+          </svg>
+        </div>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleCreate();
+            if (e.key === "Escape") setIsCreating(false);
+          }}
+          placeholder="Profile name"
+          className="w-full bg-bg-tertiary border border-border-color rounded-lg px-4 py-3 text-base text-text-primary text-center focus:border-accent-primary outline-none"
+          autoFocus
+        />
+        <div className="flex gap-2">
+          <button
+            onClick={handleCreate}
+            className="px-6 py-2 bg-accent-primary text-white rounded-lg text-sm font-medium hover:bg-accent-primary/80 transition-colors"
+          >
+            Create
+          </button>
+          <button
+            onClick={() => setIsCreating(false)}
+            className="px-6 py-2 text-text-muted rounded-lg text-sm hover:bg-bg-hover transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <EmptyStateAction
+      icon={
+        <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 10.5v6m3-3H9m4.06-7.19l-2.12-2.12a1.5 1.5 0 00-1.06-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V8.25a2.25 2.25 0 00-2.25-2.25h-5.38a1.5 1.5 0 01-1.06-.44z" />
+        </svg>
+      }
+      buttonText="Create Profile"
+      description="A profile stores your sounds, tracks, and key bindings"
+      onAction={() => setIsCreating(true)}
+    />
+  );
+}
+
+function NoTracksCTA() {
+  const { currentProfile, addTrack, saveCurrentProfile } = useProfileStore();
+  const addToast = useToastStore((s) => s.addToast);
+  const [isCreating, setIsCreating] = useState(false);
+  const [name, setName] = useState("");
+
+  const handleCreate = () => {
+    const trimmed = name.trim();
+    if (!trimmed || !currentProfile) return;
+    if (currentProfile.tracks.length >= 20) {
+      addToast("Maximum 20 tracks allowed", "warning");
+      return;
+    }
+    const id = crypto.randomUUID();
+    addTrack({ id, name: trimmed, volume: 1.0 });
+    setTimeout(() => saveCurrentProfile(), 100);
+    addToast(`Track "${trimmed}" created`, "success");
+    setName("");
+    setIsCreating(false);
+  };
+
+  if (isCreating) {
+    return (
+      <div className="flex-1 flex items-center justify-center animate-fadeIn">
+        <div className="flex flex-col items-center gap-4 max-w-[400px] px-4">
+          <div className="text-accent-primary/60">
+            <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+          </div>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleCreate();
+              if (e.key === "Escape") setIsCreating(false);
+            }}
+            placeholder="Track name (e.g. OST, Ambiance, SFX)"
+            className="w-full bg-bg-tertiary border border-border-color rounded-lg px-4 py-3 text-base text-text-primary text-center focus:border-accent-primary outline-none"
+            autoFocus
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={handleCreate}
+              className="px-6 py-2 bg-accent-primary text-white rounded-lg text-sm font-medium hover:bg-accent-primary/80 transition-colors"
+            >
+              Create
+            </button>
+            <button
+              onClick={() => setIsCreating(false)}
+              className="px-6 py-2 text-text-muted rounded-lg text-sm hover:bg-bg-hover transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <EmptyStateAction
+      icon={
+        <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
+      }
+      buttonText="Create Track"
+      description="Tracks organize your sounds (OST, Ambiance, SFX...)"
+      onAction={() => setIsCreating(true)}
+    />
   );
 }
 
@@ -239,12 +389,7 @@ export function MainContent() {
   if (!currentProfile) {
     return (
       <main className="flex-1 flex items-center justify-center bg-bg-primary">
-        <div className="text-center">
-          <p className="text-text-muted text-lg">No profile selected</p>
-          <p className="text-text-muted text-sm mt-1">
-            Create or select a profile to get started
-          </p>
-        </div>
+        <NoProfileCTA />
       </main>
     );
   }
@@ -260,41 +405,53 @@ export function MainContent() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        <TrackView />
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col">
+        {currentProfile.tracks.length === 0 ? (
+          <NoTracksCTA />
+        ) : (
+          <>
+            <TrackView />
 
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-text-primary text-sm font-semibold whitespace-nowrap">
-            Key Assignments
-          </h2>
-          <SearchFilterBar
-            ref={searchBarRef}
-            totalCount={currentProfile.keyBindings.length}
-            matchCount={matchingKeys?.size ?? currentProfile.keyBindings.length}
-            onFilterChange={setFilter}
-            tracks={currentProfile.tracks}
-          />
-          {currentProfile.tracks.length > 0 && (
-            <button
-              onClick={() => setShowAddSound(true)}
-              className="px-3 py-1.5 bg-accent-primary text-white text-xs rounded hover:bg-accent-primary/80 whitespace-nowrap"
-            >
-              + Add Sound
-            </button>
-          )}
-        </div>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-text-primary text-sm font-semibold whitespace-nowrap">
+                Key Assignments
+              </h2>
+              <SearchFilterBar
+                ref={searchBarRef}
+                totalCount={currentProfile.keyBindings.length}
+                matchCount={matchingKeys?.size ?? currentProfile.keyBindings.length}
+                onFilterChange={setFilter}
+                tracks={currentProfile.tracks}
+              />
+              <button
+                onClick={() => setShowAddSound(true)}
+                className="px-3 py-1.5 bg-accent-primary text-white text-xs rounded hover:bg-accent-primary/80 whitespace-nowrap"
+              >
+                + Add Sound
+              </button>
+            </div>
 
-        <KeyGrid
-          selectedKeys={validSelectedKeys}
-          onKeySelect={handleKeySelect}
-          onSelectAll={handleSelectAll}
-          matchingKeys={matchingKeys}
-        />
-
-        {currentProfile.tracks.length === 0 && (
-          <p className="text-text-muted text-xs italic text-center py-4">
-            Create a track first, then add sounds and assign keys
-          </p>
+            {currentProfile.keyBindings.length === 0 ? (
+              <EmptyStateAction
+                icon={
+                  <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                }
+                buttonText="Add Sound"
+                description="Assign sounds to keyboard keys"
+                onAction={() => setShowAddSound(true)}
+                secondaryHint="or drag & drop audio files here"
+              />
+            ) : (
+              <KeyGrid
+                selectedKeys={validSelectedKeys}
+                onKeySelect={handleKeySelect}
+                onSelectAll={handleSelectAll}
+                matchingKeys={matchingKeys}
+              />
+            )}
+          </>
         )}
       </div>
 

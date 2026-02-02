@@ -5,7 +5,7 @@ import { useTrackPosition } from "../../hooks/useTrackPosition";
 import { formatDuration } from "../../utils/fileHelpers";
 import * as commands from "../../utils/tauriCommands";
 import { getSoundFilePath } from "../../utils/soundHelpers";
-import { useWheelSlider } from "../../hooks/useWheelSlider";
+import { useWheelSlider, getWheelActiveClass } from "../../hooks/useWheelSlider";
 
 interface NowPlayingTrackProps {
   trackId: string;
@@ -34,7 +34,7 @@ function NowPlayingTrack({ trackId, soundId }: NowPlayingTrackProps) {
     }
   };
 
-  const seekWheelRef = useWheelSlider({
+  const { ref: seekWheelRef, isWheelActive: seekWheelActive } = useWheelSlider({
     value: seekingTrack ? seekPosition : position,
     min: 0, max: sound.duration > 0 ? sound.duration : 1, step: 0.5,
     onChange: (v) => handleSeek(v),
@@ -91,7 +91,7 @@ function NowPlayingTrack({ trackId, soundId }: NowPlayingTrackProps) {
               setSeekingTrack(false);
             }
           }}
-          className="flex-1 h-1 accent-accent-primary disabled:opacity-30 cursor-pointer"
+          className={`flex-1 h-1 accent-accent-primary disabled:opacity-30 cursor-pointer transition-all duration-200 ${getWheelActiveClass(seekWheelActive)}`}
         />
         <span className="text-text-muted text-[10px] w-7 shrink-0">
           {formatDuration(sound.duration)}

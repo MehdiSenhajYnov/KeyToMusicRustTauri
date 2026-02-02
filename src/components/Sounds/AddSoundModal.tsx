@@ -15,13 +15,21 @@ import { MomentumSuggestionBadge } from "../common/MomentumSuggestionBadge";
 import { SearchResultPreview } from "./SearchResultPreview";
 
 function WheelInput(props: React.InputHTMLAttributes<HTMLInputElement> & { wheelStep: number; wheelMin: number; wheelMax: number; onWheelChange: (v: number) => void }) {
-  const { wheelStep, wheelMin, wheelMax, onWheelChange, ...inputProps } = props;
-  const ref = useWheelSlider({
+  const { wheelStep, wheelMin, wheelMax, onWheelChange, className, ...inputProps } = props;
+  const { ref, isWheelActive } = useWheelSlider({
     value: Number(inputProps.value ?? 0),
     min: wheelMin, max: wheelMax, step: wheelStep,
     onChange: onWheelChange,
   });
-  return <input ref={ref} {...inputProps} />;
+  return (
+    <input
+      ref={ref}
+      className={`${className || ""} transition-all duration-200 ${
+        isWheelActive ? "scale-105 shadow-[0_0_8px_rgba(99,102,241,0.5)]" : ""
+      }`}
+      {...inputProps}
+    />
+  );
 }
 
 type SourceMode = "local" | "youtube";
@@ -209,7 +217,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   const tracks = currentProfile?.tracks || [];
   const isSingleFile = files.length <= 1;
 
-  const volumeWheelRef = useWheelSlider({
+  const { ref: volumeWheelRef, isWheelActive: volumeWheelActive } = useWheelSlider({
     value: volume, min: 0, max: 100, step: 1,
     onChange: setVolume,
   });
@@ -713,15 +721,18 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     }
 
     for (const [keyCode, newSoundIds] of keyGroups) {
+      // Find binding on same key AND same track
       const existingBinding = currentProfile?.keyBindings.find(
-        (kb) => kb.keyCode === keyCode
+        (kb) => kb.keyCode === keyCode && kb.trackId === trackId
       );
 
       if (existingBinding) {
-        updateKeyBinding(keyCode, {
+        // Same key + same track: append sounds to existing binding
+        updateKeyBinding(keyCode, trackId, {
           soundIds: [...existingBinding.soundIds, ...newSoundIds],
         });
       } else {
+        // New key, or same key but different track: create new binding
         addKeyBinding({
           keyCode,
           trackId,
@@ -1239,7 +1250,9 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
             max="100"
             value={volume}
             onChange={(e) => setVolume(Number(e.target.value))}
-            className="w-full h-1 accent-accent-secondary"
+            className={`w-full h-1 accent-accent-secondary transition-all duration-200 ${
+              volumeWheelActive ? "scale-105 shadow-[0_0_8px_rgba(99,102,241,0.5)]" : ""
+            }`}
           />
         </div>
 

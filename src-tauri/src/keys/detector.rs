@@ -38,6 +38,8 @@ pub struct KeyDetector {
     timer_running: Arc<AtomicBool>,
     /// Condvar to wake the timer thread when a chord is pending
     timer_notify: Arc<(Mutex<bool>, Condvar)>,
+    /// Atomic flag for enabled state (shared with platform listeners for efficient filtering)
+    enabled_flag: Arc<AtomicBool>,
 }
 
 impl KeyDetector {
@@ -54,6 +56,7 @@ impl KeyDetector {
             chord_detector: ChordDetectorHandle::new(chord_window_ms),
             timer_running: Arc::new(AtomicBool::new(false)),
             timer_notify: Arc::new((Mutex::new(false), Condvar::new())),
+            enabled_flag: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -68,6 +71,7 @@ impl KeyDetector {
         let chord_detector = self.chord_detector.clone();
         let timer_running = self.timer_running.clone();
         let timer_notify_clone = self.timer_notify.clone();
+        let enabled_flag = self.enabled_flag.clone();
 
         let callback = Arc::new(callback);
 
@@ -204,7 +208,7 @@ impl KeyDetector {
                         WinKeyEvent::Press(code) => handler(code, true),
                         WinKeyEvent::Release(code) => handler(code, false),
                     }
-                });
+                }, enabled_flag);
             }
 
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -280,6 +284,7 @@ impl KeyDetector {
     /// Enable or disable key detection.
     pub fn set_enabled(&self, enabled: bool) {
         self.config.write().unwrap().enabled = enabled;
+        self.enabled_flag.store(enabled, Ordering::SeqCst);
         if !enabled {
             // Clear chord detector state when disabled
             self.chord_detector.clear();

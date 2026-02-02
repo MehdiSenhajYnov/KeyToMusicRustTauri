@@ -16,6 +16,7 @@ import {
 import * as commands from "../../utils/tauriCommands";
 import { useToastStore } from "../../stores/toastStore";
 import { WarningTooltip } from "../common/WarningTooltip";
+import { DislikedVideosPanel } from "./DislikedVideosPanel";
 import type { MomentumModifier } from "../../types";
 
 interface SettingsModalProps {
@@ -71,15 +72,15 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     );
   }, [config.momentumModifier, shortcuts, currentProfile]);
 
-  const cooldownWheelRef = useWheelSlider({
+  const { ref: cooldownWheelRef, isWheelActive: cooldownWheelActive } = useWheelSlider({
     value: config.keyCooldown, min: 0, max: 2000, step: 50,
     onChange: setKeyCooldown,
   });
-  const chordWheelRef = useWheelSlider({
+  const { ref: chordWheelRef, isWheelActive: chordWheelActive } = useWheelSlider({
     value: config.chordWindowMs, min: 20, max: 100, step: 5,
     onChange: setChordWindowMs,
   });
-  const crossfadeWheelRef = useWheelSlider({
+  const { ref: crossfadeWheelRef, isWheelActive: crossfadeWheelActive } = useWheelSlider({
     value: config.crossfadeDuration, min: 100, max: 2000, step: 50,
     onChange: setCrossfadeDuration,
   });
@@ -355,7 +356,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 step="50"
                 value={config.keyCooldown}
                 onChange={(e) => setKeyCooldown(Number(e.target.value))}
-                className="w-full h-1 accent-accent-primary"
+                className={`w-full h-1 accent-accent-primary transition-all duration-200 ${
+                  cooldownWheelActive ? "scale-105 shadow-[0_0_8px_rgba(99,102,241,0.5)]" : ""
+                }`}
               />
               <div className="flex justify-between text-text-muted text-xs">
                 <span>0ms</span>
@@ -381,7 +384,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 step="5"
                 value={config.chordWindowMs}
                 onChange={(e) => setChordWindowMs(Number(e.target.value))}
-                className="w-full h-1 accent-accent-primary"
+                className={`w-full h-1 accent-accent-primary transition-all duration-200 ${
+                  chordWheelActive ? "scale-105 shadow-[0_0_8px_rgba(99,102,241,0.5)]" : ""
+                }`}
               />
               <div className="flex justify-between text-text-muted text-xs">
                 <span>20ms (fast)</span>
@@ -462,7 +467,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 step="50"
                 value={config.crossfadeDuration}
                 onChange={(e) => setCrossfadeDuration(Number(e.target.value))}
-                className="w-full h-1 accent-accent-primary"
+                className={`w-full h-1 accent-accent-primary transition-all duration-200 ${
+                  crossfadeWheelActive ? "scale-105 shadow-[0_0_8px_rgba(99,102,241,0.5)]" : ""
+                }`}
               />
               <div className="flex justify-between text-text-muted text-xs">
                 <span>100ms</span>
@@ -569,6 +576,12 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 {importStatus}
               </p>
             )}
+          </section>
+
+          {/* ===== DISCOVERY DISLIKES SECTION ===== */}
+          <section>
+            <SectionHeader>Discovery Dislikes</SectionHeader>
+            <DislikedVideosPanel />
           </section>
 
           {/* ===== ABOUT SECTION ===== */}

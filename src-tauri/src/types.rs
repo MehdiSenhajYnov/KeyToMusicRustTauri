@@ -89,6 +89,8 @@ pub struct Profile {
     pub sounds: Vec<Sound>,
     pub tracks: Vec<Track>,
     pub key_bindings: Vec<KeyBinding>,
+    #[serde(default)]
+    pub disliked_videos: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

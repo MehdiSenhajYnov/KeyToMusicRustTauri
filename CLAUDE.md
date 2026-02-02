@@ -14,7 +14,11 @@ src/                              # React/TypeScript frontend
 ├── components/                   # UI (Layout, Tracks, Sounds, Keys, Discovery/, Errors/, common/)
 │   ├── ConfirmDialog.tsx         # Custom confirm modal (macOS WKWebView compat)
 │   ├── Sounds/SearchResultPreview.tsx  # Inline HTML5 audio player for YouTube search preview
-│   └── common/SearchFilterBar.tsx  # Spotlight-style filter bar for KeyGrid (text + prefix chips)
+│   ├── Settings/DislikedVideosPanel.tsx # Persistent dislike management in Settings
+│   ├── common/SearchFilterBar.tsx  # Spotlight-style filter bar for KeyGrid (text + prefix chips)
+│   ├── common/EmptyStateAction.tsx # Reusable onboarding CTA (icon + button + description)
+│   ├── common/WarningTooltip.tsx # Hover tooltip for momentum modifier conflicts
+│   └── common/KeyboardShortcutsModal.tsx # Help modal listing all shortcuts (dynamic config, platform-aware)
 ├── stores/                       # Zustand: profileStore, audioStore, settingsStore, discoveryStore,
 │                                 #   historyStore, errorStore, exportStore, toastStore, confirmStore,
 │                                 #   waveformStore
@@ -88,13 +92,13 @@ Seeds (YouTube + local sounds) → YouTube Mix per seed → Cross-seed aggregati
 
 - **Local Sound Seeds:** Local sounds auto-resolve to YouTube video IDs via metadata tags (title/artist) or cleaned filename search. Resolved IDs cached in `Sound.resolved_video_id` (persisted with profile). Resolution uses query cascade: tags > title > filename. Max 5 concurrent yt-dlp searches. Cross-seed aggregation naturally filters bad matches.
 - **Backend (`discovery/`):**
-  - `engine.rs` - Extracts video IDs as seeds (max 15), fetches Mix concurrently (`buffer_unordered(10)`), aggregates, filters (30-900s, excludes existing), returns top 30. Streaming partial results. Cancelable via `AtomicBool`. Also: `clean_filename_for_search()`, `resolve_local_seeds()`, `build_search_query()` for local sound resolution.
+  - `engine.rs` - Extracts video IDs as seeds (max 15), fetches Mix concurrently (`buffer_unordered(10)`), aggregates, filters (30-900s, excludes existing), returns top 30. Streaming partial results. Cancelable via `AtomicBool`. Background mode (skips events, appends to cache). Also: `clean_filename_for_search()`, `resolve_local_seeds()`, `build_search_query()` for local sound resolution. `collect_discovery_video_ids()` protects cached suggestion audio from cleanup.
   - `mix_fetcher.rs` - `yt-dlp "{url}&list=RD{id}" --flat-playlist --dump-json`. 15s timeout. Best-effort.
-  - `cache.rs` - Per-profile (`data/discovery/{profile_id}.json`). Stores seed_hash + dismissed_ids.
+  - `cache.rs` - Per-profile (`data/discovery/{profile_id}.json`). Stores seed_hash + dismissed_ids + cursor/revealed/visited state. Permanent dislikes stored in profile's `disliked_videos` field (persisted across sessions, managed via Settings).
 - **Frontend:**
-  - `discoveryStore.ts` - `EnrichedSuggestion` with predownload status, waveform, auto-assignment, preview state. Pagination (10 initial, +5 scroll). Carousel navigation.
-  - `useDiscoveryPredownload.ts` - Asymmetric window [current-2, current+3], max 3 concurrent. Waveforms are lazy: computed only for visible suggestions [current-1, current+1] after predownload completes, via `getWaveform()`. In-flight guard prevents duplicate requests.
-  - `DiscoveryPanel.tsx` - Carousel, auto-triggers on profile load, streaming display, preview, dismiss, one-click add.
+  - `discoveryStore.ts` - `EnrichedSuggestion` with predownload status, waveform, auto-assignment, preview state. Pagination (10 initial, +10 increment). Carousel navigation. Separate tracking for `downloadProgresses`, `poolPredownloads` (pre-downloaded but not yet visible), `refreshPredownloads` (mirrors visited+1/+2 for instant refresh). Visited locking prevents reordering items user has seen.
+  - `useDiscoveryPredownload.ts` - Asymmetric window [current-2, current+3], max 3 concurrent. Waveforms are lazy: computed only for visible suggestions [current-1, current+1] after predownload completes, via `getWaveform()`. In-flight guard prevents duplicate requests. Refresh pre-download: pre-downloads first 2 items of unseen pool for instant UX.
+  - `DiscoveryPanel.tsx` - Carousel, auto-triggers on profile load, streaming display, preview, dislike (permanent), one-click add. Preview volume slider (persisted to localStorage).
 - **Smart Auto-Assignment (`profileAnalysis.ts`):**
   - `analyzeProfile()` - "single-sound" (avg ≤ 2/binding) vs "multi-sound" mode
   - Single-sound: next available key, least-used track. Multi-sound: cluster to bindings with matching seeds.
@@ -115,6 +119,7 @@ Platform-specific global capture (foreground AND background):
 - 200ms global cooldown (configurable 0-5000ms)
 - Global shortcuts (Master Stop, Auto-Momentum, Key Detection toggle) checked before `enabled` guard in `detector.rs`
 - Auto-disable on text input focus (`useTextInputFocus` → `setKeyDetection(false)`). Non-text inputs (range, checkbox) excluded.
+- **Textual key filtering (Windows):** When `enabled_flag == false`, filters letters/digits/space/numpad to allow normal typing. Uses `is_textual_key()` helper.
 - AZERTY support: `charToKeyCode(e.key) || e.code` pattern, dynamic `layoutMap` via `recordKeyLayout()`
 - Sticky modifier fix: `pressedKeysRef` cleared on window `blur`
 
@@ -133,9 +138,11 @@ Configurable key (Shift/Ctrl/Alt/None) that triggers momentum playback. Exact bi
 
 ### Sound Assignment & Loop Modes
 
-Binding = key + track ID + sound IDs list + loop mode + optional custom name.
-- Key reassignment: change entire binding's key or move individual sound.
+Binding uniqueness = `(keyCode, trackId)`. One key can have multiple bindings on different tracks — pressing a key triggers all its bindings simultaneously (`Promise.allSettled` for concurrent playback). Each binding has its own sound IDs list, loop mode, and currentIndex.
+- Key reassignment: move all bindings to new key (merges by track) or move individual sound.
 - Loop modes: `off` (random, stop), `single` (loop same), `random` (avoid repeat, auto-next), `sequential` (cycle, auto-next)
+- KeyGrid groups bindings by keyCode (one cell per key, shows track count indicator when >1 track).
+- SoundDetails renders each binding separately with per-binding track selector, loop mode, and delete.
 
 ### YouTube Integration
 
@@ -144,11 +151,11 @@ Binding = key + track ID + sound IDs list + loop mode + optional custom name.
 - **Playlists:** `fetch_playlist(url)` for imports and discovery Mix fetching.
 - **yt-dlp/ffmpeg:** Auto-downloaded to `data/bin/` on first use. ffmpeg needed for DASH→M4A remux.
 - **Cache:** Canonical URL lookup (`watch?v={id}`). Secondary index `video_id_index: HashMap<String, String>` for O(1) video_id lookups. Cleanup scans all profiles, removes unreferenced entries. Deferred to 5s after startup.
-- **Retry:** 3 attempts, 2s delay for transient errors. Immediate fail for permanent errors.
+- **Retry:** 3 attempts, 2s delay for transient errors. Immediate fail for permanent errors. Auto-update: If download fails with HTTP 403/429 or extraction errors, attempts yt-dlp update (once per request).
 
 ### Profiles & Config
 
-- Profiles: `data/profiles/{uuid}.json` with sounds, tracks, bindings. All sounds stopped on switch.
+- Profiles: `data/profiles/{uuid}.json` with sounds, tracks, bindings, disliked_videos. All sounds stopped on switch.
 - Config (`data/config.json`): masterVolume, autoMomentum, keyDetectionEnabled, shortcuts, crossfadeDuration (500ms), keyCooldown (200ms), currentProfileId, audioDevice, chordWindowMs (30ms), momentumModifier, playlistImportEnabled
 - Atomic writes (`.tmp` → remove dest → rename, for Windows compat). Config: debounced saves via `AtomicBool` dirty flag, flushed every 2s by background thread. Profile list: partial JSON parsing (`serde_json::Value`) for O(1) field extraction instead of full deserialization.
 
@@ -178,7 +185,7 @@ Binding = key + track ID + sound IDs list + loop mode + optional custom name.
 ```rust
 pub struct AppState {
     pub config: Mutex<AppConfig>,
-    pub audio_engine: Arc<tokio::sync::OnceCell<AudioEngineHandle>>,  // Deferred init
+    pub audio_engine: Arc<OnceLock<AudioEngineHandle>>,  // Deferred init (std::sync::OnceLock)
     pub key_detector: KeyDetector,
     pub youtube_cache: Arc<Mutex<YouTubeCache>>,    // Lazy-loaded on first access
     pub waveform_cache: Arc<Mutex<WaveformCache>>,  // Lazy-loaded on first access
@@ -193,11 +200,11 @@ pub struct AppState {
 
 - **Window:** Starts hidden (`visible: false`), shown after React render via double `requestAnimationFrame` + `getCurrentWindow().show()`.
 - **Skeleton:** CSS-only skeleton in `index.html` (no JS), replaced when React hydrates `#root`. Fade-in transition (0.25s).
-- **Audio engine:** Deferred via `Arc<tokio::sync::OnceCell<AudioEngineHandle>>`. Init runs in `tokio::spawn` after window creation. Commands use `state.get_audio_engine()?` (error if not ready) or graceful `if let Ok(engine)` for volume sync.
+- **Audio engine:** Deferred via `Arc<OnceLock<AudioEngineHandle>>` (std library). Init runs in `tokio::spawn` after window creation. Commands use `state.get_audio_engine()?` (error if not ready) or graceful `if let Ok(engine)` for volume sync.
 - **Caches:** Both `YouTubeCache` and `WaveformCache` use lazy loading (`ensure_loaded()` on first access). Saves ~40-150ms at startup.
 - **Unified IPC:** Single `get_initial_state` command replaces 3 sequential calls (config + profiles + current profile).
 - **Parallelization:** `load_config()` and `cleanup_interrupted_export()` run in parallel via `std::thread::scope`.
-- **Code splitting:** `SettingsModal`, `FileNotFoundModal`, `AddSoundModal`, `DiscoveryPanel` lazy-loaded with `React.lazy` + `Suspense`.
+- **Code splitting:** `SettingsModal`, `FileNotFoundModal`, `AddSoundModal`, `DiscoveryPanel`, `KeyboardShortcutsModal` lazy-loaded with `React.lazy` + `Suspense`.
 
 ## Tauri Commands (`commands.rs`)
 
@@ -209,7 +216,7 @@ pub struct AppState {
 **Keys:** `set_key_detection`, `set_master_stop_shortcut`, `set_key_cooldown`
 **Waveform:** `get_waveform(path, num_points)`, `get_waveforms_batch(entries)`
 **YouTube:** `add_sound_from_youtube(url, download_id)`, `search_youtube`, `fetch_playlist`, `get_youtube_stream_url(video_id)`, `check_yt_dlp_installed`, `install_yt_dlp`, `check_ffmpeg_installed`, `install_ffmpeg`
-**Discovery:** `start_discovery`, `get_discovery_suggestions`, `dismiss_discovery`, `cancel_discovery`, `predownload_suggestion`
+**Discovery:** `start_discovery(profile_id, exclude_ids, background)`, `get_discovery_suggestions`, `save_discovery_cursor`, `update_discovery_pool`, `dismiss_discovery`, `dislike_discovery`, `undislike_discovery`, `list_disliked_videos`, `cancel_discovery`, `predownload_suggestion`
 **Import/Export:** `export_profile`, `import_profile`, `pick_save_location`, `cleanup_export_temp`, `cancel_export`, `pick_ktm_file`, `pick_legacy_file`, `import_legacy_save`
 **Utility:** `verify_profile_sounds`, `pick_audio_file`, `pick_audio_files`, `get_logs_folder`, `get_data_folder`, `open_folder`
 
@@ -229,6 +236,7 @@ pub struct AppState {
 | `discovery_resolving` | `{ count }` (local sounds being resolved) |
 | `discovery_progress` | `{ current, total, seedName }` |
 | `discovery_partial` | `Vec<DiscoverySuggestion>` |
+| `waveform_progress` | `{ path, points, duration, sampleRate }` (streaming waveform, every 5 iterations) |
 
 ## Technical Notes
 

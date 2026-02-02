@@ -934,6 +934,7 @@ pub async fn import_legacy_save(path: String) -> Result<Profile, String> {
         sounds,
         tracks: vec![track],
         key_bindings,
+        disliked_videos: Vec::new(),
     };
 
     storage::save_profile(&profile)?;
@@ -1040,9 +1041,12 @@ pub async fn start_discovery(
         .map(|d| d.dismissed_ids)
         .unwrap_or_default();
 
-    // Exclude profile sounds, previously dismissed, and caller-specified IDs (e.g. current suggestions on refresh)
+    // Exclude profile sounds, previously dismissed, disliked, and caller-specified IDs
     let mut all_excluded = existing_ids.clone();
     all_excluded.extend(previous_dismissed.iter().cloned());
+    for vid in &profile.disliked_videos {
+        all_excluded.push(vid.clone());
+    }
     all_excluded.extend(exclude_ids.into_iter());
 
     let yt_dlp_bin = youtube::downloader::get_yt_dlp_bin()?;
@@ -1183,6 +1187,126 @@ pub fn dismiss_discovery(
     });
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn dislike_discovery(
+    state: State<'_, AppState>,
+    profile_id: String,
+    video_id: String,
+) -> Result<(), String> {
+    let mut profile = storage::load_profile(profile_id.clone())?;
+
+    if !profile.disliked_videos.contains(&video_id) {
+        profile.disliked_videos.push(video_id.clone());
+    }
+
+    storage::save_profile(&profile)?;
+
+    // Also dismiss from current discovery cache
+    let _ = discovery::cache::DiscoveryCache::dismiss(&profile_id, &video_id);
+
+    // Clean up cached audio in background (best-effort)
+    let cache = state.youtube_cache.clone();
+    let vid = video_id.clone();
+    std::thread::spawn(move || {
+        if let Ok(mut cache) = cache.lock() {
+            cache.ensure_loaded();
+            cache.remove_entry_by_video_id(&vid);
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn undislike_discovery(
+    profile_id: String,
+    video_id: String,
+) -> Result<(), String> {
+    let mut profile = storage::load_profile(profile_id)?;
+
+    profile.disliked_videos.retain(|id| id != &video_id);
+
+    storage::save_profile(&profile)?;
+
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DislikedVideoInfo {
+    pub video_id: String,
+    pub title: String,
+    pub channel: String,
+    pub duration: f64,
+    pub url: String,
+}
+
+#[tauri::command]
+pub async fn list_disliked_videos(
+    profile_id: String,
+) -> Result<Vec<DislikedVideoInfo>, String> {
+    use futures::stream::{self, StreamExt};
+
+    let profile = storage::load_profile(profile_id)?;
+
+    if profile.disliked_videos.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let yt_dlp_bin = youtube::downloader::get_yt_dlp_bin()?;
+
+    let results: Vec<DislikedVideoInfo> = stream::iter(profile.disliked_videos.iter().cloned())
+        .map(|video_id| {
+            let bin = yt_dlp_bin.clone();
+            async move {
+                let url = youtube::downloader::canonical_url(&video_id);
+
+                let mut cmd = youtube::downloader::yt_dlp_command(&bin);
+                cmd.arg(&url)
+                    .arg("--dump-json")
+                    .arg("--no-download")
+                    .arg("--no-warnings")
+                    .arg("--no-check-certificates")
+                    .arg("--no-playlist")
+                    .arg("--socket-timeout")
+                    .arg("10")
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped());
+
+                if let Ok(child) = cmd.spawn() {
+                    if let Ok(Ok(out)) = tokio::time::timeout(
+                        std::time::Duration::from_secs(10),
+                        child.wait_with_output(),
+                    ).await {
+                        if out.status.success() {
+                            let stdout = String::from_utf8_lossy(&out.stdout);
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
+                                let title = json.get("title").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
+                                let channel = json.get("channel").or_else(|| json.get("uploader")).and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                let duration = json.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                return DislikedVideoInfo { video_id, title, channel, duration, url };
+                            }
+                        }
+                    }
+                }
+
+                // Fallback: minimal info
+                DislikedVideoInfo {
+                    video_id: video_id.clone(),
+                    title: format!("Video {}", video_id),
+                    channel: String::new(),
+                    duration: 0.0,
+                    url,
+                }
+            }
+        })
+        .buffer_unordered(5)
+        .collect()
+        .await;
+
+    Ok(results)
 }
 
 #[tauri::command]

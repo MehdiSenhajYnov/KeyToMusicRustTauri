@@ -319,6 +319,26 @@ export async function dismissDiscovery(profileId: string, videoId: string): Prom
   return invoke("dismiss_discovery", { profileId, videoId });
 }
 
+export async function dislikeDiscovery(profileId: string, videoId: string): Promise<void> {
+  return invoke("dislike_discovery", { profileId, videoId });
+}
+
+export async function undislikeDiscovery(profileId: string, videoId: string): Promise<void> {
+  return invoke("undislike_discovery", { profileId, videoId });
+}
+
+export interface DislikedVideoInfo {
+  videoId: string;
+  title: string;
+  channel: string;
+  duration: number;
+  url: string;
+}
+
+export async function listDislikedVideos(profileId: string): Promise<DislikedVideoInfo[]> {
+  return invoke("list_disliked_videos", { profileId });
+}
+
 export async function cancelDiscovery(): Promise<void> {
   return invoke("cancel_discovery");
 }

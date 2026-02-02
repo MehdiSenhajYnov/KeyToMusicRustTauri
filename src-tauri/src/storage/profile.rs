@@ -64,6 +64,7 @@ pub fn create_profile(name: String) -> Result<Profile, String> {
         sounds: Vec::new(),
         tracks: Vec::new(),
         key_bindings: Vec::new(),
+        disliked_videos: Vec::new(),
     };
 
     save_profile(&profile)?;
@@ -127,6 +128,7 @@ pub fn duplicate_profile(id: String, new_name: Option<String>) -> Result<Profile
         sounds: source.sounds,
         tracks: source.tracks,
         key_bindings: source.key_bindings,
+        disliked_videos: Vec::new(),
     };
 
     save_profile(&new_profile)?;

@@ -83,8 +83,8 @@ interface ProfileState {
 
   // Key Bindings
   addKeyBinding: (binding: KeyBinding) => void;
-  updateKeyBinding: (keyCode: string, updates: Partial<KeyBinding>) => void;
-  removeKeyBinding: (keyCode: string) => void;
+  updateKeyBinding: (keyCode: string, trackId: string, updates: Partial<KeyBinding>) => void;
+  removeKeyBinding: (keyCode: string, trackId?: string) => void;
 
   // Undo/Redo
   undo: () => boolean;
@@ -429,9 +429,9 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
 
     set((state) => {
       if (!state.currentProfile) return state;
-      // Replace existing binding for same key
+      // Replace existing binding for same key + track (multi-track: keep other tracks)
       const existing = state.currentProfile.keyBindings.filter(
-        (kb) => kb.keyCode !== binding.keyCode
+        (kb) => !(kb.keyCode === binding.keyCode && kb.trackId === binding.trackId)
       );
       return {
         currentProfile: {
@@ -445,7 +445,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     useHistoryStore.getState().pushState("Add key binding", previousState, newState);
   },
 
-  updateKeyBinding: (keyCode, updates) => {
+  updateKeyBinding: (keyCode, trackId, updates) => {
     const { currentProfile } = get();
     if (!currentProfile) return;
 
@@ -465,7 +465,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         currentProfile: {
           ...state.currentProfile,
           keyBindings: state.currentProfile.keyBindings.map((kb) =>
-            kb.keyCode === keyCode ? { ...kb, ...updates } : kb
+            kb.keyCode === keyCode && kb.trackId === trackId ? { ...kb, ...updates } : kb
           ),
         },
       };
@@ -477,7 +477,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     }
   },
 
-  removeKeyBinding: (keyCode) => {
+  removeKeyBinding: (keyCode, trackId?) => {
     const { currentProfile } = get();
     if (!currentProfile) return;
 
@@ -485,26 +485,33 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
 
     set((state) => {
       if (!state.currentProfile) return state;
-      const removedBinding = state.currentProfile.keyBindings.find(
-        (kb) => kb.keyCode === keyCode
+      // If trackId provided, remove only that specific binding; otherwise remove all for this keyCode
+      const removedBindings = state.currentProfile.keyBindings.filter(
+        (kb) => trackId
+          ? kb.keyCode === keyCode && kb.trackId === trackId
+          : kb.keyCode === keyCode
       );
       const remainingBindings = state.currentProfile.keyBindings.filter(
-        (kb) => kb.keyCode !== keyCode
+        (kb) => trackId
+          ? !(kb.keyCode === keyCode && kb.trackId === trackId)
+          : kb.keyCode !== keyCode
       );
       // Collect all sound IDs still referenced by remaining bindings
       const referencedSoundIds = new Set(
         remainingBindings.flatMap((kb) => kb.soundIds)
       );
       // Remove sounds that are no longer referenced by any binding
-      const orphanedIds = removedBinding
-        ? removedBinding.soundIds.filter((id) => !referencedSoundIds.has(id))
-        : [];
+      const orphanedIds = new Set(
+        removedBindings
+          .flatMap((kb) => kb.soundIds)
+          .filter((id) => !referencedSoundIds.has(id))
+      );
       return {
         currentProfile: {
           ...state.currentProfile,
           keyBindings: remainingBindings,
           sounds: state.currentProfile.sounds.filter(
-            (s) => !orphanedIds.includes(s.id)
+            (s) => !orphanedIds.has(s.id)
           ),
         },
       };

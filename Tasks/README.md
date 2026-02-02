@@ -44,8 +44,10 @@ Tasks/
 | Startup Performance | ✅ Completed | [STARTUP_PERFORMANCE.md](./todo/STARTUP_PERFORMANCE.md) |
 | Recherche & Filtre KeyGrid | ✅ Completed | [SEARCH_FILTER_KEYGRID.md](./todo/SEARCH_FILTER_KEYGRID.md) |
 | Nettoyage champs Track morts | ✅ Completed | [TRACK_DEAD_FIELDS_CLEANUP.md](./done/fixes/TRACK_DEAD_FIELDS_CLEANUP.md) |
-| Modal raccourcis clavier | ⏳ Planifie | [KEYBOARD_SHORTCUTS_MODAL.md](./todo/KEYBOARD_SHORTCUTS_MODAL.md) |
-| Discovery — Système de Dislike Permanent | ⏳ Planifié | [updates/DISCOVERY_DISLIKE_SYSTEM.md](./updates/DISCOVERY_DISLIKE_SYSTEM.md) |
+| Modal raccourcis clavier | ✅ Completed | [KEYBOARD_SHORTCUTS_MODAL.md](./done/features/KEYBOARD_SHORTCUTS_MODAL.md) |
+| Discovery — Système de Dislike Permanent | ✅ Completed | [DISCOVERY_DISLIKE_SYSTEM.md](./done/features/DISCOVERY_DISLIKE_SYSTEM.md) |
+| Onboarding — Empty States Progressifs | ✅ Completed | [ONBOARDING_EMPTY_STATES.md](./done/features/ONBOARDING_EMPTY_STATES.md) |
+| Multi-Track par Touche | ✅ Completed | [MULTI_TRACK_PER_KEY.md](./done/features/MULTI_TRACK_PER_KEY.md) |
 
 ## Post-dev
 
@@ -72,6 +74,10 @@ Tasks/
 | Legacy Import | [LEGACY_IMPORT.md](./done/features/LEGACY_IMPORT.md) |
 | Chords, Undo/Redo & Momentum | [CHORDS_UNDO_MOMENTUM.md](./done/features/CHORDS_UNDO_MOMENTUM.md) |
 | Smart Discovery | [SMART_DISCOVERY.md](./done/features/Smart_Discovery/SMART_DISCOVERY.md) |
+| Discovery — Système de Dislike Permanent | [DISCOVERY_DISLIKE_SYSTEM.md](./done/features/DISCOVERY_DISLIKE_SYSTEM.md) |
+| Onboarding — Empty States Progressifs | [ONBOARDING_EMPTY_STATES.md](./done/features/ONBOARDING_EMPTY_STATES.md) |
+| Modal raccourcis clavier | [KEYBOARD_SHORTCUTS_MODAL.md](./done/features/KEYBOARD_SHORTCUTS_MODAL.md) |
+| Multi-Track par Touche | [MULTI_TRACK_PER_KEY.md](./done/features/MULTI_TRACK_PER_KEY.md) |
 
 ## Done — Fixes
 
@@ -104,3 +110,7 @@ Tasks/
 - **2026-02-02** — Waveform & Momentum Performance Fix
 - **2026-02-02** — Startup Performance Optimization (7 phases)
 - **2026-02-02** — Track dead fields cleanup (removed currentlyPlaying, playbackPosition, isPlaying)
+- **2026-02-02** — Discovery Dislike System (permanent blacklist with Settings UI management)
+- **2026-02-02** — Onboarding Empty States (progressive CTAs for no-profile, no-tracks, no-bindings)
+- **2026-02-02** — Keyboard Shortcuts Modal (? button in header, ? / F1 global shortcut, dynamic config shortcuts)
+- **2026-02-02** — Multi-Track par Touche (one key triggers sounds on multiple tracks simultaneously)

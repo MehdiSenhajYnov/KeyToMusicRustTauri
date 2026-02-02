@@ -1,12 +1,13 @@
 import { useRef, useCallback } from "react";
 import { useSettingsStore } from "../../stores/settingsStore";
-import { useWheelSlider } from "../../hooks/useWheelSlider";
+import { useWheelSlider, getWheelActiveClass } from "../../hooks/useWheelSlider";
 
 interface HeaderProps {
   onSettingsClick: () => void;
+  onHelpClick: () => void;
 }
 
-export function Header({ onSettingsClick }: HeaderProps) {
+export function Header({ onSettingsClick, onHelpClick }: HeaderProps) {
   const { config, setMasterVolume } = useSettingsStore();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -22,7 +23,7 @@ export function Header({ onSettingsClick }: HeaderProps) {
     }, 100);
   }, [setMasterVolume]);
 
-  const masterVolWheelRef = useWheelSlider({
+  const { ref: masterVolWheelRef, isWheelActive: masterVolWheelActive } = useWheelSlider({
     value: Math.round(config.masterVolume * 100),
     min: 0, max: 100, step: 1,
     onChange: (v) => handleVolumeChange(v / 100),
@@ -48,12 +49,24 @@ export function Header({ onSettingsClick }: HeaderProps) {
           max="100"
           value={Math.round(config.masterVolume * 100)}
           onChange={(e) => handleVolumeChange(Number(e.target.value) / 100)}
-          className="w-24 h-1 accent-accent-primary"
+          className={`w-24 h-1 accent-accent-primary transition-all duration-200 ${getWheelActiveClass(masterVolWheelActive)}`}
         />
         <span className="text-text-secondary text-xs w-8">
           {Math.round(config.masterVolume * 100)}%
         </span>
       </div>
+
+      <button
+        onClick={onHelpClick}
+        className="p-2 text-text-secondary hover:text-text-primary hover:bg-bg-hover rounded transition-colors"
+        title="Keyboard Shortcuts"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01" />
+          <circle cx="12" cy="12" r="10" strokeWidth={2} />
+        </svg>
+      </button>
 
       <button
         onClick={onSettingsClick}

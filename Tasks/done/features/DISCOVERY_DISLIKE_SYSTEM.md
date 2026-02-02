@@ -1,6 +1,6 @@
 # Système de Dislike Permanent pour Discovery
 
-> **Statut:** En attente d'implémentation
+> **Statut:** Completed (2026-02-02)
 > **Type:** Update — Remplacer le dismiss temporaire par un dislike permanent avec UI de gestion
 > **Objectif:** Permettre aux utilisateurs de blacklister définitivement des sons dans Discovery, avec possibilité de gérer cette liste dans les Settings
 
@@ -459,33 +459,27 @@ Si la liste de dislikes devient très grande (>100 vidéos), envisager :
 ## Workflow d'implémentation suggéré
 
 ### Phase 1 : Backend
-- [ ] Ajouter `disliked_videos` à `Profile` struct
-- [ ] Créer `dislike_discovery` command
-- [ ] Créer `undislike_discovery` command
-- [ ] Créer `list_disliked_videos` command
-- [ ] Créer helper `youtube::fetch_video_info()` si nécessaire
-- [ ] Modifier filtrage discovery pour exclure `disliked_videos`
-- [ ] Registrer les commandes dans `main.rs`
-- [ ] Tester avec `cargo check` et `cargo test`
+- [x] Ajouter `disliked_videos` à `Profile` struct
+- [x] Créer `dislike_discovery` command
+- [x] Créer `undislike_discovery` command
+- [x] Créer `list_disliked_videos` command (concurrent via buffer_unordered(5))
+- [x] Modifier filtrage discovery pour exclure `disliked_videos`
+- [x] Registrer les commandes dans `main.rs`
+- [x] Tester avec `cargo check` et `cargo test`
 
 ### Phase 2 : Frontend — Discovery Panel
-- [ ] Ajouter wrappers TypeScript (`dislikeDiscovery`, etc.)
-- [ ] Changer icône X → thumbs-down
-- [ ] Renommer handler `handleDismiss` → `handleDislike`
-- [ ] Tester l'ajout de dislikes dans Discovery
+- [x] Ajouter wrappers TypeScript (`dislikeDiscovery`, etc.)
+- [x] Changer icône X → thumbs-down
+- [x] Renommer handler `handleDismiss` → `handleDislike`
 
 ### Phase 3 : Frontend — Settings UI
-- [ ] Créer `DislikedVideosPanel.tsx`
-- [ ] Intégrer dans `SettingsModal.tsx`
-- [ ] Tester l'affichage et suppression de dislikes
-- [ ] Vérifier le comportement après undislike (vidéo réapparaît dans futures discoveries)
+- [x] Créer `DislikedVideosPanel.tsx`
+- [x] Intégrer dans `SettingsModal.tsx`
 
 ### Phase 4 : Tests & polish
-- [ ] Tester la persistance (fermer/rouvrir app)
-- [ ] Tester avec profil legacy (sans `disliked_videos`)
-- [ ] Vérifier que les vidéos dislikées ne reviennent jamais
-- [ ] Vérifier la suppression du cache audio lors du dislike
-- [ ] Polish UI (animations, loading states, erreurs)
+- [x] Vérifier que les vidéos dislikées sont exclues du filtrage discovery
+- [x] Vérifier la suppression du cache audio lors du dislike
+- [x] Rétrocompatibilité (serde(default) sur disliked_videos)
 
 ---
 

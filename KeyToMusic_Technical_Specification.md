@@ -198,7 +198,7 @@ keytomusic/
 │   ├── src/
 │   │   ├── main.rs               # Point d'entrée Tauri, event forwarding, logging
 │   │   ├── commands.rs           # Commandes Tauri exposées au frontend
-│   │   ├── state.rs              # AppState (audio engine, key detector, waveform cache, cpu_pool, profile_load_gen)
+│   │   ├── state.rs              # AppState (audio engine [OnceLock], key detector, waveform cache, cpu_pool, profile_load_gen)
 │   │   ├── types.rs              # Toutes les structures de données sérialisables
 │   │   ├── audio/
 │   │   │   ├── mod.rs
@@ -2782,13 +2782,28 @@ async fn install_ffmpeg() -> Result<(), String>;
 
 // Discovery (YouTube Mix recommendations)
 #[tauri::command]
-async fn start_discovery(app: AppHandle, state: State<AppState>, profile_id: String) -> Result<Vec<DiscoverySuggestion>, String>;
+async fn start_discovery(app: AppHandle, state: State<AppState>, profile_id: String, exclude_ids: Vec<String>, background: bool) -> Result<Vec<DiscoverySuggestion>, String>;
 
 #[tauri::command]
-fn get_discovery_suggestions(profile_id: String) -> Result<Option<Vec<DiscoverySuggestion>>, String>;
+fn get_discovery_suggestions(profile_id: String) -> Result<Option<DiscoveryCacheResponse>, String>;
+
+#[tauri::command]
+fn save_discovery_cursor(profile_id: String, cursor_index: usize, revealed_count: usize, visited_index: usize) -> Result<(), String>;
+
+#[tauri::command]
+fn update_discovery_pool(profile_id: String, suggestions: Vec<DiscoverySuggestion>, cursor_index: usize, revealed_count: usize, visited_index: usize) -> Result<(), String>;
 
 #[tauri::command]
 fn dismiss_discovery(state: State<AppState>, profile_id: String, video_id: String) -> Result<(), String>;
+
+#[tauri::command]
+fn dislike_discovery(profile_id: String, video_id: String) -> Result<(), String>;
+
+#[tauri::command]
+fn undislike_discovery(profile_id: String, video_id: String) -> Result<(), String>;
+
+#[tauri::command]
+async fn list_disliked_videos(state: State<AppState>, profile_id: String) -> Result<Vec<DislikedVideoInfo>, String>;
 
 #[tauri::command]
 fn cancel_discovery(state: State<AppState>);
@@ -3415,9 +3430,14 @@ pub async fn generate_suggestions(
 
 **Commandes Tauri:**
 ```rust
-start_discovery(profile_id: String)  // Lance la recherche (async, emits events)
-get_discovery_suggestions(profile_id: String)  // Récupère depuis le cache
-dismiss_discovery(profile_id: String, video_id: String)  // Retire une suggestion
+start_discovery(profile_id: String, exclude_ids: Vec<String>, background: bool)  // Lance la recherche (async, emits events, background mode pour refresh silencieux)
+get_discovery_suggestions(profile_id: String)  // Récupère depuis le cache avec curseur/état
+save_discovery_cursor(profile_id, cursor_index, revealed_count, visited_index)  // Sauvegarde la position du carousel
+update_discovery_pool(profile_id, suggestions, cursor, revealed, visited)  // Met à jour le pool de suggestions
+dismiss_discovery(profile_id: String, video_id: String)  // Retire une suggestion (temporaire)
+dislike_discovery(profile_id: String, video_id: String)  // Dislike permanent (ajouté au profil)
+undislike_discovery(profile_id: String, video_id: String)  // Retire un dislike
+list_disliked_videos(profile_id: String)  // Liste tous les dislikes avec métadonnées
 cancel_discovery()  // Annule la recherche en cours (AtomicBool)
 predownload_suggestion(url: String, video_id: String, download_id: String) -> PredownloadResult
 ```

@@ -354,14 +354,39 @@ Every documentation file that is affected by the changes MUST be updated. Do NOT
 
 ---
 
-## Step 10: Update task status
+## Step 10: Update task status and move file
 
 1. In the task file: mark every completed item `- [x]`
 2. Update the task's status header:
-   - All items done → `Completed`
+   - All items done → `Completed (YYYY-MM-DD)`
    - Some items done, some skipped/blocked → `Partial`
-   - Add completion date if fully done
-3. In `Tasks/README.md`: update the row for this task if its status changed
+
+3. **If fully completed, move the task file** out of `todo/` into the appropriate `done/` subdirectory:
+
+   Determine the destination based on the task's `> **Type:**` header:
+   - **Feature / Update** (new functionality) → `Tasks/done/features/`
+   - **Fix / Optimization** (bug fix, perf fix, cleanup, debt) → `Tasks/done/fixes/`
+   - **Infrastructure** (setup, build, config, tooling) → `Tasks/done/infrastructure/`
+
+   Use `git mv` to move the file:
+   ```bash
+   git mv Tasks/todo/TASK_NAME.md Tasks/done/{category}/TASK_NAME.md
+   ```
+
+   If the task lives in `Tasks/updates/` (subdirectory with multiple files), move the entire directory:
+   ```bash
+   git mv Tasks/updates/TASK_DIR/ Tasks/done/{category}/TASK_DIR/
+   ```
+
+   If `git mv` fails (file not tracked), use regular `mv` instead.
+
+4. **Update `Tasks/README.md`**:
+   - Change the status in the Todo table (e.g., `⏳ Planifie` → `✅ Completed`)
+   - Update the file link to point to the new location in `done/`
+   - Add a row in the appropriate "Done" section (`Done — Features`, `Done — Fixes`, or `Done — Infrastructure`)
+   - Add a line in the `Historique` section with today's date and a short description
+
+5. If only **partially** completed, do NOT move the file — leave it in `todo/` with status `Partial`.
 
 ---
 

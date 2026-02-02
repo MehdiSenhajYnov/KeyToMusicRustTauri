@@ -3,16 +3,22 @@ import { useProfileStore } from "../../stores/profileStore";
 import { setTrackVolume } from "../../utils/tauriCommands";
 import { useToastStore } from "../../stores/toastStore";
 import { useConfirmStore } from "../../stores/confirmStore";
-import { useWheelSlider } from "../../hooks/useWheelSlider";
+import { useWheelSlider, getWheelActiveClass } from "../../hooks/useWheelSlider";
 
 function WheelInput(props: React.InputHTMLAttributes<HTMLInputElement> & { wheelStep: number; wheelMin: number; wheelMax: number; onWheelChange: (v: number) => void }) {
-  const { wheelStep, wheelMin, wheelMax, onWheelChange, ...inputProps } = props;
-  const ref = useWheelSlider({
+  const { wheelStep, wheelMin, wheelMax, onWheelChange, className, ...inputProps } = props;
+  const { ref, isWheelActive } = useWheelSlider({
     value: Number(inputProps.value ?? 0),
     min: wheelMin, max: wheelMax, step: wheelStep,
     onChange: onWheelChange,
   });
-  return <input ref={ref} {...inputProps} />;
+  return (
+    <input
+      ref={ref}
+      className={`${className || ""} transition-all duration-200 ${getWheelActiveClass(isWheelActive)}`}
+      {...inputProps}
+    />
+  );
 }
 
 export function TrackView() {
@@ -185,11 +191,6 @@ export function TrackView() {
         ))}
       </div>
 
-      {currentProfile.tracks.length === 0 && (
-        <p className="text-text-muted text-xs italic">
-          No tracks yet. Add a track to assign sounds.
-        </p>
-      )}
     </div>
   );
 }

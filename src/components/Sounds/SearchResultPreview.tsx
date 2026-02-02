@@ -138,7 +138,7 @@ export function SearchResultPreview({ streamUrl, duration, onClose }: SearchResu
 
   const effectiveDuration = duration || (audioRef.current?.duration || 0);
 
-  const seekWheelRef = useWheelSlider({
+  const { ref: seekWheelRef, isWheelActive: seekWheelActive } = useWheelSlider({
     value: currentTime, min: 0, max: effectiveDuration || 1, step: 0.5,
     onChange: (v) => {
       const audio = audioRef.current;
@@ -195,7 +195,9 @@ export function SearchResultPreview({ streamUrl, duration, onClose }: SearchResu
         value={currentTime}
         onChange={handleSeek}
         disabled={isBuffering}
-        className="flex-1 h-1 accent-accent-primary disabled:opacity-30"
+        className={`flex-1 h-1 accent-accent-primary disabled:opacity-30 transition-all duration-200 ${
+          seekWheelActive ? "scale-105 shadow-[0_0_8px_rgba(99,102,241,0.5)]" : ""
+        }`}
       />
 
       {/* Timer */}

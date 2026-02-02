@@ -1,6 +1,6 @@
 # Modal d'aide raccourcis clavier
 
-> **Statut:** En attente d'implementation
+> **Statut:** Completed (2026-02-02)
 > **Type:** Feature — Modal d'aide listant tous les raccourcis et interactions
 > **Objectif:** Ajouter un bouton "?" dans le header ouvrant un modal qui liste tous les raccourcis clavier, shortcuts globaux configurables et interactions souris, avec contenu dynamique refletant la config actuelle
 

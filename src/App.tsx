@@ -17,6 +17,7 @@ import { useTextInputFocus } from "./hooks/useTextInputFocus";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { useDiscovery } from "./hooks/useDiscovery";
 import { useDiscoveryPredownload } from "./hooks/useDiscoveryPredownload";
+import { isTextInput } from "./utils/inputHelpers";
 import { getSoundFilePath } from "./utils/soundHelpers";
 import { useWaveformStore } from "./stores/waveformStore";
 
@@ -41,9 +42,11 @@ function preloadWaveformsForProfile(sounds: Sound[]) {
 // Code splitting: lazy load modals and heavy components not needed at startup
 const SettingsModal = lazy(() => import("./components/Settings/SettingsModal").then(m => ({ default: m.SettingsModal })));
 const FileNotFoundModal = lazy(() => import("./components/Errors/FileNotFoundModal").then(m => ({ default: m.FileNotFoundModal })));
+const KeyboardShortcutsModal = lazy(() => import("./components/common/KeyboardShortcutsModal").then(m => ({ default: m.KeyboardShortcutsModal })));
 
 function App() {
   const [showSettings, setShowSettings] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const currentProfileId = useSettingsStore((s) => s.config.currentProfileId);
   const { loadProfile, currentProfile } = useProfileStore();
 
@@ -54,6 +57,19 @@ function App() {
   useUndoRedo();
   useDiscovery();
   useDiscoveryPredownload();
+
+  // Global shortcut: ? or F1 to toggle help modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isTextInput(e.target)) return;
+      if (e.key === "?" || e.key === "F1") {
+        e.preventDefault();
+        setShowHelp((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Unified initial state load — replaces 3 sequential IPC calls with 1
   useEffect(() => {
@@ -84,10 +100,11 @@ function App() {
   }, [currentProfileId, loadProfile]);
 
   // Sync profile bindings to backend for multi-key chord detection
+  // Deduplicate keyCodes since multi-track bindings share the same keyCode
   useEffect(() => {
     if (currentProfile) {
-      const bindings = currentProfile.keyBindings.map((kb) => kb.keyCode);
-      commands.setProfileBindings(bindings).catch(console.error);
+      const uniqueKeys = [...new Set(currentProfile.keyBindings.map((kb) => kb.keyCode))];
+      commands.setProfileBindings(uniqueKeys).catch(console.error);
     } else {
       commands.setProfileBindings([]).catch(console.error);
     }
@@ -164,7 +181,7 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col bg-bg-primary">
-      <Header onSettingsClick={() => setShowSettings(true)} />
+      <Header onSettingsClick={() => setShowSettings(true)} onHelpClick={() => setShowHelp(true)} />
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
@@ -173,6 +190,7 @@ function App() {
 
       <Suspense fallback={null}>
         {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+        {showHelp && <KeyboardShortcutsModal onClose={() => setShowHelp(false)} />}
         <FileNotFoundModal />
       </Suspense>
       <ExportProgress />
