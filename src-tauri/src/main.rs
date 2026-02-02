@@ -65,7 +65,7 @@ fn main() {
     // Initialize key detector
     let key_detector = KeyDetector::new(
         config.key_cooldown,
-        config.master_stop_shortcut.clone(),
+        config.stop_all_shortcut.clone(),
         config.chord_window_ms,
     );
 
@@ -162,7 +162,7 @@ fn main() {
 
             // Start key detection with Tauri event emitter
             let app_handle = app.handle().clone();
-            // Need a reference to the audio_engine cell for MasterStop
+            // Need a reference to the audio_engine cell for StopAll
             let audio_cell_keys = {
                 let state: tauri::State<'_, AppState> = app.state();
                 state.audio_engine.clone()
@@ -176,11 +176,11 @@ fn main() {
                             "withShift": with_shift,
                         }));
                     }
-                    KeyEvent::MasterStop => {
+                    KeyEvent::StopAll => {
                         if let Some(engine) = audio_cell_keys.get() {
                             let _ = engine.stop_all();
                         }
-                        let _ = app_handle.emit("master_stop_triggered", serde_json::json!({}));
+                        let _ = app_handle.emit("stop_all_triggered", serde_json::json!({}));
                     }
                     KeyEvent::ToggleKeyDetection => {
                         let _ = app_handle.emit("toggle_key_detection", serde_json::json!({}));
@@ -190,6 +190,18 @@ fn main() {
                     }
                 }
             });
+
+            // Clear pressed keys on window focus change to prevent stuck modifiers (Alt+Tab)
+            {
+                let key_detector_focus = key_detector.clone();
+                if let Some(window) = app.get_webview_window("main") {
+                    window.on_window_event(move |event| {
+                        if matches!(event, tauri::WindowEvent::Focused(_)) {
+                            key_detector_focus.clear_pressed_keys();
+                        }
+                    });
+                }
+            }
 
             // Config debounce flush thread (saves every 2s if dirty)
             {
@@ -245,7 +257,7 @@ fn main() {
             preload_profile_sounds,
             // Key detection commands
             set_key_detection,
-            set_master_stop_shortcut,
+            set_stop_all_shortcut,
             set_key_cooldown,
             set_profile_bindings,
             // YouTube commands

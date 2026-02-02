@@ -202,7 +202,7 @@ export interface ShortcutConflict {
  * Configuration for shortcut conflict checking
  */
 export interface ShortcutConflictConfig {
-  masterStopShortcut?: string[];
+  stopAllShortcut?: string[];
   autoMomentumShortcut?: string[];
   keyDetectionShortcut?: string[];
 }
@@ -268,7 +268,7 @@ export function checkShortcutConflicts(
   // 2. User-configured global shortcuts
   if (config) {
     const globalShortcuts = [
-      { keys: config.masterStopShortcut, name: "Master Stop" },
+      { keys: config.stopAllShortcut, name: "Stop All" },
       { keys: config.autoMomentumShortcut, name: "Auto-Momentum" },
       { keys: config.keyDetectionShortcut, name: "Key Detection" },
     ];
@@ -546,7 +546,7 @@ export function getKeyMomentumConflict(
 import type { AppConfig } from "../types";
 export function buildShortcutsList(config: AppConfig) {
   return [
-    { name: "Master Stop", keys: config.masterStopShortcut },
+    { name: "Stop All", keys: config.stopAllShortcut },
     { name: "Auto-Momentum", keys: config.autoMomentumShortcut },
     { name: "Key Detection", keys: config.keyDetectionShortcut },
   ];

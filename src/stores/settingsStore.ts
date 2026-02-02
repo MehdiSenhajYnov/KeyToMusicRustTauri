@@ -11,7 +11,7 @@ interface SettingsState {
   setMasterVolume: (volume: number) => Promise<void>;
   toggleAutoMomentum: () => Promise<void>;
   toggleKeyDetection: () => Promise<void>;
-  setMasterStopShortcut: (keys: string[]) => Promise<void>;
+  setStopAllShortcut: (keys: string[]) => Promise<void>;
   setAutoMomentumShortcut: (keys: string[]) => Promise<void>;
   setKeyDetectionShortcut: (keys: string[]) => Promise<void>;
   setCrossfadeDuration: (duration: number) => Promise<void>;
@@ -27,7 +27,7 @@ const defaultConfig: AppConfig = {
   masterVolume: 0.8,
   autoMomentum: false,
   keyDetectionEnabled: true,
-  masterStopShortcut: ["ControlLeft", "ShiftLeft", "KeyS"],
+  stopAllShortcut: ["ControlLeft", "ShiftLeft", "KeyS"],
   autoMomentumShortcut: [],
   keyDetectionShortcut: [],
   crossfadeDuration: 500,
@@ -104,16 +104,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
-  setMasterStopShortcut: async (keys) => {
-    const prev = get().config.masterStopShortcut;
+  setStopAllShortcut: async (keys) => {
+    const prev = get().config.stopAllShortcut;
     set((state) => ({
-      config: { ...state.config, masterStopShortcut: keys },
+      config: { ...state.config, stopAllShortcut: keys },
     }));
     try {
-      await commands.setMasterStopShortcut(keys);
+      await commands.setStopAllShortcut(keys);
     } catch (e) {
-      set((state) => ({ config: { ...state.config, masterStopShortcut: prev } }));
-      useToastStore.getState().addToast("Failed to set master stop shortcut", "error");
+      set((state) => ({ config: { ...state.config, stopAllShortcut: prev } }));
+      useToastStore.getState().addToast("Failed to set stop all shortcut", "error");
     }
   },
 

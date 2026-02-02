@@ -157,7 +157,7 @@
   - [x] Ajouter les variantes pour erreurs YouTube (InvalidYouTubeUrl, YouTubeDownloadFailed, YtDlpNotFound)
   - [x] Ajouter les variantes pour erreurs storage (ProfileNotFound, SaveFailed, LoadFailed)
   - [x] Ajouter les variantes pour erreurs import/export (InvalidExportFile, ExportFailed)
-  - [x] Ajouter les variantes pour erreurs keys (KeyAlreadyAssigned, InvalidMasterStopShortcut)
+  - [x] Ajouter les variantes pour erreurs keys (KeyAlreadyAssigned, InvalidStopAllShortcut)
   - [x] Implémenter les messages d'erreur avec #[error("...")]
   **✅ Complété** - AppError enum avec From<AppError> pour String et Serialize impl
 
@@ -194,7 +194,7 @@
   - [x] Implémenter `get_config() -> Result<AppConfig, String>`
   - [x] Implémenter `update_config(updates: serde_json::Value) -> Result<(), String>`
   - [x] Implémenter la fusion partielle des updates avec la config existante
-  **✅ Complété** - Merge partiel de tous les champs dont masterStopShortcut et currentProfileId (nullable)
+  **✅ Complété** - Merge partiel de tous les champs dont stopAllShortcut et currentProfileId (nullable)
 
 - [x] **1.3.2** Créer les commandes de profils dans `commands.rs`
   - [x] Implémenter `list_profiles() -> Result<Vec<ProfileSummary>, String>`
@@ -403,7 +403,7 @@
 - [x] **3.1.2** Créer `src-tauri/src/keys/detector.rs` (structure)
   - [x] Définir la struct `KeyDetector`
   - [x] Ajouter les champs: enabled, last_key_time, cooldown, pressed_keys
-  - [x] Ajouter le champ `master_stop_shortcut: Vec<String>`
+  - [x] Ajouter le champ `stop_all_shortcut: Vec<String>`
   - [x] Utiliser Arc<Mutex<>> pour le thread safety
   **✅ Complété** - KeyDetector Clone-able avec tous les champs Arc<Mutex<>>
 
@@ -421,12 +421,12 @@
   - [x] Mettre à jour last_key_time après déclenchement
   **✅ Complété** - Logique complète avec tracking des releases même quand disabled
 
-- [x] **3.1.5** Implémenter la détection du Master Stop
+- [x] **3.1.5** Implémenter la détection du Stop All
   - [x] Implémenter `is_shortcut_pressed(pressed_keys, shortcut_keys) -> bool`
   - [x] Vérifier si toutes les touches du shortcut sont pressées
-  - [x] Émettre un event spécial MasterStop
-  - [x] Bloquer les autres événements de touches pendant le Master Stop
-  **✅ Complété** - Master Stop vérifié avant le cooldown, bloque les events normaux
+  - [x] Émettre un event spécial StopAll
+  - [x] Bloquer les autres événements de touches pendant le Stop All
+  **✅ Complété** - Stop All vérifié avant le cooldown, bloque les events normaux
 
 - [x] **3.1.6** Détecter les modificateurs
   - [x] Détecter si Shift (Left ou Right) est pressé
@@ -437,7 +437,7 @@
 ### 3.2 Mapping des Touches
 
 - [x] **3.2.1** Créer `src-tauri/src/keys/mapping.rs`
-  - [x] Définir l'enum `KeyEvent` (KeyPressed, MasterStop)
+  - [x] Définir l'enum `KeyEvent` (KeyPressed, StopAll)
   - [x] Implémenter `key_to_code(key: rdev::Key) -> String`
   - [x] Mapper toutes les lettres (A-Z → KeyA-KeyZ)
   - [x] Mapper tous les chiffres (0-9 → Digit0-Digit9)
@@ -462,11 +462,11 @@
   - [x] Les events sont émis vers le frontend qui gère la logique de binding/son
   **✅ Complété** - Architecture: KeyDetector → Tauri events → Frontend gère les bindings
 
-- [x] **3.3.2** Gérer le Master Stop
-  - [x] Implémenter `handle_master_stop()` dans le callback setup()
+- [x] **3.3.2** Gérer le Stop All
+  - [x] Implémenter `handle_stop_all()` dans le callback setup()
   - [x] Arrêter tous les sons de toutes les pistes via audio_engine.stop_all()
-  - [x] Émettre un event `master_stop_triggered`
-  **✅ Complété** - Master Stop arrête l'audio et émet l'event
+  - [x] Émettre un event `stop_all_triggered`
+  **✅ Complété** - Stop All arrête l'audio et émet l'event
 
 ### 3.4 Commandes et State
 
@@ -478,7 +478,7 @@
 
 - [x] **3.4.2** Créer les commandes de touches dans `commands.rs`
   - [x] `set_key_detection(enabled: bool) -> Result<(), String>`
-  - [x] `set_master_stop_shortcut(keys: Vec<String>) -> Result<(), String>`
+  - [x] `set_stop_all_shortcut(keys: Vec<String>) -> Result<(), String>`
   - [x] `set_key_cooldown(cooldown_ms: u32) -> Result<(), String>` (bonus)
   **✅ Complété** - 3 commandes avec validation et sync config+detector
 
@@ -489,7 +489,7 @@
 
 - [x] **3.5.1** Émettre les events de touches
   - [x] Émettre `key_pressed` avec {keyCode, withShift}
-  - [x] Émettre `master_stop_triggered`
+  - [x] Émettre `stop_all_triggered`
   **✅ Complété** - Events émis via tauri::Emitter dans le callback
 
 ---
@@ -546,7 +546,7 @@
   - [x] Créer le store avec zustand
   - [x] Implémenter les actions: setConfig, updateConfig
   - [x] Implémenter les actions spécifiques: setMasterVolume, toggleAutoMomentum, toggleKeyDetection
-  - [x] Implémenter: setMasterStopShortcut, setCrossfadeDuration, setKeyCooldown
+  - [x] Implémenter: setStopAllShortcut, setCrossfadeDuration, setKeyCooldown
 
 ### 4.4 Hooks Custom
 
@@ -661,16 +661,16 @@
   - [x] Indicateur visuel ON/OFF (couleur, icône)
   - [x] Appeler les handlers qui invoquent `update_config`
 
-- [x] **4.8.3** Créer `src/components/Controls/MasterStopButton.tsx`
+- [x] **4.8.3** Créer `src/components/Controls/StopAllButton.tsx`
   - [x] Props: onClick
-  - [x] Gros bouton rouge "Master Stop"
+  - [x] Gros bouton rouge "Stop All"
   - [x] Icône stop
   - [x] Au click: invoke('stop_all_sounds')
   - [x] Animation/feedback visuel au click
 
 - [x] **4.8.4** Assembler dans Sidebar
   - [x] Créer une section "Controls" dans Sidebar
-  - [x] Inclure GlobalToggles et MasterStopButton
+  - [x] Inclure GlobalToggles et StopAllButton
   - [x] Organiser verticalement avec espacement
 
 ### 4.9 Now Playing Component
@@ -825,7 +825,7 @@
 - [x] **4.13.5** Étape 3: Configuration
   - [x] Input pour les touches à assigner (texte: "adgk")
   - [x] Parser les touches entrées (voir utils/keyMapping)
-  - [x] Validation (touches valides, non déjà assignées au Master Stop)
+  - [x] Validation (touches valides, non déjà assignées au Stop All)
   - [x] Dropdown pour choisir la piste (existantes + "New Track")
   - [x] Si "New Track": input pour le nom de la nouvelle piste
   - [x] Input number pour le momentum (secondes, décimales ok)
@@ -854,7 +854,7 @@
   - [x] Modal overlay
   - [x] Titre "Settings"
 
-- [x] **4.14.2** Section: Master Stop Shortcut
+- [x] **4.14.2** Section: Stop All Shortcut
   - [x] Afficher la combinaison actuelle (formaté: "Ctrl+Shift+S")
   - [x] Bouton "Change"
   - [x] Au click: mode capture
@@ -863,7 +863,7 @@
   - [x] Afficher les touches capturées en temps réel
   - [x] Bouton "Save" pour confirmer
   - [x] Validation (au moins 2 touches, combinaison valide)
-  - [x] Appeler `invoke('set_master_stop_shortcut', {keys})`
+  - [x] Appeler `invoke('set_stop_all_shortcut', {keys})`
 
 - [x] **4.14.3** Section: Crossfade Duration
   - [x] Slider (100ms à 2000ms)
@@ -1016,11 +1016,11 @@
   - [x] Uses `removeKeyBinding` with confirmation dialog
   **✅ Complété** - SoundDetails.tsx
 
-### 4.5.2 Master Stop & Key Detection
+### 4.5.2 Stop All & Key Detection
 
-- [x] **4.5.2.1** Fix Master Stop not working when app is focused
+- [x] **4.5.2.1** Fix Stop All not working when app is focused
   - [x] Added browser keyboard handler with pressed keys tracking (useRef<Set<string>>)
-  - [x] On keydown: checks if all masterStopShortcut keys are pressed
+  - [x] On keydown: checks if all stopAllShortcut keys are pressed
   - [x] On keyup: removes key from set
   **✅ Complété** - useKeyDetection.ts
 
@@ -1153,8 +1153,8 @@
 ### 4.6.6 Global Shortcuts Consistency
 
 - [x] **4.6.6.1** All global shortcuts work regardless of key detection state
-  - [x] Moved master stop and auto-momentum shortcut checks before the `enabled` guard in detector.rs
-  - [x] All three shortcuts (key detection, master stop, auto-momentum) now fire even when detection is off, both in foreground and background
+  - [x] Moved Stop All and auto-momentum shortcut checks before the `enabled` guard in detector.rs
+  - [x] All three shortcuts (key detection, Stop All, auto-momentum) now fire even when detection is off, both in foreground and background
   **✅ Complété** - detector.rs
 
 - [x] **4.6.6.2** Fix sticky modifier keys (Alt/Ctrl stuck after window switch)
@@ -1781,7 +1781,7 @@ Permettre l'utilisation de combinaisons comme Ctrl+A, Shift+F1, Alt+1 comme trig
   - [x] Étendre `checkKeyComboConflict` → `checkShortcutConflicts(combo, config)`
   - [x] Bloquer les raccourcis app (Ctrl+Z, Ctrl+Y pour Undo/Redo)
   - [x] Bloquer les global shortcuts configurés par l'utilisateur:
-    - [x] `config.masterStopShortcut` (Master Stop)
+    - [x] `config.stopAllShortcut` (Stop All)
     - [x] `config.autoMomentumShortcut` (Auto-Momentum Toggle)
     - [x] `config.keyDetectionShortcut` (Key Detection Toggle)
   - [x] Bloquer les raccourcis système (Ctrl+C/V/X/A/S/W/Q/N/T, Alt+F4)
@@ -2178,7 +2178,7 @@ Permettre à l'utilisateur de choisir quel modificateur déclenche le momentum.
 - [ ] **10.3.2** Test des touches
   - [ ] Tester la détection en arrière-plan (fenêtre non focusée)
   - [ ] Tester le cooldown
-  - [ ] Tester le Master Stop
+  - [ ] Tester le Stop All
   - [ ] Tester avec Shift pour momentum
   - [ ] Tester la désactivation lors du focus d'input
 

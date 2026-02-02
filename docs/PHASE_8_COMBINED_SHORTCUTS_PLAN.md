@@ -323,7 +323,7 @@ Avant d'implémenter la capture, on doit bloquer les raccourcis déjà utilisés
 | Catégorie | Raccourcis | Raison |
 |-----------|------------|--------|
 | App (Undo/Redo) | `Ctrl+Z`, `Ctrl+Y`, `Cmd+Z`, `Cmd+Shift+Z` | Système undo/redo |
-| App (Global shortcuts) | `config.masterStopShortcut` | Master Stop |
+| App (Global shortcuts) | `config.StopAllShortcut` | Stop All |
 | App (Global shortcuts) | `config.autoMomentumShortcut` | Toggle Auto-Momentum |
 | App (Global shortcuts) | `config.keyDetectionShortcut` | Toggle Key Detection |
 | OS (Système) | `Ctrl+C`, `Ctrl+V`, `Ctrl+X` | Copy/Paste/Cut |
@@ -338,7 +338,7 @@ Avant d'implémenter la capture, on doit bloquer les raccourcis déjà utilisés
 interface ShortcutConflict {
   type: 'error' | 'warning';
   message: string;
-  conflictWith: string;  // "Undo", "Master Stop", "Copy", etc.
+  conflictWith: string;  // "Undo", "Stop All", "Copy", etc.
 }
 
 export function checkShortcutConflicts(
@@ -360,7 +360,7 @@ export function checkShortcutConflicts(
 
   // 2. Check user-configured global shortcuts
   const configShortcuts = [
-    { keys: config.masterStopShortcut, name: "Master Stop" },
+    { keys: config.StopAllShortcut, name: "Stop All" },
     { keys: config.autoMomentumShortcut, name: "Auto-Momentum Toggle" },
     { keys: config.keyDetectionShortcut, name: "Key Detection Toggle" },
   ];
@@ -444,7 +444,7 @@ if (conflict?.type === 'warning') {
 
 **Messages UI exemples :**
 - Error: `"Ctrl+Z is already used for Undo"`
-- Error: `"Ctrl+Shift+S is already used for Master Stop"`
+- Error: `"Ctrl+Shift+S is already used for Stop All"`
 - Error: `"Ctrl+C is a system shortcut for Copy"`
 - Warning: `"Ctrl+1 may conflict with browser tab switching"`
 

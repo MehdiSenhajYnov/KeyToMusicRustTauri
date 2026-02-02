@@ -280,14 +280,18 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
 
     set((state) => {
       if (!state.currentProfile) return state;
+      // Remove soundId from all bindings, then drop bindings with no sounds left
+      const updatedBindings = state.currentProfile.keyBindings
+        .map((kb) => ({
+          ...kb,
+          soundIds: kb.soundIds.filter((id) => id !== soundId),
+        }))
+        .filter((kb) => kb.soundIds.length > 0);
       return {
         currentProfile: {
           ...state.currentProfile,
           sounds: state.currentProfile.sounds.filter((s) => s.id !== soundId),
-          keyBindings: state.currentProfile.keyBindings.map((kb) => ({
-            ...kb,
-            soundIds: kb.soundIds.filter((id) => id !== soundId),
-          })),
+          keyBindings: updatedBindings,
         },
       };
     });

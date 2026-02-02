@@ -117,7 +117,7 @@ Platform-specific global capture (foreground AND background):
 
 **Behavior:**
 - 200ms global cooldown (configurable 0-5000ms)
-- Global shortcuts (Master Stop, Auto-Momentum, Key Detection toggle) checked before `enabled` guard in `detector.rs`
+- Global shortcuts (Stop All, Auto-Momentum, Key Detection toggle) checked before `enabled` guard in `detector.rs`
 - Auto-disable on text input focus (`useTextInputFocus` → `setKeyDetection(false)`). Non-text inputs (range, checkbox) excluded.
 - **Textual key filtering (Windows):** When `enabled_flag == false`, filters letters/digits/space/numpad to allow normal typing. Uses `is_textual_key()` helper.
 - AZERTY support: `charToKeyCode(e.key) || e.code` pattern, dynamic `layoutMap` via `recordKeyLayout()`
@@ -213,7 +213,7 @@ pub struct AppState {
 **Profiles:** `list_profiles`, `create_profile`, `load_profile`, `save_profile`, `delete_profile`, `duplicate_profile`
 **Audio:** `play_sound(track_id, sound_id, file_path, start_position, sound_volume)`, `stop_sound`, `stop_all_sounds`, `set_master_volume`, `set_track_volume`, `set_sound_volume`, `get_audio_duration`, `preload_profile_sounds`
 **Devices:** `list_audio_devices`, `set_audio_device`
-**Keys:** `set_key_detection`, `set_master_stop_shortcut`, `set_key_cooldown`
+**Keys:** `set_key_detection`, `set_stop_all_shortcut`, `set_key_cooldown`
 **Waveform:** `get_waveform(path, num_points)`, `get_waveforms_batch(entries)`
 **YouTube:** `add_sound_from_youtube(url, download_id)`, `search_youtube`, `fetch_playlist`, `get_youtube_stream_url(video_id)`, `check_yt_dlp_installed`, `install_yt_dlp`, `check_ffmpeg_installed`, `install_ffmpeg`
 **Discovery:** `start_discovery(profile_id, exclude_ids, background)`, `get_discovery_suggestions`, `save_discovery_cursor`, `update_discovery_pool`, `dismiss_discovery`, `dislike_discovery`, `undislike_discovery`, `list_disliked_videos`, `cancel_discovery`, `predownload_suggestion`
@@ -227,7 +227,7 @@ pub struct AppState {
 | `sound_started` / `sound_ended` | `{ trackId, soundId }` |
 | `playback_progress` | `{ trackId, position }` (every 250ms) |
 | `key_pressed` | `{ keyCode, withShift }` |
-| `master_stop_triggered` / `toggle_key_detection` / `toggle_auto_momentum` | `{}` |
+| `stop_all_triggered` / `toggle_key_detection` / `toggle_auto_momentum` | `{}` |
 | `youtube_download_progress` | `{ downloadId, status, progress }` |
 | `sound_not_found` | `{ soundId, path, trackId }` |
 | `audio_error` | `{ message }` |

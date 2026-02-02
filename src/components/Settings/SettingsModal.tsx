@@ -23,7 +23,7 @@ interface SettingsModalProps {
   onClose: () => void;
 }
 
-type ShortcutTarget = "masterStop" | "autoMomentum" | "keyDetection" | null;
+type ShortcutTarget = "stopAll" | "autoMomentum" | "keyDetection" | null;
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -39,7 +39,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     setCrossfadeDuration,
     setKeyCooldown,
     setChordWindowMs,
-    setMasterStopShortcut,
+    setStopAllShortcut,
     setAutoMomentumShortcut,
     setKeyDetectionShortcut,
     setAudioDevice,
@@ -60,7 +60,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   // Build shortcuts array for conflict detection
   const shortcuts = useMemo(() => buildShortcutsList(config),
-    [config.masterStopShortcut, config.autoMomentumShortcut, config.keyDetectionShortcut]);
+    [config.stopAllShortcut, config.autoMomentumShortcut, config.keyDetectionShortcut]);
 
   // Detect conflicts between momentum modifier and shortcuts
   const momentumConflicts = useMemo(() => {
@@ -110,8 +110,8 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       }
 
       switch (capturingTarget) {
-        case "masterStop":
-          setMasterStopShortcut(keys);
+        case "stopAll":
+          setStopAllShortcut(keys);
           break;
         case "autoMomentum":
           setAutoMomentumShortcut(keys);
@@ -124,7 +124,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       setCapturedKeys([]);
       pressedRef.current.clear();
     },
-    [capturingTarget, config.momentumModifier, currentProfile, addToast, setMasterStopShortcut, setAutoMomentumShortcut, setKeyDetectionShortcut]
+    [capturingTarget, config.momentumModifier, currentProfile, addToast, setStopAllShortcut, setAutoMomentumShortcut, setKeyDetectionShortcut]
   );
 
   const clearShortcut = useCallback(
@@ -205,35 +205,35 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <section>
             <SectionHeader>Shortcuts</SectionHeader>
 
-            {/* Master Stop Shortcut */}
+            {/* Stop All Shortcut */}
             <div className="space-y-1 mb-3">
               <label className="text-text-secondary text-sm font-medium">
-                Master Stop
+                Stop All
               </label>
               <div className="flex items-center gap-2">
                 <span className="text-text-primary text-sm font-mono bg-bg-tertiary px-2 py-1 rounded min-w-[80px]">
-                  {capturingTarget === "masterStop"
+                  {capturingTarget === "stopAll"
                     ? capturedKeys.length > 0
                       ? formatShortcut(capturedKeys)
                       : "Press keys..."
-                    : formatShortcut(config.masterStopShortcut)}
+                    : formatShortcut(config.stopAllShortcut)}
                 </span>
                 <button
                   onClick={() => {
-                    setCapturingTarget(capturingTarget === "masterStop" ? null : "masterStop");
+                    setCapturingTarget(capturingTarget === "stopAll" ? null : "stopAll");
                     setCapturedKeys([]);
                   }}
                   className={`text-xs px-2 py-1 rounded ${
-                    capturingTarget === "masterStop"
+                    capturingTarget === "stopAll"
                       ? "bg-accent-warning/20 text-accent-warning"
                       : "bg-bg-hover text-text-secondary hover:text-text-primary"
                   }`}
                 >
-                  {capturingTarget === "masterStop" ? "Cancel" : "Change"}
+                  {capturingTarget === "stopAll" ? "Cancel" : "Change"}
                 </button>
-                {getShortcutConflict("Master Stop") && (
+                {getShortcutConflict("Stop All") && (
                   <WarningTooltip
-                    message={`Uses ${config.momentumModifier}+${keyCodeToDisplay(getShortcutConflict("Master Stop")!.boundKey)} which is bound. Momentum won't work on this key.`}
+                    message={`Uses ${config.momentumModifier}+${keyCodeToDisplay(getShortcutConflict("Stop All")!.boundKey)} which is bound. Momentum won't work on this key.`}
                   />
                 )}
               </div>

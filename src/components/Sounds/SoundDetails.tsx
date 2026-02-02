@@ -17,7 +17,7 @@ import { MomentumSuggestionBadge } from "../common/MomentumSuggestionBadge";
 
 function WheelInput(props: React.InputHTMLAttributes<HTMLInputElement> & { wheelStep: number; wheelMin: number; wheelMax: number; onWheelChange: (v: number) => void }) {
   const { wheelStep, wheelMin, wheelMax, onWheelChange, ...inputProps } = props;
-  const ref = useWheelSlider({
+  const { ref } = useWheelSlider({
     value: Number(inputProps.value ?? 0),
     min: wheelMin, max: wheelMax, step: wheelStep,
     onChange: onWheelChange,
@@ -141,7 +141,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
         }
         // Merge: add current binding's sounds into target
         const mergedSoundIds = [...existingTarget.soundIds, ...binding.soundIds.filter((id) => !existingTarget.soundIds.includes(id))];
-        updateKeyBinding(newKeyCode, { soundIds: mergedSoundIds });
+        updateKeyBinding(newKeyCode, existingTarget.trackId, { soundIds: mergedSoundIds });
         removeKeyBinding(selectedKey);
       } else {
         // Move binding to new key - add first to prevent orphaning sounds
@@ -159,7 +159,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
       if (existingTarget) {
         // Add sound to existing target binding
         if (!existingTarget.soundIds.includes(soundId)) {
-          updateKeyBinding(newKeyCode, { soundIds: [...existingTarget.soundIds, soundId] });
+          updateKeyBinding(newKeyCode, existingTarget.trackId, { soundIds: [...existingTarget.soundIds, soundId] });
         }
       } else {
         // Create new binding for the target key
@@ -177,7 +177,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
         removeKeyBinding(selectedKey);
         onClose();
       } else {
-        updateKeyBinding(selectedKey, { soundIds: newSoundIds });
+        updateKeyBinding(selectedKey, binding.trackId, { soundIds: newSoundIds });
       }
 
       setTimeout(() => saveCurrentProfile(), 100);
@@ -245,7 +245,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   const displayName = binding.name || firstSound?.name || "";
 
   const handleNameChange = (newName: string) => {
-    updateKeyBinding(selectedKey, { name: newName || undefined });
+    updateKeyBinding(selectedKey, binding.trackId, { name: newName || undefined });
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => saveCurrentProfile(), 500);
   };
@@ -259,12 +259,12 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   };
 
   const handleLoopModeChange = (mode: LoopMode) => {
-    updateKeyBinding(selectedKey, { loopMode: mode, currentIndex: 0 });
+    updateKeyBinding(selectedKey, binding.trackId, { loopMode: mode, currentIndex: 0 });
     setTimeout(() => saveCurrentProfile(), 100);
   };
 
   const handleTrackChange = (trackId: string) => {
-    updateKeyBinding(selectedKey, { trackId });
+    updateKeyBinding(selectedKey, binding.trackId, { trackId });
     setTimeout(() => saveCurrentProfile(), 100);
   };
 

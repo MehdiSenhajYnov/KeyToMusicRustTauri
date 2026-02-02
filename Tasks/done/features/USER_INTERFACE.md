@@ -55,7 +55,7 @@
   - [x] Créer le store avec zustand
   - [x] Implémenter les actions: setConfig, updateConfig
   - [x] Implémenter les actions spécifiques: setMasterVolume, toggleAutoMomentum, toggleKeyDetection
-  - [x] Implémenter: setMasterStopShortcut, setCrossfadeDuration, setKeyCooldown
+  - [x] Implémenter: setStopAllShortcut, setCrossfadeDuration, setKeyCooldown
 
 ## 4.4 Hooks Custom
 
@@ -170,16 +170,16 @@
   - [x] Indicateur visuel ON/OFF (couleur, icône)
   - [x] Appeler les handlers qui invoquent `update_config`
 
-- [x] **4.8.3** Créer `src/components/Controls/MasterStopButton.tsx`
+- [x] **4.8.3** Créer `src/components/Controls/StopAllButton.tsx`
   - [x] Props: onClick
-  - [x] Gros bouton rouge "Master Stop"
+  - [x] Gros bouton rouge "Stop All"
   - [x] Icône stop
   - [x] Au click: invoke('stop_all_sounds')
   - [x] Animation/feedback visuel au click
 
 - [x] **4.8.4** Assembler dans Sidebar
   - [x] Créer une section "Controls" dans Sidebar
-  - [x] Inclure GlobalToggles et MasterStopButton
+  - [x] Inclure GlobalToggles et StopAllButton
   - [x] Organiser verticalement avec espacement
 
 ## 4.9 Now Playing Component
@@ -334,7 +334,7 @@
 - [x] **4.13.5** Étape 3: Configuration
   - [x] Input pour les touches à assigner (texte: "adgk")
   - [x] Parser les touches entrées (voir utils/keyMapping)
-  - [x] Validation (touches valides, non déjà assignées au Master Stop)
+  - [x] Validation (touches valides, non déjà assignées au Stop All)
   - [x] Dropdown pour choisir la piste (existantes + "New Track")
   - [x] Si "New Track": input pour le nom de la nouvelle piste
   - [x] Input number pour le momentum (secondes, décimales ok)
@@ -363,7 +363,7 @@
   - [x] Modal overlay
   - [x] Titre "Settings"
 
-- [x] **4.14.2** Section: Master Stop Shortcut
+- [x] **4.14.2** Section: Stop All Shortcut
   - [x] Afficher la combinaison actuelle (formaté: "Ctrl+Shift+S")
   - [x] Bouton "Change"
   - [x] Au click: mode capture
@@ -372,7 +372,7 @@
   - [x] Afficher les touches capturées en temps réel
   - [x] Bouton "Save" pour confirmer
   - [x] Validation (au moins 2 touches, combinaison valide)
-  - [x] Appeler `invoke('set_master_stop_shortcut', {keys})`
+  - [x] Appeler `invoke('set_stop_all_shortcut', {keys})`
 
 - [x] **4.14.3** Section: Crossfade Duration
   - [x] Slider (100ms à 2000ms)

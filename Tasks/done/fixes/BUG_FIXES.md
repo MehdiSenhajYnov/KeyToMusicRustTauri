@@ -26,11 +26,11 @@
   - [x] Uses `removeKeyBinding` with confirmation dialog
   **✅ Complété** - SoundDetails.tsx
 
-## 4.5.2 Master Stop & Key Detection
+## 4.5.2 Stop All & Key Detection
 
-- [x] **4.5.2.1** Fix Master Stop not working when app is focused
+- [x] **4.5.2.1** Fix Stop All not working when app is focused
   - [x] Added browser keyboard handler with pressed keys tracking (useRef<Set<string>>)
-  - [x] On keydown: checks if all masterStopShortcut keys are pressed
+  - [x] On keydown: checks if all StopAllShortcut keys are pressed
   - [x] On keyup: removes key from set
   **✅ Complété** - useKeyDetection.ts
 

@@ -122,10 +122,10 @@ export async function setKeyDetection(enabled: boolean): Promise<void> {
   return invoke("set_key_detection", { enabled });
 }
 
-export async function setMasterStopShortcut(
+export async function setStopAllShortcut(
   keys: string[]
 ): Promise<void> {
-  return invoke("set_master_stop_shortcut", { keys });
+  return invoke("set_stop_all_shortcut", { keys });
 }
 
 export async function setKeyCooldown(cooldownMs: number): Promise<void> {

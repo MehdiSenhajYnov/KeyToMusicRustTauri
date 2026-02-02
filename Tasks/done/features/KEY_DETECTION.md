@@ -15,7 +15,7 @@
 - [x] **3.1.2** Créer `src-tauri/src/keys/detector.rs` (structure)
   - [x] Définir la struct `KeyDetector`
   - [x] Ajouter les champs: enabled, last_key_time, cooldown, pressed_keys
-  - [x] Ajouter le champ `master_stop_shortcut: Vec<String>`
+  - [x] Ajouter le champ `stop_all_shortcut: Vec<String>`
   - [x] Utiliser Arc<Mutex<>> pour le thread safety
   **✅ Complété** - KeyDetector Clone-able avec tous les champs Arc<Mutex<>>
 
@@ -33,12 +33,12 @@
   - [x] Mettre à jour last_key_time après déclenchement
   **✅ Complété** - Logique complète avec tracking des releases même quand disabled
 
-- [x] **3.1.5** Implémenter la détection du Master Stop
+- [x] **3.1.5** Implémenter la détection du Stop All
   - [x] Implémenter `is_shortcut_pressed(pressed_keys, shortcut_keys) -> bool`
   - [x] Vérifier si toutes les touches du shortcut sont pressées
-  - [x] Émettre un event spécial MasterStop
-  - [x] Bloquer les autres événements de touches pendant le Master Stop
-  **✅ Complété** - Master Stop vérifié avant le cooldown, bloque les events normaux
+  - [x] Émettre un event spécial StopAll
+  - [x] Bloquer les autres événements de touches pendant le Stop All
+  **✅ Complété** - Stop All vérifié avant le cooldown, bloque les events normaux
 
 - [x] **3.1.6** Détecter les modificateurs
   - [x] Détecter si Shift (Left ou Right) est pressé
@@ -49,7 +49,7 @@
 ## 3.2 Mapping des Touches
 
 - [x] **3.2.1** Créer `src-tauri/src/keys/mapping.rs`
-  - [x] Définir l'enum `KeyEvent` (KeyPressed, MasterStop)
+  - [x] Définir l'enum `KeyEvent` (KeyPressed, StopAll)
   - [x] Implémenter `key_to_code(key: rdev::Key) -> String`
   - [x] Mapper toutes les lettres (A-Z → KeyA-KeyZ)
   - [x] Mapper tous les chiffres (0-9 → Digit0-Digit9)
@@ -74,11 +74,11 @@
   - [x] Les events sont émis vers le frontend qui gère la logique de binding/son
   **✅ Complété** - Architecture: KeyDetector → Tauri events → Frontend gère les bindings
 
-- [x] **3.3.2** Gérer le Master Stop
-  - [x] Implémenter `handle_master_stop()` dans le callback setup()
+- [x] **3.3.2** Gérer le Stop All
+  - [x] Implémenter `handle_stop_all()` dans le callback setup()
   - [x] Arrêter tous les sons de toutes les pistes via audio_engine.stop_all()
-  - [x] Émettre un event `master_stop_triggered`
-  **✅ Complété** - Master Stop arrête l'audio et émet l'event
+  - [x] Émettre un event `stop_all_triggered`
+  **✅ Complété** - Stop All arrête l'audio et émet l'event
 
 ## 3.4 Commandes et State
 
@@ -90,7 +90,7 @@
 
 - [x] **3.4.2** Créer les commandes de touches dans `commands.rs`
   - [x] `set_key_detection(enabled: bool) -> Result<(), String>`
-  - [x] `set_master_stop_shortcut(keys: Vec<String>) -> Result<(), String>`
+  - [x] `set_stop_all_shortcut(keys: Vec<String>) -> Result<(), String>`
   - [x] `set_key_cooldown(cooldown_ms: u32) -> Result<(), String>` (bonus)
   **✅ Complété** - 3 commandes avec validation et sync config+detector
 
@@ -101,5 +101,5 @@
 
 - [x] **3.5.1** Émettre les events de touches
   - [x] Émettre `key_pressed` avec {keyCode, withShift}
-  - [x] Émettre `master_stop_triggered`
+  - [x] Émettre `stop_all_triggered`
   **✅ Complété** - Events émis via tauri::Emitter dans le callback

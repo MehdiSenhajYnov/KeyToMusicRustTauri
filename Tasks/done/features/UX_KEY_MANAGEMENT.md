@@ -73,8 +73,8 @@
 ## 4.6.6 Global Shortcuts Consistency
 
 - [x] **4.6.6.1** All global shortcuts work regardless of key detection state
-  - [x] Moved master stop and auto-momentum shortcut checks before the `enabled` guard in detector.rs
-  - [x] All three shortcuts (key detection, master stop, auto-momentum) now fire even when detection is off, both in foreground and background
+  - [x] Moved Stop All and auto-momentum shortcut checks before the `enabled` guard in detector.rs
+  - [x] All three shortcuts (key detection, Stop All, auto-momentum) now fire even when detection is off, both in foreground and background
   **✅ Complété** - detector.rs
 
 - [x] **4.6.6.2** Fix sticky modifier keys (Alt/Ctrl stuck after window switch)

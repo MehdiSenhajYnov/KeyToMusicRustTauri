@@ -2,9 +2,8 @@
 //! This implementation uses RegisterRawInputDevices and processes WM_INPUT messages
 //! in a hidden message-only window, which should work regardless of window focus.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use tracing::{debug, info, warn};
 use windows::Win32::Devices::HumanInterfaceDevice::{
     HID_USAGE_GENERIC_KEYBOARD, HID_USAGE_PAGE_GENERIC,
@@ -30,23 +29,15 @@ pub enum WinKeyEvent {
 /// Global sender for the keyboard events
 static KEY_SENDER: OnceLock<Sender<WinKeyEvent>> = OnceLock::new();
 
-/// Global flag indicating if key detection is enabled
-/// When false, textual keys (letters, digits, space, etc.) are not sent to avoid interfering with text inputs
-static KEY_DETECTION_ENABLED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
-
 /// Start listening for global keyboard events using Raw Input API.
 /// This function blocks and runs the Windows message loop.
 /// Call this from a dedicated thread.
-///
-/// The `enabled` flag is checked before sending textual keys (letters, digits, space, etc.)
-/// to avoid interfering with text inputs when key detection is disabled.
-pub fn listen_windows<F>(callback: F, enabled: Arc<AtomicBool>)
+pub fn listen_windows<F>(callback: F)
 where
     F: Fn(WinKeyEvent) + Send + 'static,
 {
     let (tx, rx) = channel::<WinKeyEvent>();
     KEY_SENDER.set(tx).ok();
-    KEY_DETECTION_ENABLED.set(enabled).ok();
 
     // Spawn a thread to process received events
     std::thread::spawn(move || {
@@ -148,28 +139,6 @@ unsafe extern "system" fn raw_input_wnd_proc(
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
-/// Check if a virtual key code represents a textual key that should be filtered
-/// when key detection is disabled (to allow normal typing in text inputs)
-fn is_textual_key(vk: u32) -> bool {
-    matches!(
-        vk,
-        // Letters A-Z
-        0x41..=0x5A |
-        // Digits 0-9 (top row)
-        0x30..=0x39 |
-        // Space
-        0x20 |
-        // Numpad 0-9
-        0x60..=0x69 |
-        // Numpad operators
-        0x6A | 0x6B | 0x6C | 0x6D | 0x6E | 0x6F |
-        // Punctuation and symbols
-        0xBA | 0xBB | 0xBC | 0xBD | 0xBE | 0xBF | 0xC0 | 0xDB | 0xDC | 0xDD | 0xDE | 0xE2 |
-        // Backspace, Tab, Enter
-        0x08 | 0x09 | 0x0D
-    )
-}
-
 /// Process a raw input event
 unsafe fn process_raw_input(hrawinput: HRAWINPUT) {
     let mut size: u32 = 0;
@@ -222,16 +191,6 @@ unsafe fn process_raw_input(hrawinput: HRAWINPUT) {
             "[WinRawInput] Raw input: vk=0x{:02X} scan=0x{:02X} flags=0x{:02X} extended={} keyup={} code={}",
             vk_code, scan_code, flags, is_extended, is_key_up, key_code
         );
-
-        // Filter textual keys when key detection is disabled to avoid interfering with text inputs
-        if is_textual_key(vk_code as u32) {
-            if let Some(enabled_flag) = KEY_DETECTION_ENABLED.get() {
-                if !enabled_flag.load(Ordering::Relaxed) {
-                    debug!("[WinRawInput] Key detection disabled, filtering textual key: {}", key_code);
-                    return;
-                }
-            }
-        }
 
         if let Some(sender) = KEY_SENDER.get() {
             let event = if is_key_up {

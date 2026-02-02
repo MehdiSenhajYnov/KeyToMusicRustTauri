@@ -81,7 +81,7 @@
 - [ ] **10.3.2** Test des touches
   - [ ] Tester la détection en arrière-plan (fenêtre non focusée)
   - [ ] Tester le cooldown
-  - [ ] Tester le Master Stop
+  - [ ] Tester le Stop All
   - [ ] Tester avec Shift pour momentum
   - [ ] Tester la désactivation lors du focus d'input
 

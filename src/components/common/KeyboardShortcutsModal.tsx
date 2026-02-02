@@ -67,8 +67,8 @@ export function KeyboardShortcutsModal({ onClose }: KeyboardShortcutsModalProps)
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const masterStop = config.masterStopShortcut.length > 0
-    ? formatShortcut(config.masterStopShortcut).split("+")
+  const stopAll = config.stopAllShortcut.length > 0
+    ? formatShortcut(config.stopAllShortcut).split("+")
     : null;
   const autoMomentum = config.autoMomentumShortcut.length > 0
     ? formatShortcut(config.autoMomentumShortcut).split("+")
@@ -100,7 +100,7 @@ export function KeyboardShortcutsModal({ onClose }: KeyboardShortcutsModalProps)
           {/* Global Shortcuts */}
           <section>
             <SectionHeader>Global Shortcuts</SectionHeader>
-            <ShortcutRow label="Master Stop" keys={masterStop} />
+            <ShortcutRow label="Stop All" keys={stopAll} />
             <ShortcutRow label="Toggle Auto-Momentum" keys={autoMomentum} />
             <ShortcutRow label="Toggle Key Detection" keys={keyDetection} />
             <ShortcutRow label="Momentum Modifier" keys={momentumMod} />

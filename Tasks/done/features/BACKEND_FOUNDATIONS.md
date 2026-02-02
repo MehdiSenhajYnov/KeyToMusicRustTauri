@@ -25,7 +25,7 @@
   - [x] Ajouter les variantes pour erreurs YouTube (InvalidYouTubeUrl, YouTubeDownloadFailed, YtDlpNotFound)
   - [x] Ajouter les variantes pour erreurs storage (ProfileNotFound, SaveFailed, LoadFailed)
   - [x] Ajouter les variantes pour erreurs import/export (InvalidExportFile, ExportFailed)
-  - [x] Ajouter les variantes pour erreurs keys (KeyAlreadyAssigned, InvalidMasterStopShortcut)
+  - [x] Ajouter les variantes pour erreurs keys (KeyAlreadyAssigned, InvalidStopAllShortcut)
   - [x] Implémenter les messages d'erreur avec #[error("...")]
   **✅ Complété** - AppError enum avec From<AppError> pour String et Serialize impl
 
@@ -62,7 +62,7 @@
   - [x] Implémenter `get_config() -> Result<AppConfig, String>`
   - [x] Implémenter `update_config(updates: serde_json::Value) -> Result<(), String>`
   - [x] Implémenter la fusion partielle des updates avec la config existante
-  **✅ Complété** - Merge partiel de tous les champs dont masterStopShortcut et currentProfileId (nullable)
+  **✅ Complété** - Merge partiel de tous les champs dont StopAllShortcut et currentProfileId (nullable)
 
 - [x] **1.3.2** Créer les commandes de profils dans `commands.rs`
   - [x] Implémenter `list_profiles() -> Result<Vec<ProfileSummary>, String>`

@@ -139,7 +139,7 @@ keytomusic/
 │   │   │   ├── KeyGrid.tsx             # Grille visuelle des touches assignées
 │   │   │   └── KeyCaptureSlot.tsx      # Capture de touche (binding + modifier support)
 │   │   ├── Controls/
-│   │   │   ├── MasterStopButton.tsx    # Bouton Master Stop
+│   │   │   ├── StopAllButton.tsx    # Bouton Stop All
 │   │   │   ├── GlobalToggles.tsx       # Toggles (key detection, auto-momentum)
 │   │   │   └── NowPlaying.tsx          # Tracks en cours de lecture (seekable)
 │   │   ├── Profiles/
@@ -368,7 +368,7 @@ interface AppConfig {
   masterVolume: number;           // 0.0 à 1.0
   autoMomentum: boolean;          // Si true, tous les sons démarrent au momentum
   keyDetectionEnabled: boolean;   // Si true, les touches sont détectées
-  masterStopShortcut: KeyCode[];  // Combinaison de touches (ex: ["ControlLeft", "ShiftLeft", "KeyS"])
+  stopAllShortcut: KeyCode[];  // Combinaison de touches (ex: ["ControlLeft", "ShiftLeft", "KeyS"])
   autoMomentumShortcut: KeyCode[];  // Shortcut pour toggle auto-momentum
   keyDetectionShortcut: KeyCode[];  // Shortcut pour toggle key detection (fonctionne même si désactivé)
   crossfadeDuration: number;      // Durée du crossfade en millisecondes (défaut: 500)
@@ -443,7 +443,7 @@ type BackendEvent =
   | { type: "sound_ended"; trackId: TrackId; soundId: SoundId }
   | { type: "playback_progress"; trackId: TrackId; position: number }
   | { type: "key_pressed"; keyCode: KeyCode; withShift: boolean }
-  | { type: "master_stop_triggered" }
+  | { type: "stop_all_triggered" }
   | { type: "toggle_key_detection" }
   | { type: "toggle_auto_momentum" }
   | { type: "youtube_download_progress"; downloadId: string; status: string; progress: number | null }
@@ -543,7 +543,7 @@ pub struct AppConfig {
     pub master_volume: f32,
     pub auto_momentum: bool,
     pub key_detection_enabled: bool,
-    pub master_stop_shortcut: Vec<KeyCode>,
+    pub stop_all_shortcut: Vec<KeyCode>,
     #[serde(default)]
     pub auto_momentum_shortcut: Vec<KeyCode>,
     #[serde(default)]
@@ -567,7 +567,7 @@ impl Default for AppConfig {
             master_volume: 0.8,
             auto_momentum: false,
             key_detection_enabled: true,
-            master_stop_shortcut: vec!["ControlLeft".into(), "ShiftLeft".into(), "KeyS".into()],
+            stop_all_shortcut: vec!["ControlLeft".into(), "ShiftLeft".into(), "KeyS".into()],
             auto_momentum_shortcut: vec![],
             key_detection_shortcut: vec![],
             crossfade_duration: 500,
@@ -666,7 +666,7 @@ pub struct DiscoveryCacheData {
   "masterVolume": 0.8,
   "autoMomentum": false,
   "keyDetectionEnabled": true,
-  "masterStopShortcut": ["ControlLeft", "ShiftLeft", "KeyS"],
+  "stopAllShortcut": ["ControlLeft", "ShiftLeft", "KeyS"],
   "autoMomentumShortcut": [],
   "keyDetectionShortcut": [],
   "crossfadeDuration": 500,
@@ -827,7 +827,7 @@ QUAND touche_pressée(key_code):
     
     ACTIVER cooldown_global (200ms par défaut)
     
-    SI key_code == master_stop_shortcut:
+    SI key_code == stop_all_shortcut:
         STOPPER tous les sons de toutes les pistes
         RETOURNER
     
@@ -1130,7 +1130,7 @@ pub struct KeyDetector {
     enabled: Arc<Mutex<bool>>,
     cooldown_ms: Arc<Mutex<u32>>,
     pressed_keys: Arc<Mutex<HashSet<String>>>,
-    master_stop_shortcut: Arc<Mutex<Vec<String>>>,
+    stop_all_shortcut: Arc<Mutex<Vec<String>>>,
     key_detection_shortcut: Arc<Mutex<Vec<String>>>,
     auto_momentum_shortcut: Arc<Mutex<Vec<String>>>,
 }
@@ -1142,7 +1142,7 @@ impl KeyDetector {
             last_key_time: Arc::new(Mutex::new(Instant::now() - Duration::from_secs(10))),
             cooldown: Duration::from_millis(cooldown_ms as u64),
             pressed_keys: Arc::new(Mutex::new(HashSet::new())),
-            master_stop_shortcut: Arc::new(Mutex::new(vec![])),
+            stop_all_shortcut: Arc::new(Mutex::new(vec![])),
         }
     }
     
@@ -1152,7 +1152,7 @@ impl KeyDetector {
     {
         let enabled = self.enabled.clone();
         let pressed_keys = self.pressed_keys.clone();
-        let master_stop_shortcut = self.master_stop_shortcut.clone();
+        let stop_all_shortcut = self.stop_all_shortcut.clone();
         let key_detection_shortcut = self.key_detection_shortcut.clone();
         let auto_momentum_shortcut = self.auto_momentum_shortcut.clone();
 
@@ -1178,11 +1178,11 @@ impl KeyDetector {
                         }
                         drop(kd_keys);
 
-                        // Master stop shortcut
-                        let stop_keys = master_stop_shortcut.lock().unwrap();
+                        // Stop All shortcut
+                        let stop_keys = stop_all_shortcut.lock().unwrap();
                         if !stop_keys.is_empty() && is_shortcut_pressed(&pressed, &stop_keys) {
                             drop(pressed); drop(stop_keys);
-                            callback(KeyEvent::MasterStop);
+                            callback(KeyEvent::StopAll);
                             return;
                         }
                         drop(stop_keys);
@@ -1220,7 +1220,7 @@ impl KeyDetector {
 
 pub enum KeyEvent {
     KeyPressed { key_code: String, with_shift: bool },
-    MasterStop,
+    StopAll,
     ToggleKeyDetection,
     ToggleAutoMomentum,
 }
@@ -1281,7 +1281,7 @@ Timeline:
 
 ### 6.4 Shortcuts en Foreground
 
-Tous les raccourcis globaux (Master Stop, Auto-Momentum toggle, Key Detection toggle) fonctionnent aussi quand l'application est au premier plan via un handler clavier navigateur:
+Tous les raccourcis globaux (Stop All, Auto-Momentum toggle, Key Detection toggle) fonctionnent aussi quand l'application est au premier plan via un handler clavier navigateur:
 
 ```typescript
 // Track pressed keys in a Set (uses character-based codes for layout support)
@@ -1296,7 +1296,7 @@ recordKeyLayout(resolvedCode, e.key);
 if (config.keyDetectionShortcut.every(k => pressedKeysRef.current.has(k))) {
     toggleKeyDetection();
 }
-if (config.masterStopShortcut.every(k => pressedKeysRef.current.has(k))) {
+if (config.stopAllShortcut.every(k => pressedKeysRef.current.has(k))) {
     commands.stopAllSounds();
 }
 if (config.autoMomentumShortcut.every(k => pressedKeysRef.current.has(k))) {
@@ -1768,13 +1768,13 @@ interface ControlsSidebarProps {
   keyDetectionEnabled: boolean;
   onAutoMomentumToggle: () => void;
   onKeyDetectionToggle: () => void;
-  onMasterStop: () => void;
+  onStopAll: () => void;
 }
 
 // Fonctionnalités:
 // - Toggle Auto-Momentum (avec indicateur visuel ON/OFF)
 // - Toggle Détection Touches (avec indicateur)
-// - Bouton Master Stop (gros bouton rouge)
+// - Bouton Stop All (gros bouton rouge)
 ```
 
 #### 9.3.4 Sidebar - Now Playing
@@ -1923,7 +1923,7 @@ interface SettingsModalProps {
 }
 
 // Contenu:
-// - Master Stop Shortcut: Affichage + bouton "Change" + bouton "Clear"
+// - Stop All Shortcut: Affichage + bouton "Change" + bouton "Clear"
 //   -> Mode capture: "Press keys..." (uses charToKeyCode for layout support)
 // - Auto-Momentum Shortcut: Affichage + "Change" / "Clear"
 // - Key Detection Shortcut: Affichage + "Change" / "Clear"
@@ -2444,8 +2444,8 @@ pub enum AppError {
     #[error("Key already assigned: {key_code}")]
     KeyAlreadyAssigned { key_code: String },
     
-    #[error("Invalid key combination for master stop")]
-    InvalidMasterStopShortcut,
+    #[error("Invalid key combination for Stop All")]
+    InvalidStopAllShortcut,
 }
 ```
 
@@ -2458,7 +2458,7 @@ pub enum AppError {
 | `InvalidYouTubeUrl` | "L'URL YouTube n'est pas valide" |
 | `YouTubeDownloadFailed` | "Échec du téléchargement. Vérifiez votre connexion et l'URL" |
 | `YtDlpNotFound` | "yt-dlp n'est pas installé. Installez-le pour télécharger depuis YouTube" |
-| `KeyAlreadyAssigned` | "Cette touche est déjà utilisée pour le Master Stop. Choisissez une autre touche" |
+| `KeyAlreadyAssigned` | "Cette touche est déjà utilisée pour le Stop All. Choisissez une autre touche" |
 
 ### 12.3 Son d'Erreur
 
@@ -2594,7 +2594,7 @@ mkdir -p resources/sounds resources/icons
 8. **Détecteur de touches** (`src-tauri/src/keys/detector.rs`)
    - Capture globale avec rdev
    - Cooldown
-   - Master Stop
+   - Stop All
 
 #### Phase 4 : Interface Utilisateur
 
@@ -2694,7 +2694,7 @@ fn set_profile_bindings(state: State<AppState>, bindings: Vec<String>) -> Result
 async fn set_key_detection(enabled: bool) -> Result<(), String>;
 
 #[tauri::command]
-async fn set_master_stop_shortcut(keys: Vec<String>) -> Result<(), String>;
+async fn set_stop_all_shortcut(keys: Vec<String>) -> Result<(), String>;
 
 #[tauri::command]
 fn set_key_cooldown(state: State<AppState>, cooldown_ms: u32) -> Result<(), String>;
@@ -2847,7 +2847,7 @@ useEffect(() => {
 - `sound_ended` - `{ trackId, soundId }` - Un son a fini de jouer
 - `playback_progress` - `{ trackId, position }` - Position de lecture (émis toutes les 250ms)
 - `key_pressed` - `{ keyCode, withShift }` - Touche détectée
-- `master_stop_triggered` - `{}` - Master stop activé
+- `stop_all_triggered` - `{}` - Stop All activé
 - `toggle_key_detection` - `{}` - Toggle raccourci détection
 - `toggle_auto_momentum` - `{}` - Toggle raccourci auto-momentum
 - `sound_not_found` - `{ soundId, path, trackId }` - Fichier audio introuvable
@@ -3480,7 +3480,7 @@ pub struct WaveformRequest {
 
 | Action | Raccourci | Note |
 |--------|-----------|------|
-| Master Stop | `Ctrl + Shift + S` (configurable) | Fonctionne même si Key Detection est off |
+| Stop All | `Ctrl + Shift + S` (configurable) | Fonctionne même si Key Detection est off |
 | Toggle Key Detection | Configurable dans Settings | Fonctionne même si Key Detection est off |
 | Toggle Auto-Momentum | Configurable dans Settings | Fonctionne même si Key Detection est off |
 | Momentum Modifier | `Shift` (configurable: Shift/Ctrl/Alt/None) | Configurable dans Settings > Key Detection |

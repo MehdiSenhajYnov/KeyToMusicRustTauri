@@ -178,7 +178,7 @@ export function useKeyDetection() {
       }
     );
 
-    const unlistenStop = listen("master_stop_triggered", () => {
+    const unlistenStop = listen("stop_all_triggered", () => {
       setLastKeyPressed(null);
     });
 
@@ -246,8 +246,8 @@ export function useKeyDetection() {
       }
 
       if (
-        config.masterStopShortcut.length > 0 &&
-        config.masterStopShortcut.every((k) => pressedKeysRef.current.has(k))
+        config.stopAllShortcut.length > 0 &&
+        config.stopAllShortcut.every((k) => pressedKeysRef.current.has(k))
       ) {
         e.preventDefault();
         return;

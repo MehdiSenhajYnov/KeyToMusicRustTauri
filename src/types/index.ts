@@ -59,7 +59,7 @@ export interface AppConfig {
   masterVolume: number;           // 0.0 à 1.0
   autoMomentum: boolean;          // Si true, tous les sons démarrent au momentum
   keyDetectionEnabled: boolean;   // Si true, les touches sont détectées
-  masterStopShortcut: KeyCode[];  // Combinaison de touches (ex: ["ControlLeft", "ShiftLeft", "KeyS"])
+  stopAllShortcut: KeyCode[];     // Combinaison de touches (ex: ["ControlLeft", "ShiftLeft", "KeyS"])
   autoMomentumShortcut: KeyCode[];  // Shortcut pour toggle auto-momentum
   keyDetectionShortcut: KeyCode[];  // Shortcut pour toggle key detection (fonctionne même si désactivé)
   crossfadeDuration: number;      // Durée du crossfade en millisecondes (défaut: 500)

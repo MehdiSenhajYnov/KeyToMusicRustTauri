@@ -5,7 +5,7 @@ use rdev::Key;
 #[derive(Debug, Clone)]
 pub enum KeyEvent {
     KeyPressed { key_code: String, with_shift: bool },
-    MasterStop,
+    StopAll,
     ToggleKeyDetection,
     ToggleAutoMomentum,
 }

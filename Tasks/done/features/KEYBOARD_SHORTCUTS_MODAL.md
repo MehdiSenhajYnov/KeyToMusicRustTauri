@@ -8,7 +8,7 @@
 
 ## Vue d'ensemble
 
-L'app a 15+ raccourcis clavier et interactions souris repartis dans differents contextes (global, modals, grid, discovery, waveform). Aucun moyen de les decouvrir sauf en lisant le code. Les shortcuts globaux (Master Stop, Auto-Momentum, Key Detection) sont configurables mais leur valeur actuelle n'est visible que dans Settings.
+L'app a 15+ raccourcis clavier et interactions souris repartis dans differents contextes (global, modals, grid, discovery, waveform). Aucun moyen de les decouvrir sauf en lisant le code. Les shortcuts globaux (Stop All, Auto-Momentum, Key Detection) sont configurables mais leur valeur actuelle n'est visible que dans Settings.
 
 Le modal d'aide resout ca : un seul endroit pour tout voir, avec les raccourcis configurables affiches avec leur valeur actuelle depuis `settingsStore`.
 
@@ -45,7 +45,7 @@ Taille : `w-[520px] max-h-[80vh]` (legerement plus large que Settings pour les 2
 │                                                  │
 │ GLOBAL SHORTCUTS                                 │
 │ ─────────────────────────────                    │
-│ Master Stop       Ctrl + Shift + S     ← config │
+│ Stop All       Ctrl + Shift + S     ← config │
 │ Toggle Auto-Mom.  (not set)            ← config │
 │ Toggle Key Det.   (not set)            ← config │
 │ Momentum Mod.     Shift + key          ← config │
@@ -122,7 +122,7 @@ interface KeyboardShortcutsModalProps {
 
 **Contenu dynamique :**
 Le composant lit directement depuis `useSettingsStore` pour les raccourcis configurables :
-- `config.masterStopShortcut` → affiche via `formatShortcut()` de `utils/keyMapping.ts`
+- `config.StopAllShortcut` → affiche via `formatShortcut()` de `utils/keyMapping.ts`
 - `config.autoMomentumShortcut` → idem, ou "(not set)" si tableau vide
 - `config.keyDetectionShortcut` → idem
 - `config.momentumModifier` → affiche "Shift + key", "Ctrl + key", "Alt + key", ou "Disabled"
@@ -250,7 +250,7 @@ useEffect(() => {
 
 | Action | Source | Defaut |
 |--------|--------|--------|
-| Master Stop | `config.masterStopShortcut` → `formatShortcut()` | Ctrl + Shift + S |
+| Stop All | `config.StopAllShortcut` → `formatShortcut()` | Ctrl + Shift + S |
 | Toggle Auto-Momentum | `config.autoMomentumShortcut` → `formatShortcut()` ou "(not set)" | (not set) |
 | Toggle Key Detection | `config.keyDetectionShortcut` → `formatShortcut()` ou "(not set)" | (not set) |
 | Momentum Modifier | `config.momentumModifier` → "Shift/Ctrl/Alt + key" ou "Disabled" | Shift + key |
@@ -317,5 +317,5 @@ useEffect(() => {
 - **Pas de nouvelle dependance** : tout est du React/Tailwind standard
 - **Code splitting** : le modal est lazy-loaded (meme pattern que SettingsModal) — zero impact sur le startup
 - **Coherence** : meme backdrop, meme container, meme `SectionHeader`, meme gestion Escape que les modals existants
-- **Dynamique** : les raccourcis configurables se mettent a jour automatiquement via `useSettingsStore` — changer Master Stop dans Settings se reflete instantanement dans le modal d'aide
+- **Dynamique** : les raccourcis configurables se mettent a jour automatiquement via `useSettingsStore` — changer Stop All dans Settings se reflete instantanement dans le modal d'aide
 - **Plateforme** : les raccourcis affichent Cmd sur macOS, Ctrl sur Windows/Linux (meme detection que `useUndoRedo.ts:26`)

@@ -763,7 +763,7 @@ function SuggestionCard({
   const finishCapture = useCallback(
     (combo: string) => {
       const conflict = checkShortcutConflicts(combo, {
-        masterStopShortcut: config.masterStopShortcut,
+        stopAllShortcut: config.stopAllShortcut,
         autoMomentumShortcut: config.autoMomentumShortcut,
         keyDetectionShortcut: config.keyDetectionShortcut,
       });

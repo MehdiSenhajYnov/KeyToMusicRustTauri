@@ -99,7 +99,7 @@ pub struct AppConfig {
     pub master_volume: f32,
     pub auto_momentum: bool,
     pub key_detection_enabled: bool,
-    pub master_stop_shortcut: Vec<KeyCode>,
+    pub stop_all_shortcut: Vec<KeyCode>,
     #[serde(default)]
     pub auto_momentum_shortcut: Vec<KeyCode>,
     #[serde(default)]
@@ -127,7 +127,7 @@ impl Default for AppConfig {
             master_volume: 0.8,
             auto_momentum: false,
             key_detection_enabled: true,
-            master_stop_shortcut: vec![
+            stop_all_shortcut: vec![
                 "ControlLeft".into(),
                 "ShiftLeft".into(),
                 "KeyS".into(),

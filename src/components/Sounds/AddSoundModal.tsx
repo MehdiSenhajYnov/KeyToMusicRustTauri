@@ -42,6 +42,51 @@ interface FileEntry {
   source?: SoundSource;
 }
 
+/** Reactive badges that display suggested momentum (re-renders when waveform arrives) */
+const FileMomentumBadges = React.memo(function FileMomentumBadges({
+  path,
+  momentum,
+  onApply,
+  size = "sm",
+}: {
+  path: string;
+  momentum: number;
+  onApply: (suggested: number) => void;
+  size?: "sm" | "md";
+}) {
+  const waveform = useWaveformStore((state) => state.waveforms.get(path));
+  const suggested = waveform?.suggestedMomentum;
+
+  if (suggested == null) return null;
+
+  // Show inline "Auto" badge only if suggestion differs significantly
+  if (size === "sm" && Math.abs(suggested - momentum) > 0.3) {
+    return (
+      <span
+        className="shrink-0 px-1 py-0.5 rounded text-[8px] font-medium
+                   bg-cyan-500/15 text-cyan-400 border border-cyan-500/30"
+        title={`Suggested: ${suggested.toFixed(1)}s`}
+      >
+        Auto
+      </span>
+    );
+  }
+
+  // Show full MomentumSuggestionBadge for momentum editor line
+  if (size === "md") {
+    return (
+      <MomentumSuggestionBadge
+        suggestedMomentum={suggested}
+        currentMomentum={momentum}
+        onApply={() => onApply(Math.round(suggested * 10) / 10)}
+        size="sm"
+      />
+    );
+  }
+
+  return null;
+});
+
 /** Memoized wrapper that manages its own waveform loading state per file.
  *  Streams partial waveform data from backend for a left-to-right reveal. */
 const FileWaveform = React.memo(function FileWaveform({
@@ -632,7 +677,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
 
   // Build conflict config for KeyCaptureSlot
   const conflictConfig = {
-    masterStopShortcut: config?.masterStopShortcut,
+    stopAllShortcut: config?.stopAllShortcut,
     autoMomentumShortcut: config?.autoMomentumShortcut,
     keyDetectionShortcut: config?.keyDetectionShortcut,
   };
@@ -1058,19 +1103,12 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                     <span className="text-text-primary text-xs flex-1 truncate">
                       {fileName}
                     </span>
-                    {(() => {
-                      const wf = useWaveformStore.getState().waveforms.get(file.path);
-                      return wf?.suggestedMomentum != null &&
-                        Math.abs(wf.suggestedMomentum - file.momentum) > 0.3 ? (
-                        <span
-                          className="shrink-0 px-1 py-0.5 rounded text-[8px] font-medium
-                                     bg-cyan-500/15 text-cyan-400 border border-cyan-500/30"
-                          title={`Suggested: ${wf.suggestedMomentum.toFixed(1)}s`}
-                        >
-                          Auto
-                        </span>
-                      ) : null;
-                    })()}
+                    <FileMomentumBadges
+                      path={file.path}
+                      momentum={file.momentum}
+                      onApply={(suggested) => handleMomentumChange(i, suggested)}
+                      size="sm"
+                    />
                     <button
                       onClick={() => handleRemovePath(i)}
                       className="text-text-muted hover:text-accent-error text-sm shrink-0"
@@ -1103,17 +1141,12 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                       {isPreviewing ? "\u25A0" : "\u25B6"}
                     </button>
                     <span className="text-text-secondary whitespace-nowrap">Momentum:</span>
-                    {(() => {
-                      const wf = useWaveformStore.getState().waveforms.get(file.path);
-                      return wf?.suggestedMomentum != null ? (
-                        <MomentumSuggestionBadge
-                          suggestedMomentum={wf.suggestedMomentum}
-                          currentMomentum={file.momentum}
-                          onApply={() => handleMomentumChange(i, Math.round(wf.suggestedMomentum! * 10) / 10)}
-                          size="sm"
-                        />
-                      ) : null;
-                    })()}
+                    <FileMomentumBadges
+                      path={file.path}
+                      momentum={file.momentum}
+                      onApply={(suggested) => handleMomentumChange(i, suggested)}
+                      size="md"
+                    />
                     <input
                       type="number"
                       min="0"

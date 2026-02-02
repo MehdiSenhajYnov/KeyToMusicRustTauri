@@ -328,7 +328,7 @@ La logique "single-sound mode" vs "multi-sound mode" devrait rester basée sur l
 
 3. **Cooldown** — Le cooldown de 200ms s'applique-t-il globalement (une touche = un cooldown pour tous ses tracks) ou par binding ? **Recommandé : global par touche** — un appui = tous les tracks jouent, cooldown empêche le double-appui.
 
-4. **Master Stop** — Déjà correct : `engine.stop_all()` arrête tous les tracks.
+4. **Stop All** — Déjà correct : `engine.stop_all()` arrête tous les tracks.
 
 5. **Loop mode indépendant** — Chaque binding sur la même touche a son propre `loopMode` et `currentIndex`. Appuyer sur la touche avance chaque binding indépendamment.
 

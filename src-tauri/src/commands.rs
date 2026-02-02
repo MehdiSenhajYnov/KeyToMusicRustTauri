@@ -35,13 +35,13 @@ pub fn update_config(
         if let Some(v) = updates.get("keyCooldown").and_then(|v| v.as_u64()) {
             config.key_cooldown = v as u32;
         }
-        if let Some(v) = updates.get("masterStopShortcut").and_then(|v| v.as_array()) {
+        if let Some(v) = updates.get("stopAllShortcut").and_then(|v| v.as_array()) {
             let keys: Vec<String> = v
                 .iter()
                 .filter_map(|k| k.as_str().map(|s| s.to_string()))
                 .collect();
             if !keys.is_empty() {
-                config.master_stop_shortcut = keys;
+                config.stop_all_shortcut = keys;
             }
         }
         if let Some(v) = updates.get("autoMomentumShortcut").and_then(|v| v.as_array()) {
@@ -107,8 +107,8 @@ pub fn update_config(
     if updates.get("keyCooldown").is_some() {
         state.key_detector.set_cooldown(config.key_cooldown);
     }
-    if updates.get("masterStopShortcut").is_some() {
-        state.key_detector.set_master_stop_shortcut(config.master_stop_shortcut.clone());
+    if updates.get("stopAllShortcut").is_some() {
+        state.key_detector.set_stop_all_shortcut(config.stop_all_shortcut.clone());
     }
     if updates.get("autoMomentumShortcut").is_some() {
         state.key_detector.set_auto_momentum_shortcut(config.auto_momentum_shortcut.clone());
@@ -363,20 +363,20 @@ pub fn set_key_detection(state: State<'_, AppState>, enabled: bool) -> Result<()
 }
 
 #[tauri::command]
-pub fn set_master_stop_shortcut(
+pub fn set_stop_all_shortcut(
     state: State<'_, AppState>,
     keys: Vec<String>,
 ) -> Result<(), String> {
     if keys.len() < 2 {
-        return Err("Master stop shortcut must have at least 2 keys".to_string());
+        return Err("Stop all shortcut must have at least 2 keys".to_string());
     }
 
     // Update the detector
-    state.key_detector.set_master_stop_shortcut(keys.clone());
+    state.key_detector.set_stop_all_shortcut(keys.clone());
 
     // Update config
     state.update_config(|config| {
-        config.master_stop_shortcut = keys;
+        config.stop_all_shortcut = keys;
     });
     state.schedule_config_save();
     Ok(())

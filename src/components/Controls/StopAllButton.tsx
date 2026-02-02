@@ -1,6 +1,6 @@
 import { stopAllSounds } from "../../utils/tauriCommands";
 
-export function MasterStopButton() {
+export function StopAllButton() {
   const handleStop = async () => {
     try {
       await stopAllSounds();
@@ -14,7 +14,7 @@ export function MasterStopButton() {
       onClick={handleStop}
       className="w-full py-2 bg-accent-error/20 hover:bg-accent-error/40 text-accent-error font-semibold text-sm rounded transition-colors active:scale-95"
     >
-      Master Stop
+      Stop All
     </button>
   );
 }

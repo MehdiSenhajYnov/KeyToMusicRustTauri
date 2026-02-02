@@ -20,7 +20,7 @@ fn is_modifier_code(code: &str) -> bool {
 struct KeyDetectorConfig {
     enabled: bool,
     cooldown_ms: u32,
-    master_stop_shortcut: Vec<String>,
+    stop_all_shortcut: Vec<String>,
     key_detection_shortcut: Vec<String>,
     auto_momentum_shortcut: Vec<String>,
 }
@@ -38,17 +38,15 @@ pub struct KeyDetector {
     timer_running: Arc<AtomicBool>,
     /// Condvar to wake the timer thread when a chord is pending
     timer_notify: Arc<(Mutex<bool>, Condvar)>,
-    /// Atomic flag for enabled state (shared with platform listeners for efficient filtering)
-    enabled_flag: Arc<AtomicBool>,
 }
 
 impl KeyDetector {
-    pub fn new(cooldown_ms: u32, master_stop_shortcut: Vec<String>, chord_window_ms: u32) -> Self {
+    pub fn new(cooldown_ms: u32, stop_all_shortcut: Vec<String>, chord_window_ms: u32) -> Self {
         Self {
             config: Arc::new(RwLock::new(KeyDetectorConfig {
                 enabled: true,
                 cooldown_ms,
-                master_stop_shortcut,
+                stop_all_shortcut,
                 key_detection_shortcut: Vec::new(),
                 auto_momentum_shortcut: Vec::new(),
             })),
@@ -56,7 +54,6 @@ impl KeyDetector {
             chord_detector: ChordDetectorHandle::new(chord_window_ms),
             timer_running: Arc::new(AtomicBool::new(false)),
             timer_notify: Arc::new((Mutex::new(false), Condvar::new())),
-            enabled_flag: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -71,7 +68,6 @@ impl KeyDetector {
         let chord_detector = self.chord_detector.clone();
         let timer_running = self.timer_running.clone();
         let timer_notify_clone = self.timer_notify.clone();
-        let enabled_flag = self.enabled_flag.clone();
 
         let callback = Arc::new(callback);
 
@@ -103,12 +99,12 @@ impl KeyDetector {
                         return;
                     }
 
-                    if !cfg.master_stop_shortcut.is_empty()
-                        && is_shortcut_pressed(&pressed, &cfg.master_stop_shortcut)
+                    if !cfg.stop_all_shortcut.is_empty()
+                        && is_shortcut_pressed(&pressed, &cfg.stop_all_shortcut)
                     {
                         drop(pressed);
                         drop(cfg);
-                        cb(KeyEvent::MasterStop);
+                        cb(KeyEvent::StopAll);
                         return;
                     }
 
@@ -208,7 +204,7 @@ impl KeyDetector {
                         WinKeyEvent::Press(code) => handler(code, true),
                         WinKeyEvent::Release(code) => handler(code, false),
                     }
-                }, enabled_flag);
+                });
             }
 
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -284,9 +280,7 @@ impl KeyDetector {
     /// Enable or disable key detection.
     pub fn set_enabled(&self, enabled: bool) {
         self.config.write().unwrap().enabled = enabled;
-        self.enabled_flag.store(enabled, Ordering::SeqCst);
         if !enabled {
-            // Clear chord detector state when disabled
             self.chord_detector.clear();
         }
     }
@@ -296,9 +290,9 @@ impl KeyDetector {
         self.config.write().unwrap().cooldown_ms = cooldown_ms;
     }
 
-    /// Update the master stop shortcut keys.
-    pub fn set_master_stop_shortcut(&self, keys: Vec<String>) {
-        self.config.write().unwrap().master_stop_shortcut = keys;
+    /// Update the stop all shortcut keys.
+    pub fn set_stop_all_shortcut(&self, keys: Vec<String>) {
+        self.config.write().unwrap().stop_all_shortcut = keys;
     }
 
     /// Update the key detection toggle shortcut.
@@ -320,6 +314,14 @@ impl KeyDetector {
     /// Update the chord window duration.
     pub fn set_chord_window(&self, ms: u32) {
         self.chord_detector.set_chord_window(ms);
+    }
+
+    /// Clear all tracked pressed keys and chord state.
+    /// Called on window focus change to prevent stuck modifier keys
+    /// (e.g. Alt remaining "pressed" after Alt+Tab).
+    pub fn clear_pressed_keys(&self) {
+        self.pressed_keys.lock().unwrap().clear();
+        self.chord_detector.clear();
     }
 }
 

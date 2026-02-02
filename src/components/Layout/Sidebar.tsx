@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
 import { ProfileSelector } from "../Profiles/ProfileSelector";
 import { GlobalToggles } from "../Controls/GlobalToggles";
-import { MasterStopButton } from "../Controls/MasterStopButton";
+import { StopAllButton } from "../Controls/StopAllButton";
 import { NowPlaying } from "../Controls/NowPlaying";
 
 const DiscoveryPanel = lazy(() => import("../Discovery/DiscoveryPanel").then(m => ({ default: m.DiscoveryPanel })));
@@ -16,7 +16,7 @@ export function Sidebar() {
           Controls
         </h3>
         <GlobalToggles />
-        <MasterStopButton />
+        <StopAllButton />
       </div>
 
       <div className="border-t border-border-color flex-1 overflow-y-auto">
