@@ -1,6 +1,6 @@
 [package]
 name = "keytomusic"
-version = "1.0.1"
+version = "1.0.2"
 description = "Application de soundboard pour la lecture de mangas"
 authors = ["KeyToMusic Team"]
 license = ""
