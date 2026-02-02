@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppConfig, Profile, Sound, YoutubeSearchResult, YoutubePlaylist, WaveformData } from "../types";
+import type { AppConfig, Profile, Sound, YoutubeSearchResult, YoutubePlaylist, WaveformData, StreamUrlResult } from "../types";
 
 interface ProfileSummary {
   id: string;
@@ -144,6 +144,10 @@ export async function fetchPlaylist(url: string): Promise<YoutubePlaylist> {
   return invoke<YoutubePlaylist>("fetch_playlist", { url });
 }
 
+export async function getYoutubeStreamUrl(videoId: string): Promise<StreamUrlResult> {
+  return invoke<StreamUrlResult>("get_youtube_stream_url", { videoId });
+}
+
 export async function checkYtDlpInstalled(): Promise<boolean> {
   return invoke<boolean>("check_yt_dlp_installed");
 }
@@ -267,12 +271,42 @@ export async function openFolder(path: string): Promise<void> {
 
 import type { DiscoverySuggestion } from "../stores/discoveryStore";
 
-export async function startDiscovery(profileId: string): Promise<DiscoverySuggestion[]> {
-  return invoke<DiscoverySuggestion[]>("start_discovery", { profileId });
+export async function startDiscovery(
+  profileId: string,
+  excludeIds: string[] = [],
+  background: boolean = false
+): Promise<DiscoverySuggestion[]> {
+  return invoke<DiscoverySuggestion[]>("start_discovery", { profileId, excludeIds, background });
 }
 
-export async function getDiscoverySuggestions(profileId: string): Promise<DiscoverySuggestion[] | null> {
-  return invoke<DiscoverySuggestion[] | null>("get_discovery_suggestions", { profileId });
+export interface DiscoveryCacheResponse {
+  suggestions: DiscoverySuggestion[];
+  cursorIndex: number;
+  revealedCount: number;
+  visitedIndex: number;
+}
+
+export async function getDiscoverySuggestions(profileId: string): Promise<DiscoveryCacheResponse | null> {
+  return invoke<DiscoveryCacheResponse | null>("get_discovery_suggestions", { profileId });
+}
+
+export async function saveDiscoveryCursor(
+  profileId: string,
+  cursorIndex: number,
+  revealedCount: number,
+  visitedIndex: number
+): Promise<void> {
+  return invoke("save_discovery_cursor", { profileId, cursorIndex, revealedCount, visitedIndex });
+}
+
+export async function updateDiscoveryPool(
+  profileId: string,
+  suggestions: DiscoverySuggestion[],
+  cursorIndex: number,
+  revealedCount: number,
+  visitedIndex: number
+): Promise<void> {
+  return invoke("update_discovery_pool", { profileId, suggestions, cursorIndex, revealedCount, visitedIndex });
 }
 
 export async function dismissDiscovery(profileId: string, videoId: string): Promise<void> {

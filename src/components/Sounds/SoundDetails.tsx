@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useProfileStore } from "../../stores/profileStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useConfirmStore } from "../../stores/confirmStore";
+import { useWheelSlider } from "../../hooks/useWheelSlider";
 import { keyCodeToDisplay, getKeyCode, recordKeyLayout, buildComboFromPressedKeys } from "../../utils/keyMapping";
 import { formatDuration } from "../../utils/fileHelpers";
 import { AddSoundModal } from "./AddSoundModal";
@@ -9,7 +10,19 @@ import * as commands from "../../utils/tauriCommands";
 import { getSoundFilePath } from "../../utils/soundHelpers";
 import type { LoopMode, Sound, WaveformData } from "../../types";
 import { useAudioStore } from "../../stores/audioStore";
+import { useWaveformStore } from "../../stores/waveformStore";
+import { useTrackPosition } from "../../hooks/useTrackPosition";
 import { WaveformDisplay } from "../common/WaveformDisplay";
+
+function WheelInput(props: React.InputHTMLAttributes<HTMLInputElement> & { wheelStep: number; wheelMin: number; wheelMax: number; onWheelChange: (v: number) => void }) {
+  const { wheelStep, wheelMin, wheelMax, onWheelChange, ...inputProps } = props;
+  const ref = useWheelSlider({
+    value: Number(inputProps.value ?? 0),
+    min: wheelMin, max: wheelMax, step: wheelStep,
+    onChange: onWheelChange,
+  });
+  return <input ref={ref} {...inputProps} />;
+}
 
 interface SoundDetailsProps {
   selectedKey: string;
@@ -26,18 +39,20 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   const [previewingSoundId, setPreviewingSoundId] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [waveforms, setWaveforms] = useState<Map<string, WaveformData>>(new Map());
+  const [localWaveforms, setLocalWaveforms] = useState<Map<string, WaveformData>>(new Map());
 
   // Subscribe only to the track entry for this binding's track (not all tracks)
   const bindingTrackId = currentProfile?.keyBindings.find((kb) => kb.keyCode === selectedKey)?.trackId;
   const trackPlayback = useAudioStore((s) =>
     bindingTrackId ? s.playingTracks.get(bindingTrackId) ?? null : null
   );
+  const trackPosition = useTrackPosition(trackPlayback ? bindingTrackId : undefined);
 
   // "binding" = reassign entire key, soundId string = move that sound to another key
   const [capturingKeyFor, setCapturingKeyFor] = useState<"binding" | string | null>(null);
   const [capturedDisplay, setCapturedDisplay] = useState("");
   const pressedKeysRef = useRef<Set<string>>(new Set());
+  const volumeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Clear timers on unmount to prevent leaks
   useEffect(() => {
@@ -47,6 +62,18 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     };
   // volumeDebounceRef is created later (after binding check), cleared in that scope
   }, []);
+
+  // Build a stable dependency string for the sounds relevant to this binding
+  const bindingSoundIds = currentProfile?.keyBindings.find((kb) => kb.keyCode === selectedKey)?.soundIds.join(",") ?? "";
+  const soundsDepsRef = useRef("");
+  const soundsDepsKey = currentProfile?.sounds
+    .filter((s) => bindingSoundIds.includes(s.id))
+    .map((s) => `${s.id}:${s.duration}`)
+    .join(",") ?? "";
+  // Only update when the dependency string actually changes
+  if (soundsDepsKey !== soundsDepsRef.current) {
+    soundsDepsRef.current = soundsDepsKey;
+  }
 
   // Derive stable list of sound paths that need waveforms
   const waveformPaths = useMemo(() => {
@@ -60,23 +87,27 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
       paths.push({ soundId, path: getSoundFilePath(sound) });
     }
     return paths;
-    // Re-derive only when the binding's sound list or sounds array changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    currentProfile?.id,
-    selectedKey,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    currentProfile?.keyBindings.find((kb) => kb.keyCode === selectedKey)?.soundIds.join(","),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    currentProfile?.sounds.map((s) => `${s.id}:${s.duration}`).join(","),
-  ]);
+  }, [currentProfile?.id, selectedKey, bindingSoundIds, soundsDepsRef.current]);
 
-  // Fetch waveforms for sounds in this binding
+  // Fetch waveforms for sounds not already in global or local store
   useEffect(() => {
+    const globalMap = useWaveformStore.getState().waveforms;
     for (const { path } of waveformPaths) {
-      if (waveforms.has(path)) continue;
+      // Check global store (non-reactive) — populate local if found
+      const cached = globalMap.get(path);
+      if (cached) {
+        setLocalWaveforms((prev) => {
+          if (prev.has(path)) return prev;
+          return new Map(prev).set(path, cached);
+        });
+        continue;
+      }
+      if (localWaveforms.has(path)) continue;
       commands.getWaveform(path, 200).then((data) => {
-        setWaveforms((prev) => new Map(prev).set(path, data));
+        setLocalWaveforms((prev) => new Map(prev).set(path, data));
+        // Also add to global store so other components benefit
+        useWaveformStore.getState().setOne(path, data);
       }).catch(() => {});
     }
   }, [waveformPaths]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -236,7 +267,6 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     addToast(`Sound "${name}" removed`, "info");
   };
 
-  const volumeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleVolumeChange = (soundId: string, volume: number) => {
     updateSound(soundId, { volume });
     // Debounce the backend IPC call
@@ -388,7 +418,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
               <span>Duration: {formatDuration(sound.duration)}</span>
               <div className="flex items-center gap-1">
                 <span>Vol:</span>
-                <input
+                <WheelInput
                   type="range"
                   min="0"
                   max="100"
@@ -397,6 +427,8 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
                     handleVolumeChange(sound.id, Number(e.target.value) / 100)
                   }
                   className="w-16 h-1 accent-accent-secondary"
+                  wheelStep={1} wheelMin={0} wheelMax={100}
+                  onWheelChange={(v) => handleVolumeChange(sound.id, v / 100)}
                 />
                 <span>{Math.round(sound.volume * 100)}%</span>
               </div>
@@ -404,23 +436,23 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
             {/* Waveform display */}
             {(() => {
               const path = getSoundFilePath(sound);
-              const waveform = waveforms.get(path);
-              const playbackPos = trackPlayback?.soundId === sound.id ? trackPlayback.position : undefined;
-              return waveform ? (
+              const waveform = localWaveforms.get(path) || null;
+              const playbackPos = trackPlayback?.soundId === sound.id ? trackPosition : undefined;
+              return (
                 <WaveformDisplay
                   waveformData={waveform}
                   momentum={sound.momentum}
                   onMomentumChange={(m) => handleMomentumChange(sound.id, m)}
                   playbackPosition={playbackPos}
-                  suggestedMomentum={waveform.suggestedMomentum}
+                  suggestedMomentum={waveform?.suggestedMomentum}
                   onAcceptSuggestion={() => {
-                    if (waveform.suggestedMomentum != null) {
+                    if (waveform?.suggestedMomentum != null) {
                       handleMomentumChange(sound.id, Math.round(waveform.suggestedMomentum * 10) / 10);
                     }
                   }}
                   height={40}
                 />
-              ) : null;
+              );
             })()}
             {/* Momentum mini-player */}
             <div className="flex items-center gap-2 text-xs text-text-muted">
@@ -438,7 +470,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
                 className="w-16 bg-bg-tertiary border border-border-color rounded px-1 py-0.5 text-text-primary text-xs"
               />
               <span>s</span>
-              <input
+              <WheelInput
                 type="range"
                 min="0"
                 max={sound.duration > 0 ? sound.duration : 1}
@@ -450,6 +482,8 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
                   handleMomentumChange(sound.id, val);
                 }}
                 className="flex-1 h-1 accent-accent-primary disabled:opacity-30"
+                wheelStep={0.5} wheelMin={0} wheelMax={sound.duration > 0 ? sound.duration : 1}
+                onWheelChange={(v) => handleMomentumChange(sound.id, v)}
               />
               <span className="text-text-muted whitespace-nowrap">
                 {formatDuration(sound.duration || 0)}

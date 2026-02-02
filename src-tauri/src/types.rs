@@ -50,6 +50,8 @@ pub struct Sound {
     pub momentum: f64,
     pub volume: f32,
     pub duration: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_video_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

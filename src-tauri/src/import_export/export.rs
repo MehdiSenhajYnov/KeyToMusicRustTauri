@@ -1,6 +1,8 @@
+use crate::audio::analysis::WaveformData;
 use crate::storage;
 use crate::types::{Profile, SoundSource};
 use super::ExportMetadata;
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -37,11 +39,13 @@ pub fn cleanup_interrupted_export() {
     }
 }
 
-/// Export a profile as a .ktm file (ZIP archive containing profile.json, metadata.json, and sounds/).
+/// Export a profile as a .ktm file (ZIP archive containing profile.json, metadata.json, sounds/, and waveforms.json).
 /// Writes to a temp file first, then renames to the final path on success.
+/// If `waveforms` is provided, matching entries (keyed by absolute path) are included as waveforms.json.
 pub fn export_profile(
     profile_id: &str,
     output_path: &str,
+    waveforms: Option<HashMap<String, WaveformData>>,
     on_progress: Option<ProgressCallback>,
 ) -> Result<(), String> {
     // Reset cancellation flag
@@ -116,6 +120,25 @@ pub fn export_profile(
             .map_err(|e| format!("Failed to add '{}' to ZIP: {}", zip_entry_path, e))?;
         zip.write_all(&file_data)
             .map_err(|e| format!("Failed to write sound data: {}", e))?;
+    }
+
+    // Write waveforms.json (keyed by ZIP-relative paths like "sounds/filename.mp3")
+    if let Some(waveform_map) = waveforms {
+        let mut zip_waveforms: HashMap<String, WaveformData> = HashMap::new();
+        for (relative_name, absolute_path) in &sound_files {
+            let abs_str = absolute_path.to_string_lossy().to_string();
+            if let Some(data) = waveform_map.get(&abs_str) {
+                zip_waveforms.insert(format!("sounds/{}", relative_name), data.clone());
+            }
+        }
+        if !zip_waveforms.is_empty() {
+            let waveforms_json = serde_json::to_string(&zip_waveforms)
+                .map_err(|e| format!("Failed to serialize waveforms: {}", e))?;
+            zip.start_file("waveforms.json", options)
+                .map_err(|e| format!("Failed to write waveforms.json to ZIP: {}", e))?;
+            zip.write_all(waveforms_json.as_bytes())
+                .map_err(|e| format!("Failed to write waveform data: {}", e))?;
+        }
     }
 
     zip.finish()

@@ -3,6 +3,17 @@ import { useProfileStore } from "../../stores/profileStore";
 import { setTrackVolume } from "../../utils/tauriCommands";
 import { useToastStore } from "../../stores/toastStore";
 import { useConfirmStore } from "../../stores/confirmStore";
+import { useWheelSlider } from "../../hooks/useWheelSlider";
+
+function WheelInput(props: React.InputHTMLAttributes<HTMLInputElement> & { wheelStep: number; wheelMin: number; wheelMax: number; onWheelChange: (v: number) => void }) {
+  const { wheelStep, wheelMin, wheelMax, onWheelChange, ...inputProps } = props;
+  const ref = useWheelSlider({
+    value: Number(inputProps.value ?? 0),
+    min: wheelMin, max: wheelMax, step: wheelStep,
+    onChange: onWheelChange,
+  });
+  return <input ref={ref} {...inputProps} />;
+}
 
 export function TrackView() {
   const { currentProfile, addTrack, removeTrack, updateTrack, saveCurrentProfile } =
@@ -151,7 +162,7 @@ export function TrackView() {
                 {track.name}
               </span>
             )}
-            <input
+            <WheelInput
               type="range"
               min="0"
               max="100"
@@ -160,6 +171,8 @@ export function TrackView() {
                 handleVolumeChange(track.id, Number(e.target.value) / 100)
               }
               className="flex-1 h-1 accent-accent-secondary"
+              wheelStep={1} wheelMin={0} wheelMax={100}
+              onWheelChange={(v) => handleVolumeChange(track.id, v / 100)}
             />
             <span className="text-text-muted text-xs w-8">
               {Math.round(track.volume * 100)}%

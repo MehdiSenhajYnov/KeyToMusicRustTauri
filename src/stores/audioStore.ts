@@ -4,8 +4,11 @@ import type { TrackId, SoundId } from "../types";
 interface PlayingTrack {
   trackId: TrackId;
   soundId: SoundId;
-  position: number;
 }
+
+// Mutable position record — NOT part of Zustand reactive state.
+// Mutated directly by updateProgress() to avoid re-renders on every 250ms tick.
+const _positions: Record<string, number> = {};
 
 interface AudioState {
   playingTracks: Map<TrackId, PlayingTrack>;
@@ -14,6 +17,7 @@ interface AudioState {
   setSoundStarted: (trackId: TrackId, soundId: SoundId) => void;
   setSoundEnded: (trackId: TrackId) => void;
   updateProgress: (trackId: TrackId, position: number) => void;
+  getPosition: (trackId: TrackId) => number;
   setLastKeyPressed: (keyCode: string | null) => void;
   clearAll: () => void;
 }
@@ -23,14 +27,16 @@ export const useAudioStore = create<AudioState>((set) => ({
   lastKeyPressed: null,
 
   setSoundStarted: (trackId, soundId) => {
+    _positions[trackId] = 0;
     set((state) => {
       const newMap = new Map(state.playingTracks);
-      newMap.set(trackId, { trackId, soundId, position: 0 });
+      newMap.set(trackId, { trackId, soundId });
       return { playingTracks: newMap };
     });
   },
 
   setSoundEnded: (trackId) => {
+    delete _positions[trackId];
     set((state) => {
       const newMap = new Map(state.playingTracks);
       newMap.delete(trackId);
@@ -38,17 +44,31 @@ export const useAudioStore = create<AudioState>((set) => ({
     });
   },
 
+  // Mutate _positions directly — no set() call, no re-renders
   updateProgress: (trackId, position) => {
-    set((state) => {
-      const existing = state.playingTracks.get(trackId);
-      if (!existing) return state;
-      const newMap = new Map(state.playingTracks);
-      newMap.set(trackId, { ...existing, position });
-      return { playingTracks: newMap };
-    });
+    _positions[trackId] = position;
   },
 
-  setLastKeyPressed: (keyCode) => set({ lastKeyPressed: keyCode }),
+  getPosition: (trackId) => {
+    return _positions[trackId] ?? 0;
+  },
 
-  clearAll: () => set({ playingTracks: new Map(), lastKeyPressed: null }),
+  setLastKeyPressed: (keyCode) => {
+    set({ lastKeyPressed: keyCode });
+    if (keyCode !== null) {
+      setTimeout(() => {
+        set((s) =>
+          s.lastKeyPressed === keyCode ? { lastKeyPressed: null } : s
+        );
+      }, 100);
+    }
+  },
+
+  clearAll: () => {
+    // Clear all positions
+    for (const key of Object.keys(_positions)) {
+      delete _positions[key];
+    }
+    set({ playingTracks: new Map(), lastKeyPressed: null });
+  },
 }));

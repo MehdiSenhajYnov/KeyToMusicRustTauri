@@ -218,3 +218,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 }));
+
+export const useMasterVolume = () => useSettingsStore(s => s.config.masterVolume);
+export const useCrossfadeDuration = () => useSettingsStore(s => s.config.crossfadeDuration);
+export const useKeyDetectionEnabled = () => useSettingsStore(s => s.config.keyDetectionEnabled);
+export const useAutoMomentum = () => useSettingsStore(s => s.config.autoMomentum);
+export const useKeyCooldown = () => useSettingsStore(s => s.config.keyCooldown);
+export const useAudioDevice = () => useSettingsStore(s => s.config.audioDevice);
+export const useChordWindowMs = () => useSettingsStore(s => s.config.chordWindowMs);
+export const useMomentumModifier = () => useSettingsStore(s => s.config.momentumModifier);

@@ -23,6 +23,7 @@ export interface Sound {
   momentum: number;           // Position de départ en secondes (décimales autorisées)
   volume: number;             // 0.0 à 1.0 (volume individuel du son)
   duration: number;           // Durée totale en secondes (calculée au chargement)
+  resolvedVideoId?: string;   // YouTube video ID resolved from local file metadata/name
 }
 
 // Configuration d'une touche
@@ -97,6 +98,13 @@ export interface YoutubePlaylist {
   title: string;
   entries: YoutubeSearchResult[];
   totalCount: number;
+}
+
+// YouTube stream URL result (for preview playback)
+export interface StreamUrlResult {
+  url: string;
+  duration: number;
+  format: string;
 }
 
 // État "Now Playing" pour l'affichage

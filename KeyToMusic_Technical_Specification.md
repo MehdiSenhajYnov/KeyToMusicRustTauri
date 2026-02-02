@@ -55,7 +55,7 @@
 | Framework Desktop | **Tauri 2.x** | Performances natives, taille réduite, accès système via Rust |
 | Frontend | **React 18+ avec TypeScript** | UI moderne, écosystème riche, typage fort |
 | Backend Audio | **Rust (rodio/cpal + symphonia)** | Lecture audio performante, seeking instantané |
-| Détection Touches | **Rust (rdev/CGEventTap)** | rdev sur Win/Linux, CGEventTap custom sur macOS |
+| Détection Touches | **Rust (Raw Input/CGEventTap/rdev)** | Windows Raw Input API, macOS CGEventTap, Linux rdev |
 | Téléchargement YT | **yt-dlp** (binaire externe) | Fiable, maintenu activement |
 | Styling | **Tailwind CSS** | Styling rapide, thème sombre facile |
 | State Management | **Zustand** | Simple, performant, TypeScript natif |
@@ -171,14 +171,16 @@ keytomusic/
 │   │   ├── errorStore.ts
 │   │   ├── exportStore.ts
 │   │   ├── toastStore.ts
-│   │   └── confirmStore.ts
+│   │   ├── confirmStore.ts
+│   │   └── waveformStore.ts     # Client-side waveform cache (Map-based)
 │   ├── hooks/                    # Custom React hooks
 │   │   ├── useKeyDetection.ts
 │   │   ├── useAudioEvents.ts
 │   │   ├── useTextInputFocus.ts          # Auto-disable key detection on text inputs
 │   │   ├── useUndoRedo.ts
 │   │   ├── useDiscovery.ts               # Discovery carousel/playback
-│   │   └── useDiscoveryPredownload.ts    # Background pre-download pipeline
+│   │   ├── useDiscoveryPredownload.ts    # Background pre-download pipeline
+│   │   └── useTrackPosition.ts           # Efficient position polling via RAF
 │   ├── types/                    # TypeScript types
 │   │   └── index.ts
 │   ├── utils/                    # Utilitaires
@@ -196,7 +198,7 @@ keytomusic/
 │   ├── src/
 │   │   ├── main.rs               # Point d'entrée Tauri, event forwarding, logging
 │   │   ├── commands.rs           # Commandes Tauri exposées au frontend
-│   │   ├── state.rs              # AppState (audio engine, key detector, waveform cache, etc.)
+│   │   ├── state.rs              # AppState (audio engine, key detector, waveform cache, cpu_pool, profile_load_gen)
 │   │   ├── types.rs              # Toutes les structures de données sérialisables
 │   │   ├── audio/
 │   │   │   ├── mod.rs
@@ -288,9 +290,9 @@ keytomusic/
 │                                                              │
 │                    Tauri emit() (events)                     │
 │                                                              │
-│  Audio Event Polling Thread (100ms drain):                    │
-│    drains AudioEngine events → emits Tauri events            │
-│    (sound_started, sound_ended, playback_progress)           │
+│  Audio Event Thread (mpsc channel, blocking recv):             │
+│    receives AudioEngine events → emits Tauri events           │
+│    (sound_started, sound_ended, playback_progress)            │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -2159,7 +2161,8 @@ export_profile_name.ktm (ZIP)
 │   ├── sound1.mp3         # Copie des fichiers audio
 │   ├── sound2.wav
 │   └── ...
-└── metadata.json          # Métadonnées d'export
+├── metadata.json          # Métadonnées d'export
+└── waveforms.json         # Données waveform pré-calculées (optionnel)
 ```
 
 ### 11.2 Metadata
@@ -3435,7 +3438,7 @@ pub struct WaveformRequest {
 }
 ```
 
-- Utilise un thread pool (2-4 threads)
+- Utilise le Rayon thread pool partagé (2 threads, `AppState::cpu_pool`)
 - Chaque résultat inclut `suggested_momentum`
 
 ---
@@ -3477,7 +3480,7 @@ pub struct WaveformRequest {
 | Crossfade minimum | 100ms |
 | Crossfade maximum | 2000ms |
 | Chord window | 20-100ms (défaut: 30ms) |
-| Waveform cache | 200 entrées max (LRU, disk-persisted) |
+| Waveform cache | 50 entrées max (LRU, disk-persisted) |
 | History (undo/redo) | 50 entrées max |
 | Progress emission | 250ms interval |
 | Discovery pre-download | 3 concurrent max |

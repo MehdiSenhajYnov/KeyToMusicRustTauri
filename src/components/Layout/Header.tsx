@@ -1,5 +1,6 @@
 import { useRef, useCallback } from "react";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useWheelSlider } from "../../hooks/useWheelSlider";
 
 interface HeaderProps {
   onSettingsClick: () => void;
@@ -21,6 +22,12 @@ export function Header({ onSettingsClick }: HeaderProps) {
     }, 100);
   }, [setMasterVolume]);
 
+  const masterVolWheelRef = useWheelSlider({
+    value: Math.round(config.masterVolume * 100),
+    min: 0, max: 100, step: 1,
+    onChange: (v) => handleVolumeChange(v / 100),
+  });
+
   return (
     <header className="h-12 bg-bg-secondary border-b border-border-color flex items-center px-4 gap-4 shrink-0">
       <div className="flex items-center gap-2">
@@ -35,6 +42,7 @@ export function Header({ onSettingsClick }: HeaderProps) {
       <div className="flex items-center gap-2">
         <span className="text-text-muted text-xs">Vol</span>
         <input
+          ref={masterVolWheelRef}
           type="range"
           min="0"
           max="100"

@@ -194,11 +194,15 @@ pub fn play_sound(
         return Err(format!("Sound file not found: {}", file_path));
     }
 
-    state.audio_engine.play_sound(
+    // Pre-create the source off the audio thread (file I/O + probe + seek + first decode)
+    let source = crate::audio::symphonia_source::SymphoniaSource::new(&file_path, start_position)?;
+
+    state.audio_engine.play_sound_prepared(
         track_id,
         sound_id,
         file_path,
         start_position,
+        source,
         sound_volume,
         config.crossfade_duration,
     )
@@ -217,10 +221,10 @@ pub fn stop_all_sounds(state: State<'_, AppState>) -> Result<(), String> {
 #[tauri::command]
 pub fn set_master_volume(state: State<'_, AppState>, volume: f32) -> Result<(), String> {
     // Update config
-    let config = state.update_config(|config| {
+    state.update_config(|config| {
         config.master_volume = volume;
     });
-    storage::save_config(&config)?;
+    state.schedule_config_save();
 
     // Update audio engine
     state.audio_engine.set_master_volume(volume)
@@ -246,27 +250,39 @@ pub fn set_sound_volume(
 }
 
 #[tauri::command]
-pub async fn get_audio_duration(path: String) -> Result<f64, String> {
-    tokio::task::spawn_blocking(move || {
-        BufferManager::get_audio_duration(&path)
+pub async fn get_audio_duration(state: State<'_, AppState>, path: String) -> Result<f64, String> {
+    tracing::info!("[cpu-pool] get_audio_duration START: {}", path);
+    let pool = state.cpu_pool.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        pool.install(|| BufferManager::get_audio_duration(&path))
     })
     .await
-    .map_err(|e| format!("Task failed: {}", e))?
+    .map_err(|e| format!("Task failed: {}", e))?;
+    tracing::info!("[cpu-pool] get_audio_duration END");
+    result
 }
 
 // ─── Sound Pre-loading ─────────────────────────────────────────────────────
 
 /// Batch compute durations for sounds that need it.
-/// Uses parallel threads for speed. Returns a map of soundId -> duration.
+/// Uses shared CPU pool. Checks profile_load_gen to bail early on stale loads.
 #[tauri::command]
 pub async fn preload_profile_sounds(
+    state: State<'_, AppState>,
     sounds: Vec<SoundPreloadEntry>,
 ) -> Result<std::collections::HashMap<String, f64>, String> {
-    tokio::task::spawn_blocking(move || {
-        use std::sync::Mutex;
+    use std::sync::atomic::Ordering;
 
-        let durations: Mutex<std::collections::HashMap<String, f64>> =
-            Mutex::new(std::collections::HashMap::new());
+    let pool = state.cpu_pool.clone();
+    let gen_counter = state.profile_load_gen.clone();
+    // Bump generation: any older preload_profile_sounds still running becomes stale
+    let gen = gen_counter.fetch_add(1, Ordering::SeqCst) + 1;
+
+    let count = sounds.iter().filter(|e| e.needs_duration).count();
+    tracing::info!("[cpu-pool] preload_profile_sounds START: {} sounds need duration (gen={})", count, gen);
+    let result = tokio::task::spawn_blocking(move || {
+        use rayon::prelude::*;
+        use std::sync::Mutex;
 
         // Only process sounds that actually need duration
         let needs_work: Vec<&SoundPreloadEntry> = sounds
@@ -275,36 +291,38 @@ pub async fn preload_profile_sounds(
             .collect();
 
         if needs_work.is_empty() {
-            return durations.into_inner().unwrap();
+            return std::collections::HashMap::new();
         }
 
-        // Process in parallel using scoped threads (2 threads)
-        std::thread::scope(|scope| {
-            let chunk_size = (needs_work.len() / 2).max(1);
-            for chunk in needs_work.chunks(chunk_size) {
-                let durations = &durations;
+        let durations: Mutex<std::collections::HashMap<String, f64>> =
+            Mutex::new(std::collections::HashMap::new());
 
-                scope.spawn(move || {
-                    for entry in chunk {
-                        let path = std::path::Path::new(&entry.file_path);
-                        if !path.exists() {
-                            continue;
-                        }
+        pool.install(|| {
+            needs_work.par_iter().for_each(|entry| {
+                // Bail early if a newer profile load started
+                if gen_counter.load(Ordering::SeqCst) != gen {
+                    return;
+                }
 
-                        if let Ok(dur) = BufferManager::get_audio_duration(&entry.file_path) {
-                            if dur > 0.0 {
-                                durations.lock().unwrap().insert(entry.sound_id.clone(), dur);
-                            }
-                        }
+                let path = std::path::Path::new(&entry.file_path);
+                if !path.exists() {
+                    return;
+                }
+
+                if let Ok(dur) = BufferManager::get_audio_duration(&entry.file_path) {
+                    if dur > 0.0 {
+                        durations.lock().unwrap().insert(entry.sound_id.clone(), dur);
                     }
-                });
-            }
+                }
+            });
         });
 
         durations.into_inner().unwrap()
     })
     .await
-    .map_err(|e| format!("Preload task failed: {}", e))
+    .map_err(|e| format!("Preload task failed: {}", e));
+    tracing::info!("[cpu-pool] preload_profile_sounds END (gen={})", gen);
+    result
 }
 
 #[derive(serde::Deserialize)]
@@ -322,10 +340,11 @@ pub fn set_key_detection(state: State<'_, AppState>, enabled: bool) -> Result<()
     state.key_detector.set_enabled(enabled);
 
     // Also update config
-    let config = state.update_config(|config| {
+    state.update_config(|config| {
         config.key_detection_enabled = enabled;
     });
-    storage::save_config(&config)
+    state.schedule_config_save();
+    Ok(())
 }
 
 #[tauri::command]
@@ -341,10 +360,11 @@ pub fn set_master_stop_shortcut(
     state.key_detector.set_master_stop_shortcut(keys.clone());
 
     // Update config
-    let config = state.update_config(|config| {
+    state.update_config(|config| {
         config.master_stop_shortcut = keys;
     });
-    storage::save_config(&config)
+    state.schedule_config_save();
+    Ok(())
 }
 
 #[tauri::command]
@@ -357,10 +377,11 @@ pub fn set_key_cooldown(state: State<'_, AppState>, cooldown_ms: u32) -> Result<
     state.key_detector.set_cooldown(cooldown_ms);
 
     // Update config
-    let config = state.update_config(|config| {
+    state.update_config(|config| {
         config.key_cooldown = cooldown_ms;
     });
-    storage::save_config(&config)
+    state.schedule_config_save();
+    Ok(())
 }
 
 // ─── Audio Device Commands ────────────────────────────────────────────────
@@ -379,10 +400,11 @@ pub fn set_audio_device(
     state.audio_engine.set_audio_device(device.clone())?;
 
     // Update config
-    let config = state.update_config(|config| {
+    state.update_config(|config| {
         config.audio_device = device;
     });
-    storage::save_config(&config)
+    state.schedule_config_save();
+    Ok(())
 }
 
 // ─── Waveform Commands ────────────────────────────────────────────────────
@@ -401,12 +423,15 @@ pub async fn get_waveform(
         }
     }
 
+    tracing::info!("[cpu-pool] get_waveform START: {}", path);
     let path_clone = path.clone();
+    let pool = state.cpu_pool.clone();
     let result = tokio::task::spawn_blocking(move || {
-        analysis::compute_waveform_sampled(&path_clone, num_points)
+        pool.install(|| analysis::compute_waveform_sampled(&path_clone, num_points))
     })
     .await
     .map_err(|e| format!("Waveform task failed: {}", e))??;
+    tracing::info!("[cpu-pool] get_waveform END: {}", path);
 
     // Cache result
     {
@@ -454,30 +479,28 @@ pub async fn get_waveforms_batch(
         return Ok(results);
     }
 
+    let gen = state.profile_load_gen.clone();
+    let current_gen = gen.load(std::sync::atomic::Ordering::SeqCst);
+    tracing::info!("[cpu-pool] get_waveforms_batch START: {} to compute (gen={})", to_compute.len(), current_gen);
+    let pool = state.cpu_pool.clone();
     let computed = tokio::task::spawn_blocking(move || {
+        use rayon::prelude::*;
+        use std::sync::atomic::Ordering;
         use std::sync::Mutex;
 
         let new_results: Mutex<std::collections::HashMap<String, analysis::WaveformData>> =
             Mutex::new(std::collections::HashMap::new());
 
-        let thread_count = 4.min(to_compute.len());
-        let chunk_size = (to_compute.len() / thread_count).max(1);
-
-        std::thread::scope(|scope| {
-            for chunk in to_compute.chunks(chunk_size) {
-                let new_results = &new_results;
-                scope.spawn(move || {
-                    for entry in chunk {
-                        if let Ok(data) = analysis::compute_waveform_sampled(&entry.path, entry.num_points)
-                        {
-                            new_results
-                                .lock()
-                                .unwrap()
-                                .insert(entry.path.clone(), data);
-                        }
-                    }
-                });
-            }
+        pool.install(|| {
+            to_compute.par_iter().for_each(|entry| {
+                // Bail early if a newer profile load started
+                if gen.load(Ordering::SeqCst) != current_gen {
+                    return;
+                }
+                if let Ok(data) = analysis::compute_waveform_sampled(&entry.path, entry.num_points) {
+                    new_results.lock().unwrap().insert(entry.path.clone(), data);
+                }
+            });
         });
 
         new_results.into_inner().unwrap()
@@ -494,6 +517,7 @@ pub async fn get_waveforms_batch(
     }
 
     results.extend(computed);
+    tracing::info!("[cpu-pool] get_waveforms_batch END");
     Ok(results)
 }
 
@@ -521,12 +545,15 @@ pub async fn add_sound_from_youtube(
     let entry = youtube::download_audio(&url, cache, Some(on_progress)).await?;
 
     // Compute duration
+    tracing::info!("[cpu-pool] add_sound_from_youtube duration START");
     let cached_path = entry.cached_path.clone();
+    let pool = state.cpu_pool.clone();
     let duration = tokio::task::spawn_blocking(move || {
-        BufferManager::get_audio_duration(&cached_path).unwrap_or(0.0)
+        pool.install(|| BufferManager::get_audio_duration(&cached_path).unwrap_or(0.0))
     })
     .await
     .map_err(|e| format!("Duration task failed: {}", e))?;
+    tracing::info!("[cpu-pool] add_sound_from_youtube duration END");
 
     let sound = Sound {
         id: uuid::Uuid::new_v4().to_string(),
@@ -538,6 +565,7 @@ pub async fn add_sound_from_youtube(
         momentum: 0.0,
         volume: 1.0,
         duration,
+        resolved_video_id: None,
     };
 
     Ok(sound)
@@ -560,6 +588,13 @@ pub async fn fetch_playlist(
 ) -> Result<youtube::search::YoutubePlaylist, String> {
     let cache = state.youtube_cache.clone();
     youtube::search::fetch_playlist(&url, cache).await
+}
+
+#[tauri::command]
+pub async fn get_youtube_stream_url(
+    video_id: String,
+) -> Result<youtube::search::StreamUrlResult, String> {
+    youtube::search::get_stream_url(&video_id).await
 }
 
 #[tauri::command]
@@ -589,9 +624,28 @@ pub async fn install_ffmpeg() -> Result<(), String> {
 #[tauri::command]
 pub async fn export_profile(
     app: tauri::AppHandle,
+    state: State<'_, AppState>,
     profile_id: String,
     output_path: String,
 ) -> Result<(), String> {
+    // Collect waveform data for all sounds in the profile
+    let waveforms = {
+        let profile = storage::load_profile(profile_id.clone())?;
+        let mut map = std::collections::HashMap::new();
+        if let Ok(mut cache) = state.waveform_cache.lock() {
+            for sound in &profile.sounds {
+                let path = match &sound.source {
+                    SoundSource::Local { path } => path.clone(),
+                    SoundSource::YouTube { cached_path, .. } => cached_path.clone(),
+                };
+                if let Some(data) = cache.get(&path) {
+                    map.insert(path, data.clone());
+                }
+            }
+        }
+        map
+    };
+
     let app_handle = app.clone();
     tokio::task::spawn_blocking(move || {
         let progress_cb: import_export::export::ProgressCallback =
@@ -605,7 +659,8 @@ pub async fn export_profile(
                     }),
                 );
             });
-        import_export::export_profile(&profile_id, &output_path, Some(progress_cb))
+        let waveforms_opt = if waveforms.is_empty() { None } else { Some(waveforms) };
+        import_export::export_profile(&profile_id, &output_path, waveforms_opt, Some(progress_cb))
     })
     .await
     .map_err(|e| format!("Export task failed: {}", e))?
@@ -616,18 +671,27 @@ pub async fn import_profile(
     state: State<'_, AppState>,
     ktm_path: String,
 ) -> Result<String, String> {
-    let result = tokio::task::spawn_blocking(move || {
+    let import_result = tokio::task::spawn_blocking(move || {
         import_export::import_profile(&ktm_path)
     })
     .await
     .map_err(|e| format!("Import task failed: {}", e))??;
+
+    // Inject imported waveforms into cache
+    if !import_result.waveforms.is_empty() {
+        if let Ok(mut cache) = state.waveform_cache.lock() {
+            for (path, data) in import_result.waveforms {
+                cache.insert(path, data);
+            }
+        }
+    }
 
     // Cleanup unused cache entries after import
     if let Ok(mut cache) = state.youtube_cache.lock() {
         cache.cleanup_unused();
     }
 
-    Ok(result)
+    Ok(import_result.profile_id)
 }
 
 #[tauri::command]
@@ -790,6 +854,7 @@ pub async fn import_legacy_save(path: String) -> Result<Profile, String> {
                 momentum: info.soundMomentum,
                 volume: 1.0,
                 duration: 0.0, // Will be computed on load
+                resolved_video_id: None,
             };
             sound_ids.push(sound.id.clone());
             sounds.push(sound);
@@ -838,91 +903,217 @@ pub async fn start_discovery(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     profile_id: String,
+    exclude_ids: Vec<String>,
+    background: Option<bool>,
 ) -> Result<Vec<discovery::engine::DiscoverySuggestion>, String> {
     use std::sync::atomic::Ordering;
+
+    let is_background = background.unwrap_or(false);
 
     // Reset cancel flag
     state.discovery_cancel.store(false, Ordering::Relaxed);
 
-    // Load the profile to extract YouTube seeds
-    let profile = storage::load_profile(profile_id.clone())?;
+    // Load the profile to extract seeds (YouTube + local)
+    let mut profile = storage::load_profile(profile_id.clone())?;
 
     let mut seeds = Vec::new();
     let mut existing_ids = Vec::new();
+    let mut unresolved_locals: Vec<(String, String, String)> = Vec::new(); // (sound_id, path, name)
 
     for sound in &profile.sounds {
-        if let SoundSource::YouTube { url, .. } = &sound.source {
-            if let Some(video_id) = youtube::downloader::extract_video_id(url) {
+        match &sound.source {
+            SoundSource::YouTube { url, .. } => {
+                if let Some(video_id) = youtube::downloader::extract_video_id(url) {
+                    seeds.push(discovery::engine::SeedInfo {
+                        video_id: video_id.clone(),
+                        sound_name: sound.name.clone(),
+                    });
+                    existing_ids.push(video_id);
+                }
+            }
+            SoundSource::Local { path } => {
+                if let Some(ref video_id) = sound.resolved_video_id {
+                    seeds.push(discovery::engine::SeedInfo {
+                        video_id: video_id.clone(),
+                        sound_name: sound.name.clone(),
+                    });
+                } else {
+                    unresolved_locals.push((
+                        sound.id.clone(),
+                        path.clone(),
+                        sound.name.clone(),
+                    ));
+                }
+            }
+        }
+    }
+
+    // Resolve unresolved local sounds via YouTube search
+    if !unresolved_locals.is_empty() {
+        let count = unresolved_locals.len();
+        if !is_background {
+            let _ = app.emit("discovery_resolving", serde_json::json!({
+                "count": count,
+            }));
+        }
+        tracing::info!("Resolving {} local sounds for discovery seeds", count);
+
+        let youtube_cache = state.youtube_cache.clone();
+        let resolved = discovery::engine::resolve_local_seeds(
+            unresolved_locals,
+            youtube_cache,
+        ).await;
+
+        // Store resolved video IDs in the profile and add as seeds
+        for r in &resolved {
+            if let Some(sound) = profile.sounds.iter_mut().find(|s| s.id == r.sound_id) {
+                sound.resolved_video_id = Some(r.video_id.clone());
                 seeds.push(discovery::engine::SeedInfo {
-                    video_id: video_id.clone(),
+                    video_id: r.video_id.clone(),
                     sound_name: sound.name.clone(),
                 });
-                existing_ids.push(video_id);
+            }
+        }
+
+        // Persist resolved video IDs to profile
+        if !resolved.is_empty() {
+            if let Err(e) = storage::save_profile(&profile) {
+                tracing::warn!("Failed to save resolved video IDs: {}", e);
             }
         }
     }
 
     if seeds.is_empty() {
-        return Err("No YouTube sounds found in profile".to_string());
+        return Err("No seeds found in profile (no YouTube sounds and no resolvable local sounds)".to_string());
     }
+
+    // Preserve dismissed_ids from previous cache so dismissed suggestions don't reappear
+    let previous_dismissed = discovery::cache::DiscoveryCache::load(&profile_id)
+        .map(|d| d.dismissed_ids)
+        .unwrap_or_default();
+
+    // Exclude profile sounds, previously dismissed, and caller-specified IDs (e.g. current suggestions on refresh)
+    let mut all_excluded = existing_ids.clone();
+    all_excluded.extend(previous_dismissed.iter().cloned());
+    all_excluded.extend(exclude_ids.into_iter());
 
     let yt_dlp_bin = youtube::downloader::get_yt_dlp_bin()?;
     let cancel_flag = state.discovery_cancel.clone();
 
-    let _ = app.emit("discovery_started", serde_json::json!({}));
+    if !is_background {
+        let _ = app.emit("discovery_started", serde_json::json!({}));
+    }
 
     let engine = discovery::engine::DiscoveryEngine::new(cancel_flag.clone());
 
     let app_progress = app.clone();
     let app_partial = app.clone();
+    let bg = is_background;
     let suggestions = engine
         .generate_suggestions(
             seeds.clone(),
-            existing_ids,
+            all_excluded,
             yt_dlp_bin,
-            |current, total, seed_name| {
-                let _ = app_progress.emit("discovery_progress", serde_json::json!({
-                    "current": current,
-                    "total": total,
-                    "seedName": seed_name,
-                }));
+            move |current, total, seed_name| {
+                if !bg {
+                    let _ = app_progress.emit("discovery_progress", serde_json::json!({
+                        "current": current,
+                        "total": total,
+                        "seedName": seed_name,
+                    }));
+                }
             },
-            |partial_suggestions| {
-                let _ = app_partial.emit("discovery_partial", partial_suggestions);
+            move |partial_suggestions| {
+                if !bg {
+                    let _ = app_partial.emit("discovery_partial", partial_suggestions);
+                }
             },
         )
         .await;
 
     if cancel_flag.load(Ordering::Relaxed) {
-        let _ = app.emit("discovery_error", serde_json::json!({
-            "message": "Discovery cancelled",
-        }));
+        if !is_background {
+            let _ = app.emit("discovery_error", serde_json::json!({
+                "message": "Discovery cancelled",
+            }));
+        }
         return Err("Discovery cancelled".to_string());
     }
 
     // Cache results
     let seed_ids: Vec<String> = seeds.iter().map(|s| s.video_id.clone()).collect();
-    let cache_data = discovery::cache::DiscoveryCacheData {
-        profile_id: profile_id.clone(),
-        seed_hash: discovery::cache::DiscoveryCache::compute_seed_hash(&seed_ids),
-        generated_at: chrono::Utc::now().to_rfc3339(),
-        suggestions: suggestions.clone(),
-        dismissed_ids: Vec::new(),
-    };
-    discovery::cache::DiscoveryCache::save(&cache_data).ok();
+    let seed_hash = discovery::cache::DiscoveryCache::compute_seed_hash(&seed_ids);
 
-    let _ = app.emit("discovery_complete", serde_json::json!({
-        "count": suggestions.len(),
-    }));
+    if is_background {
+        // Background mode: append to existing cache without replacing
+        discovery::cache::DiscoveryCache::append_suggestions(
+            &profile_id,
+            suggestions.clone(),
+            &seed_hash,
+        ).ok();
+    } else {
+        let cache_data = discovery::cache::DiscoveryCacheData {
+            profile_id: profile_id.clone(),
+            seed_hash,
+            generated_at: chrono::Utc::now().to_rfc3339(),
+            suggestions: suggestions.clone(),
+            dismissed_ids: previous_dismissed,
+            cursor_index: 0,
+            revealed_count: 0,
+            visited_index: -1,
+        };
+        discovery::cache::DiscoveryCache::save(&cache_data).ok();
+
+        let _ = app.emit("discovery_complete", serde_json::json!({
+            "count": suggestions.len(),
+        }));
+    }
 
     Ok(suggestions)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveryCacheResponse {
+    pub suggestions: Vec<discovery::engine::DiscoverySuggestion>,
+    pub cursor_index: usize,
+    pub revealed_count: usize,
+    pub visited_index: i32,
 }
 
 #[tauri::command]
 pub fn get_discovery_suggestions(
     profile_id: String,
-) -> Result<Option<Vec<discovery::engine::DiscoverySuggestion>>, String> {
-    Ok(discovery::cache::DiscoveryCache::load(&profile_id).map(|d| d.suggestions))
+) -> Result<Option<DiscoveryCacheResponse>, String> {
+    Ok(discovery::cache::DiscoveryCache::load(&profile_id).map(|d| DiscoveryCacheResponse {
+        suggestions: d.suggestions,
+        cursor_index: d.cursor_index,
+        revealed_count: d.revealed_count,
+        visited_index: d.visited_index,
+    }))
+}
+
+#[tauri::command]
+pub fn save_discovery_cursor(
+    profile_id: String,
+    cursor_index: usize,
+    revealed_count: usize,
+    visited_index: i32,
+) -> Result<(), String> {
+    discovery::cache::DiscoveryCache::save_cursor(&profile_id, cursor_index, revealed_count, visited_index)
+}
+
+#[tauri::command]
+pub fn update_discovery_pool(
+    profile_id: String,
+    suggestions: Vec<discovery::engine::DiscoverySuggestion>,
+    cursor_index: usize,
+    revealed_count: usize,
+    visited_index: i32,
+) -> Result<(), String> {
+    discovery::cache::DiscoveryCache::update_pool(
+        &profile_id, suggestions, cursor_index, revealed_count, visited_index,
+    )
 }
 
 #[tauri::command]
@@ -996,21 +1187,24 @@ pub async fn predownload_suggestion(
         cache_guard.get(&cached_path).cloned()
     };
 
-    // Compute duration and waveform in parallel
+    // Compute duration and waveform in parallel (both via shared CPU pool)
+    tracing::info!("[cpu-pool] predownload_suggestion compute START: {}", video_id);
     let duration_path = cached_path.clone();
     let wf_path = cached_path.clone();
     let need_waveform = cached_waveform.is_none();
+    let pool_dur = state.cpu_pool.clone();
+    let pool_wf = state.cpu_pool.clone();
 
     let (duration_result, waveform_result) = tokio::join!(
         tokio::task::spawn_blocking(move || {
-            BufferManager::get_audio_duration(&duration_path).unwrap_or(0.0)
+            pool_dur.install(|| BufferManager::get_audio_duration(&duration_path).unwrap_or(0.0))
         }),
         async {
             if !need_waveform {
                 return Ok(None);
             }
             tokio::task::spawn_blocking(move || {
-                analysis::compute_waveform_sampled(&wf_path, 100).map(Some)
+                pool_wf.install(|| analysis::compute_waveform_sampled(&wf_path, 50).map(Some))
             })
             .await
             .map_err(|e| format!("Waveform task failed: {}", e))?
@@ -1030,6 +1224,7 @@ pub async fn predownload_suggestion(
         result
     };
 
+    tracing::info!("[cpu-pool] predownload_suggestion compute END: {}", video_id);
     Ok(PredownloadResult {
         video_id,
         cached_path,

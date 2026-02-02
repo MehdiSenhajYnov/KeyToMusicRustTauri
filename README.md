@@ -4,23 +4,30 @@ Application de soundboard conçue pour accompagner la lecture de mangas avec des
 
 ## Fonctionnalités Principales
 
-- ✅ Détection globale des touches clavier (fonctionne en arrière-plan)
-- ✅ Assignation de sons à des touches avec support multi-sons par touche
-- ✅ Système de pistes multiples pour superposer différents types de sons
-- ✅ Crossfade fluide entre les sons d'une même piste
-- ✅ Mode Momentum pour démarrer les sons à une position spécifique
-- ✅ Modes de boucle variés (Off, Random, Single, Sequential)
-- ✅ Téléchargement de sons depuis YouTube avec système de cache
-- ✅ Multi-profils/playlists sauvegardables
-- ✅ Import/Export de configurations
-- ✅ Sélection du périphérique audio avec reprise transparente lors du changement
+- Détection globale des touches clavier (fonctionne en arrière-plan)
+- Assignation de sons à des touches avec support multi-sons par touche
+- Système de pistes multiples (jusqu'à 20) pour superposer différents types de sons
+- Crossfade fluide entre les sons d'une même piste
+- Mode Momentum pour démarrer les sons à une position spécifique
+- Modes de boucle variés (Off, Random, Single, Sequential)
+- Téléchargement de sons depuis YouTube avec système de cache
+- Recherche YouTube intégrée et import de playlists
+- Multi-profils/playlists sauvegardables avec duplication
+- Import/Export de configurations (.ktm) + import legacy (Unity)
+- Sélection du périphérique audio avec reprise transparente
+- Visualisation waveform avec marqueur de momentum
+- Système de découverte (YouTube Mix) avec pré-téléchargement et auto-assignation
+- Multi-touches combinées (accords style jeu de combat)
+- Undo/Redo (Ctrl+Z / Ctrl+Y)
+- Modificateur momentum configurable (Shift/Ctrl/Alt)
 
 ## Stack Technique
 
-- **Framework**: Tauri 2.x (Rust + React)
-- **Frontend**: React 18 + TypeScript + Tailwind CSS + Zustand
-- **Backend**: Rust avec rodio (audio) et rdev (détection touches)
-- **Outils externes**: yt-dlp (téléchargement YouTube)
+- **Framework** : Tauri 2.x (Rust + React)
+- **Frontend** : React 18 + TypeScript + Tailwind CSS + Zustand
+- **Backend** : Rust avec rodio/cpal/symphonia (audio)
+- **Détection touches** : Windows Raw Input API, macOS CGEventTap, Linux rdev
+- **Outils externes** : yt-dlp + ffmpeg (auto-téléchargés dans `data/bin/`)
 
 ## Installation
 
@@ -28,10 +35,8 @@ Application de soundboard conçue pour accompagner la lecture de mangas avec des
 
 1. **Node.js** (v18 ou supérieur) et npm
 2. **Rust** (dernière version stable)
-3. **yt-dlp** (pour le téléchargement YouTube)
-   - Windows: `winget install yt-dlp`
-   - macOS: `brew install yt-dlp`
-   - Linux: `sudo apt install yt-dlp` ou équivalent
+
+> **Note :** yt-dlp et ffmpeg sont téléchargés automatiquement par l'application au premier lancement. Aucune installation manuelle n'est nécessaire.
 
 ### Étapes d'installation
 
@@ -46,23 +51,23 @@ cd KeyToMusicRust
 npm install
 ```
 
-3. Ajouter les ressources (optionnel pour Phase 0)
+3. Ajouter les ressources (optionnel)
    - Placer un fichier `error.mp3` dans `resources/sounds/`
    - Générer les icônes ou placer des icônes dans `resources/icons/`
 
 4. Lancer en mode développement
 ```bash
-npm run tauri:dev
+npm run tauri dev
 ```
 
 ## Commandes de développement
 
 ```bash
 # Développement avec hot-reload
-npm run tauri:dev
+npm run tauri dev
 
 # Build production
-npm run tauri:build
+npm run tauri build
 
 # Lint Rust
 cargo clippy --manifest-path src-tauri/Cargo.toml
@@ -79,41 +84,51 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ```
 keytomusic/
 ├── src/                    # Frontend React/TypeScript
-│   ├── components/         # Composants UI
-│   ├── stores/            # State management (Zustand)
-│   ├── types/             # Types TypeScript
-│   └── utils/             # Utilitaires
-├── src-tauri/             # Backend Rust
+│   ├── components/         # Composants UI (Layout, Tracks, Sounds, Keys, Discovery, Errors, common)
+│   ├── stores/             # State management (10 Zustand stores)
+│   ├── hooks/              # useAudioEvents, useKeyDetection, useDiscovery, useTrackPosition, etc.
+│   ├── types/              # Types TypeScript
+│   └── utils/              # tauriCommands, keyMapping, profileAnalysis, errorMessages, etc.
+├── src-tauri/              # Backend Rust
 │   └── src/
-│       ├── audio/         # Moteur audio
-│       ├── keys/          # Détection touches
-│       ├── youtube/       # Téléchargement YT
-│       └── storage/       # Persistance
-└── resources/             # Ressources statiques
+│       ├── audio/          # Moteur audio, crossfade, waveform analysis
+│       ├── keys/           # Détection touches, accords multi-touches
+│       ├── discovery/      # YouTube Mix discovery engine
+│       ├── youtube/        # Téléchargement YT, recherche, playlists
+│       ├── import_export/  # Import/Export .ktm
+│       └── storage/        # Persistance profils & config
+├── data/                   # Runtime: profiles/, cache/, discovery/, bin/, imported_sounds/, logs/
+└── resources/              # Ressources statiques (icônes, error.mp3)
 ```
 
 ## État du Projet
 
-- Phase 0: Initialisation ✅
-- Phase 1: Fondations Backend ✅
-- Phase 2: Moteur Audio ✅
-- Phase 3: Détection des Touches ✅
-- Phase 4: Interface Utilisateur ✅
-- Phase 4.5: Bug Fixes & Améliorations ✅
-- Phase 4.6: UX Enhancements & Key Management ✅
-- Phase 5: Téléchargement YouTube ✅
-- Phase 6: Import/Export ✅
-- Phase 7: Gestion des Erreurs (en cours)
-- Phase 8: Polish & Optimisations (en cours - seeking symphonia, device switching done)
-- Phase 9: Tests & Validation
-- Phase 10: Build & Release
+| Phase | Nom | Statut |
+|-------|-----|--------|
+| 0 | Initialisation du Projet | Complété |
+| 1 | Fondations Backend (Rust) | Complété |
+| 2 | Moteur Audio | Complété |
+| 3 | Détection des Touches | Complété |
+| 4 | Interface Utilisateur (React) | Complété |
+| 4.5 | Bug Fixes & Améliorations | Complété |
+| 4.6 | UX Enhancements & Key Management | Complété |
+| 5 | Téléchargement YouTube | Complété |
+| 6 | Import/Export | Complété |
+| 6.5 | Concurrent Downloads & Key Cycling | Complété |
+| 7 | Gestion des Erreurs | Complété |
+| 7.5 | Legacy Import | Complété |
+| 8 | Nouvelles Features (Chords, Undo/Redo, Momentum) | Complété |
+| SD | Smart Discovery & Auto-Setup | Complété |
+| 9 | Polish & Optimisations | Partiel |
+| 10 | Tests & Validation | Planifié |
+| 11 | Build & Release | Planifié |
 
-Voir `TASKS.md` pour la liste complète des tâches.
+Voir `Tasks/README.md` pour le suivi détaillé des tâches.
 
 ## Documentation
 
-- `CLAUDE.md` : Guide pour Claude Code
-- `TASKS.md` : Liste exhaustive des tâches
+- `CLAUDE.md` : Guide pour Claude Code (architecture complète)
+- `Tasks/README.md` : Suivi des tâches de développement
 - `KeyToMusic_Technical_Specification.md` : Spécification technique complète
 
 ## Licence

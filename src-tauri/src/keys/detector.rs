@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::Duration;
 
 use crate::keys::chord::{ChordDetectorHandle, ChordResult};
@@ -15,34 +15,45 @@ fn is_modifier_code(code: &str) -> bool {
     )
 }
 
+/// Configuration fields that are read on every keypress but written rarely.
+/// Consolidated into a single RwLock for efficient concurrent reads.
+struct KeyDetectorConfig {
+    enabled: bool,
+    cooldown_ms: u32,
+    master_stop_shortcut: Vec<String>,
+    key_detection_shortcut: Vec<String>,
+    auto_momentum_shortcut: Vec<String>,
+}
+
 /// Global keyboard detector.
 /// Runs in a separate thread and invokes a callback on key events.
 /// On macOS: uses a custom CGEventTap (avoids rdev crash on macOS 13+).
 /// On other platforms: uses rdev::listen.
 #[derive(Clone)]
 pub struct KeyDetector {
-    enabled: Arc<Mutex<bool>>,
-    cooldown_ms: Arc<Mutex<u32>>,
+    config: Arc<RwLock<KeyDetectorConfig>>,
     pressed_keys: Arc<Mutex<HashSet<String>>>,
-    master_stop_shortcut: Arc<Mutex<Vec<String>>>,
-    key_detection_shortcut: Arc<Mutex<Vec<String>>>,
-    auto_momentum_shortcut: Arc<Mutex<Vec<String>>>,
     chord_detector: ChordDetectorHandle,
     /// Flag to signal the timer thread to stop
     timer_running: Arc<AtomicBool>,
+    /// Condvar to wake the timer thread when a chord is pending
+    timer_notify: Arc<(Mutex<bool>, Condvar)>,
 }
 
 impl KeyDetector {
     pub fn new(cooldown_ms: u32, master_stop_shortcut: Vec<String>, chord_window_ms: u32) -> Self {
         Self {
-            enabled: Arc::new(Mutex::new(true)),
-            cooldown_ms: Arc::new(Mutex::new(cooldown_ms)),
+            config: Arc::new(RwLock::new(KeyDetectorConfig {
+                enabled: true,
+                cooldown_ms,
+                master_stop_shortcut,
+                key_detection_shortcut: Vec::new(),
+                auto_momentum_shortcut: Vec::new(),
+            })),
             pressed_keys: Arc::new(Mutex::new(HashSet::new())),
-            master_stop_shortcut: Arc::new(Mutex::new(master_stop_shortcut)),
-            key_detection_shortcut: Arc::new(Mutex::new(Vec::new())),
-            auto_momentum_shortcut: Arc::new(Mutex::new(Vec::new())),
             chord_detector: ChordDetectorHandle::new(chord_window_ms),
             timer_running: Arc::new(AtomicBool::new(false)),
+            timer_notify: Arc::new((Mutex::new(false), Condvar::new())),
         }
     }
 
@@ -52,13 +63,11 @@ impl KeyDetector {
     where
         F: Fn(KeyEvent) + Send + Sync + 'static,
     {
-        let enabled = self.enabled.clone();
+        let config = self.config.clone();
         let pressed_keys = self.pressed_keys.clone();
-        let master_stop_shortcut = self.master_stop_shortcut.clone();
-        let key_detection_shortcut = self.key_detection_shortcut.clone();
-        let auto_momentum_shortcut = self.auto_momentum_shortcut.clone();
         let chord_detector = self.chord_detector.clone();
         let timer_running = self.timer_running.clone();
+        let timer_notify_clone = self.timer_notify.clone();
 
         let callback = Arc::new(callback);
 
@@ -77,38 +86,43 @@ impl KeyDetector {
                     }
                     pressed.insert(code.clone());
 
+                    // Single read-lock for all config fields (shortcuts + enabled)
+                    let cfg = config.read().unwrap();
+
                     // Global shortcuts: work even when key detection is disabled
-                    let kd_keys = key_detection_shortcut.lock().unwrap();
-                    if !kd_keys.is_empty() && is_shortcut_pressed(&pressed, &kd_keys) {
+                    if !cfg.key_detection_shortcut.is_empty()
+                        && is_shortcut_pressed(&pressed, &cfg.key_detection_shortcut)
+                    {
                         drop(pressed);
-                        drop(kd_keys);
+                        drop(cfg);
                         cb(KeyEvent::ToggleKeyDetection);
                         return;
                     }
-                    drop(kd_keys);
 
-                    let stop_keys = master_stop_shortcut.lock().unwrap();
-                    if !stop_keys.is_empty() && is_shortcut_pressed(&pressed, &stop_keys) {
+                    if !cfg.master_stop_shortcut.is_empty()
+                        && is_shortcut_pressed(&pressed, &cfg.master_stop_shortcut)
+                    {
                         drop(pressed);
-                        drop(stop_keys);
+                        drop(cfg);
                         cb(KeyEvent::MasterStop);
                         return;
                     }
-                    drop(stop_keys);
 
-                    let am_keys = auto_momentum_shortcut.lock().unwrap();
-                    if !am_keys.is_empty() && is_shortcut_pressed(&pressed, &am_keys) {
+                    if !cfg.auto_momentum_shortcut.is_empty()
+                        && is_shortcut_pressed(&pressed, &cfg.auto_momentum_shortcut)
+                    {
                         drop(pressed);
-                        drop(am_keys);
+                        drop(cfg);
                         cb(KeyEvent::ToggleAutoMomentum);
                         return;
                     }
-                    drop(am_keys);
 
                     // If detection is disabled, don't trigger sound key presses
-                    if !*enabled.lock().unwrap() {
+                    if !cfg.enabled {
                         return;
                     }
+
+                    drop(cfg);
 
                     // Track pressed modifiers for the with_shift flag
                     let has_shift = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
@@ -123,7 +137,11 @@ impl KeyDetector {
                             });
                         }
                         ChordResult::Pending => {
-                            // Timer thread will handle it
+                            // Wake the timer thread
+                            let (lock, cvar) = &*timer_notify_clone;
+                            let mut notified = lock.lock().unwrap();
+                            *notified = true;
+                            cvar.notify_one();
                         }
                         ChordResult::NoMatch => {
                             // No binding matches - if it's a modifier-only press, ignore
@@ -214,15 +232,18 @@ impl KeyDetector {
         });
     }
 
-    /// Start a thread that polls for pending chord timer expiration
+    /// Start a thread that waits for pending chord timer expiration using Condvar.
+    /// Instead of polling every 5ms, it sleeps until notified by a key press
+    /// or until the chord window timeout expires.
     fn start_timer_thread<F>(&self, callback: Arc<F>)
     where
         F: Fn(KeyEvent) + Send + Sync + 'static,
     {
         let chord_detector = self.chord_detector.clone();
-        let enabled = self.enabled.clone();
+        let config = self.config.clone();
         let pressed_keys = self.pressed_keys.clone();
         let timer_running = self.timer_running.clone();
+        let timer_notify = self.timer_notify.clone();
 
         std::thread::spawn(move || {
             // Wait for the main detector to start
@@ -230,16 +251,18 @@ impl KeyDetector {
                 std::thread::sleep(Duration::from_millis(10));
             }
 
+            let (lock, cvar) = &*timer_notify;
             loop {
-                // Poll every 5ms for responsive timing
-                std::thread::sleep(Duration::from_millis(5));
+                // Wait until notified or timeout (chord window + margin)
+                let guard = lock.lock().unwrap();
+                let result = cvar.wait_timeout(guard, Duration::from_millis(50)).unwrap();
+                let mut guard = result.0;
+                *guard = false;
 
-                // Check if detection is enabled
-                if !*enabled.lock().unwrap() {
+                if !config.read().unwrap().enabled {
                     continue;
                 }
 
-                // Check if timer has expired
                 if let Some(combo) = chord_detector.check_timer() {
                     let pressed = pressed_keys.lock().unwrap();
                     let has_shift = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
@@ -256,7 +279,7 @@ impl KeyDetector {
 
     /// Enable or disable key detection.
     pub fn set_enabled(&self, enabled: bool) {
-        *self.enabled.lock().unwrap() = enabled;
+        self.config.write().unwrap().enabled = enabled;
         if !enabled {
             // Clear chord detector state when disabled
             self.chord_detector.clear();
@@ -265,22 +288,22 @@ impl KeyDetector {
 
     /// Update the cooldown duration.
     pub fn set_cooldown(&self, cooldown_ms: u32) {
-        *self.cooldown_ms.lock().unwrap() = cooldown_ms;
+        self.config.write().unwrap().cooldown_ms = cooldown_ms;
     }
 
     /// Update the master stop shortcut keys.
     pub fn set_master_stop_shortcut(&self, keys: Vec<String>) {
-        *self.master_stop_shortcut.lock().unwrap() = keys;
+        self.config.write().unwrap().master_stop_shortcut = keys;
     }
 
     /// Update the key detection toggle shortcut.
     pub fn set_key_detection_shortcut(&self, keys: Vec<String>) {
-        *self.key_detection_shortcut.lock().unwrap() = keys;
+        self.config.write().unwrap().key_detection_shortcut = keys;
     }
 
     /// Update the auto momentum toggle shortcut.
     pub fn set_auto_momentum_shortcut(&self, keys: Vec<String>) {
-        *self.auto_momentum_shortcut.lock().unwrap() = keys;
+        self.config.write().unwrap().auto_momentum_shortcut = keys;
     }
 
     /// Update the profile bindings for chord detection.

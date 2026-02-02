@@ -6,6 +6,11 @@ use crate::audio::crossfade::CrossfadeState;
 use crate::audio::symphonia_source::SymphoniaSource;
 use crate::types::SoundId;
 
+/// Maximum volume change per update step (~16ms at 60fps).
+/// Limits to full volume sweep in ~10 updates = ~160ms, which
+/// eliminates audible clicks while staying responsive.
+const VOLUME_RAMP_STEP: f32 = 0.1;
+
 /// An active audio track that can play one sound at a time with crossfade support.
 pub struct AudioTrack {
     pub volume: f32,
@@ -20,6 +25,10 @@ pub struct AudioTrack {
     outgoing_sink: Option<Sink>,
     // Crossfade state
     pub crossfade: Option<CrossfadeState>,
+
+    // Volume ramping state
+    current_volume: f32,
+    target_volume: f32,
 
     // Reference to the output stream handle
     stream_handle: OutputStreamHandle,
@@ -36,7 +45,30 @@ impl AudioTrack {
             sink: None,
             outgoing_sink: None,
             crossfade: None,
+            current_volume: 0.0,
+            target_volume: 0.0,
             stream_handle,
+        }
+    }
+
+    /// Advance the volume ramp one step. Call from the audio thread main loop.
+    pub fn tick_volume_ramp(&mut self) {
+        if self.crossfade.is_some() {
+            return;
+        }
+        if (self.current_volume - self.target_volume).abs() < f32::EPSILON {
+            return;
+        }
+        if let Some(ref sink) = self.sink {
+            let diff = self.target_volume - self.current_volume;
+            if diff.abs() <= VOLUME_RAMP_STEP {
+                self.current_volume = self.target_volume;
+            } else if diff > 0.0 {
+                self.current_volume += VOLUME_RAMP_STEP;
+            } else {
+                self.current_volume -= VOLUME_RAMP_STEP;
+            }
+            sink.set_volume(self.current_volume.max(0.0));
         }
     }
 
@@ -62,6 +94,8 @@ impl AudioTrack {
             .map(|s| !s.empty())
             .unwrap_or(false);
 
+        let final_volume = sound_volume * self.volume * master_volume;
+
         if is_playing && crossfade_duration_ms > 0 {
             // Start crossfade: move current sink to outgoing
             if let Some(outgoing) = self.outgoing_sink.take() {
@@ -71,7 +105,7 @@ impl AudioTrack {
 
             // Set initial crossfade volumes
             if let Some(ref outgoing) = self.outgoing_sink {
-                outgoing.set_volume(sound_volume * self.volume * master_volume);
+                outgoing.set_volume(final_volume);
             }
             new_sink.set_volume(0.0); // incoming starts at 0
 
@@ -84,11 +118,69 @@ impl AudioTrack {
             }
             self.outgoing_sink = None;
             self.crossfade = None;
-            new_sink.set_volume(sound_volume * self.volume * master_volume);
+            new_sink.set_volume(final_volume);
+            self.current_volume = final_volume;
+            self.target_volume = final_volume;
         }
 
         // Always use SymphoniaSource for consistent format support (mp3, m4a, ogg, flac, wav)
         let source = SymphoniaSource::new(file_path, start_position_secs)?;
+        new_sink.append(source);
+
+        self.sink = Some(new_sink);
+        self.currently_playing = Some(sound_id);
+        self.start_time = Some(Instant::now());
+        self.start_position_secs = start_position_secs;
+        self.file_path = Some(file_path.to_string());
+
+        Ok(())
+    }
+
+    /// Play a pre-created source on this track (no file I/O).
+    pub fn play_prepared(
+        &mut self,
+        sound_id: SoundId,
+        file_path: &str,
+        start_position_secs: f64,
+        source: SymphoniaSource,
+        sound_volume: f32,
+        master_volume: f32,
+        crossfade_duration_ms: u32,
+    ) -> Result<(), String> {
+        let new_sink = Sink::try_new(&self.stream_handle)
+            .map_err(|e| format!("Failed to create audio sink: {}", e))?;
+
+        let is_playing = self
+            .sink
+            .as_ref()
+            .map(|s| !s.empty())
+            .unwrap_or(false);
+
+        let final_volume = sound_volume * self.volume * master_volume;
+
+        if is_playing && crossfade_duration_ms > 0 {
+            if let Some(outgoing) = self.outgoing_sink.take() {
+                outgoing.stop();
+            }
+            self.outgoing_sink = self.sink.take();
+
+            if let Some(ref outgoing) = self.outgoing_sink {
+                outgoing.set_volume(final_volume);
+            }
+            new_sink.set_volume(0.0);
+
+            self.crossfade = Some(CrossfadeState::new(crossfade_duration_ms));
+        } else {
+            if let Some(ref sink) = self.sink {
+                sink.stop();
+            }
+            self.outgoing_sink = None;
+            self.crossfade = None;
+            new_sink.set_volume(final_volume);
+            self.current_volume = final_volume;
+            self.target_volume = final_volume;
+        }
+
         new_sink.append(source);
 
         self.sink = Some(new_sink);
@@ -114,27 +206,21 @@ impl AudioTrack {
         self.currently_playing = None;
         self.start_time = None;
         self.file_path = None;
+        self.current_volume = 0.0;
+        self.target_volume = 0.0;
     }
 
     /// Set the volume for this track (0.0 to 1.0).
     pub fn set_volume(&mut self, volume: f32, sound_volume: f32, master_volume: f32) {
         self.volume = volume;
         let final_volume = sound_volume * self.volume * master_volume;
-        if let Some(ref sink) = self.sink {
-            if self.crossfade.is_none() {
-                sink.set_volume(final_volume);
-            }
-        }
+        self.target_volume = final_volume;
     }
 
     /// Update the master volume on the current playback.
     pub fn update_master_volume(&mut self, sound_volume: f32, master_volume: f32) {
         let final_volume = sound_volume * self.volume * master_volume;
-        if let Some(ref sink) = self.sink {
-            if self.crossfade.is_none() {
-                sink.set_volume(final_volume);
-            }
-        }
+        self.target_volume = final_volume;
     }
 
     /// Check if this track is currently playing.
@@ -175,9 +261,12 @@ impl AudioTrack {
                 self.crossfade = None;
 
                 // Set final volume on incoming
+                let final_volume = sound_volume * self.volume * master_volume;
                 if let Some(ref sink) = self.sink {
-                    sink.set_volume(sound_volume * self.volume * master_volume);
+                    sink.set_volume(final_volume);
                 }
+                self.current_volume = final_volume;
+                self.target_volume = final_volume;
                 return false;
             }
 
@@ -189,6 +278,7 @@ impl AudioTrack {
             }
             if let Some(ref sink) = self.sink {
                 sink.set_volume(base_volume * in_vol);
+                self.current_volume = base_volume * in_vol;
             }
             return true;
         }

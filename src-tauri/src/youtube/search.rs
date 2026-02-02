@@ -36,8 +36,9 @@ pub async fn search_youtube(
         .arg("--dump-json")
         .arg("--no-download")
         .arg("--no-warnings")
+        .arg("--no-check-certificates")
         .arg("--socket-timeout")
-        .arg("15")
+        .arg("10")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -259,6 +260,118 @@ pub async fn fetch_playlist(
         entries,
         total_count,
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamUrlResult {
+    pub url: String,
+    pub duration: f64,
+    pub format: String,
+}
+
+/// In-memory cache for stream URLs (valid ~6h on YouTube CDN, we use 4h TTL).
+fn stream_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, (StreamUrlResult, std::time::Instant)>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (StreamUrlResult, std::time::Instant)>>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+const STREAM_URL_TTL_SECS: u64 = 4 * 3600; // 4 hours
+
+/// Extract a direct audio stream URL for a YouTube video using yt-dlp.
+/// The returned URL can be played directly via HTML5 `<audio>` (expires after ~6h).
+/// Results are cached in memory for 4h to enable instant replay and pre-fetch.
+/// Uses `--print` instead of `--dump-json` for faster output (skips full JSON serialization).
+/// Prefers M4A (AAC) for maximum HTML5 `<audio>` compatibility.
+pub async fn get_stream_url(video_id: &str) -> Result<StreamUrlResult, String> {
+    // Check cache first
+    {
+        let cache = stream_cache().lock().unwrap();
+        if let Some((result, created_at)) = cache.get(video_id) {
+            if created_at.elapsed() < std::time::Duration::from_secs(STREAM_URL_TTL_SECS) {
+                return Ok(result.clone());
+            }
+        }
+    }
+
+    let yt_dlp_bin = get_yt_dlp_bin()?;
+
+    let video_url = canonical_url(video_id);
+
+    let mut cmd = yt_dlp_command(&yt_dlp_bin);
+    cmd.arg(&video_url)
+        .arg("-f")
+        .arg("ba[ext=m4a]/ba")
+        .arg("--print")
+        .arg("url")
+        .arg("--print")
+        .arg("duration")
+        .arg("--print")
+        .arg("ext")
+        .arg("--no-download")
+        .arg("--no-warnings")
+        .arg("--no-playlist")
+        .arg("--no-check-certificates")
+        .arg("--socket-timeout")
+        .arg("10")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to run yt-dlp stream extraction: {}", e))?;
+
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        child.wait_with_output(),
+    )
+    .await
+    .map_err(|_| "yt-dlp stream extraction timed out".to_string())?
+    .map_err(|e| format!("yt-dlp stream extraction failed: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("yt-dlp stream extraction failed: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.trim().lines().collect();
+
+    if lines.is_empty() {
+        return Err("No output from yt-dlp stream extraction".to_string());
+    }
+
+    let url = lines
+        .first()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| "No stream URL in yt-dlp output".to_string())?
+        .to_string();
+
+    let duration = lines
+        .get(1)
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0);
+
+    let format = lines
+        .get(2)
+        .unwrap_or(&"m4a")
+        .to_string();
+
+    let result = StreamUrlResult {
+        url,
+        duration,
+        format,
+    };
+
+    // Store in cache (evict expired entries opportunistically)
+    {
+        let mut cache = stream_cache().lock().unwrap();
+        let ttl = std::time::Duration::from_secs(STREAM_URL_TTL_SECS);
+        cache.retain(|_, (_, t)| t.elapsed() < ttl);
+        cache.insert(video_id.to_string(), (result.clone(), std::time::Instant::now()));
+    }
+
+    Ok(result)
 }
 
 /// Strip the `list=` parameter from a YouTube URL, returning just the video URL.

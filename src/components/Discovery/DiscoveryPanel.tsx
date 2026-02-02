@@ -5,6 +5,7 @@ import {
   type DiscoverySuggestion,
   type EnrichedSuggestion,
 } from "../../stores/discoveryStore";
+import { useWheelSlider } from "../../hooks/useWheelSlider";
 import { useProfileStore } from "../../stores/profileStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useToastStore } from "../../stores/toastStore";
@@ -24,34 +25,89 @@ import { analyzeProfile, computeAutoAssign } from "../../utils/profileAnalysis";
 
 export function DiscoveryPanel() {
   const profile = useProfileStore((s) => s.currentProfile);
-  const { addSound, addKeyBinding, updateKeyBinding, saveCurrentProfile } = useProfileStore();
+  const { addSound, addKeyBinding, updateKeyBinding, saveCurrentProfile } = useProfileStore.getState();
   const config = useSettingsStore((s) => s.config);
   const addToast = useToastStore((s) => s.addToast);
 
+  const allSuggestions = useDiscoveryStore((s) => s.allSuggestions);
+  const visibleSuggestions = useDiscoveryStore((s) => s.visibleSuggestions);
+  const currentIndex = useDiscoveryStore((s) => s.currentIndex);
+  const revealedCount = useDiscoveryStore((s) => s.revealedCount);
+  const isGenerating = useDiscoveryStore((s) => s.isGenerating);
+  const isResolvingLocals = useDiscoveryStore((s) => s.isResolvingLocals);
+  const resolvingCount = useDiscoveryStore((s) => s.resolvingCount);
+  const progress = useDiscoveryStore((s) => s.progress);
+  const error = useDiscoveryStore((s) => s.error);
+
+  // Read actions via getState() — stable references, never cause re-renders
   const {
-    allSuggestions,
-    visibleSuggestions,
-    currentIndex,
-    isGenerating,
-    progress,
-    error,
-    setSuggestions,
+    mergeStreamingSuggestions,
     removeSuggestion,
     setGenerating,
+    setBackgroundFetching,
+    setResolvingLocals,
     setPreviewPlaying,
     updateSuggestionAssignment,
     goToNext,
     goToPrev,
     revealMore,
+    appendToPool,
+    restoreFromCache,
     clear,
-  } = useDiscoveryStore();
+  } = useDiscoveryStore.getState();
 
   const [isCapturingKey, setIsCapturingKey] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const downloadIdCounter = useRef(0);
+  const discoveryGenRef = useRef(0);
+  const cursorSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const hasYoutubeSounds =
-    profile?.sounds.some((s) => s.source.type === "youtube") ?? false;
+  const hasDiscoverableSounds =
+    profile?.sounds.some((s) =>
+      s.source.type === "youtube" || s.source.type === "local"
+    ) ?? false;
+
+  // Debounced cursor persistence (500ms)
+  const persistCursor = useCallback(() => {
+    if (!profile) return;
+    if (cursorSaveTimerRef.current) clearTimeout(cursorSaveTimerRef.current);
+    cursorSaveTimerRef.current = setTimeout(() => {
+      const state = useDiscoveryStore.getState();
+      commands.saveDiscoveryCursor(
+        profile.id,
+        state.currentIndex,
+        state.revealedCount,
+        state.visitedIndex
+      ).catch(() => {});
+    }, 500);
+  }, [profile]);
+
+  // Background fetch when approaching end of pool
+  const triggerBackgroundFetchIfNeeded = useCallback(() => {
+    if (!profile) return;
+    const state = useDiscoveryStore.getState();
+    const THRESHOLD = 15;
+    if (
+      state.currentIndex >= state.allSuggestions.length - THRESHOLD &&
+      !state.isBackgroundFetching &&
+      !state.isGenerating
+    ) {
+      setBackgroundFetching(true);
+      const gen = discoveryGenRef.current;
+      const poolIds = state.allSuggestions.map(s => s.videoId);
+      commands.startDiscovery(profile.id, poolIds, true)
+        .then((results) => {
+          if (discoveryGenRef.current !== gen) return;
+          if (results.length > 0) {
+            appendToPool(results);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (discoveryGenRef.current === gen) setBackgroundFetching(false);
+        });
+    }
+  }, [profile, setBackgroundFetching, appendToPool]);
 
   // Build enricher function for auto-assignment
   const buildEnricher = useCallback(() => {
@@ -77,25 +133,38 @@ export function DiscoveryPanel() {
     };
   }, [profile]);
 
-  // Listen for partial discovery results (streaming)
+  // Listen for partial discovery results (streaming) — merge on every partial,
+  // respecting items the user has already navigated to (visitedIndex watermark).
+  // Captures discoveryGenRef at listen-time to discard partials from stale discovery runs.
   useEffect(() => {
+    const gen = discoveryGenRef.current;
     const unlisten = listen<DiscoverySuggestion[]>(
       "discovery_partial",
       (event) => {
+        if (discoveryGenRef.current !== gen) return; // stale discovery run
         const state = useDiscoveryStore.getState();
-        if (
-          state.isGenerating &&
-          state.visibleSuggestions.length === 0 &&
-          event.payload.length > 0
-        ) {
-          setSuggestions(event.payload, buildEnricher());
+        if (state.isGenerating && event.payload.length > 0) {
+          mergeStreamingSuggestions(event.payload, buildEnricher());
         }
       }
     );
     return () => {
       unlisten.then((f) => f());
     };
-  }, [setSuggestions, buildEnricher]);
+  }, [mergeStreamingSuggestions, buildEnricher]);
+
+  // Listen for local sound resolution progress
+  useEffect(() => {
+    const unlisten = listen<{ count: number }>(
+      "discovery_resolving",
+      (event) => {
+        setResolvingLocals(true, event.payload.count);
+      }
+    );
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, [setResolvingLocals]);
 
   // Load cached suggestions when profile changes, auto-discover if empty
   useEffect(() => {
@@ -103,29 +172,50 @@ export function DiscoveryPanel() {
       clear();
       return;
     }
-    const hasYt = profile.sounds.some((s) => s.source.type === "youtube");
+    // Always clear stale suggestions immediately on profile switch
+    clear();
+    const gen = ++discoveryGenRef.current;
+    const hasSounds = profile.sounds.length > 0;
     commands
       .getDiscoverySuggestions(profile.id)
       .then((cached) => {
-        if (cached && cached.length > 0) {
-          setSuggestions(cached, buildEnricher());
-        } else if (hasYt) {
-          // Auto-trigger discovery when no cached results
+        if (discoveryGenRef.current !== gen) return; // stale — user triggered refresh
+        if (cached && cached.suggestions.length > 0) {
+          restoreFromCache(
+            cached.suggestions,
+            cached.cursorIndex,
+            cached.revealedCount,
+            cached.visitedIndex,
+            buildEnricher()
+          );
+          // Check if background fetch needed after restore
+          setTimeout(() => triggerBackgroundFetchIfNeeded(), 100);
+        } else if (hasSounds) {
+          // Auto-trigger discovery when no cached results (YouTube + local seeds)
           setGenerating(true);
           commands.startDiscovery(profile.id)
             .then((results) => {
-              setSuggestions(results, buildEnricher());
+              if (discoveryGenRef.current !== gen) return;
+              setResolvingLocals(false);
+              // Final merge — partials already populated incrementally, this ensures consistency
+              mergeStreamingSuggestions(results, buildEnricher());
               if (results.length === 0) {
                 addToast("No new suggestions found", "info");
               }
             })
             .catch((e) => {
+              if (discoveryGenRef.current !== gen) return;
+              setResolvingLocals(false);
               const msg = String(e);
               if (!msg.includes("cancelled")) {
                 addToast(`Discovery failed: ${msg}`, "error");
               }
             })
-            .finally(() => setGenerating(false));
+            .finally(() => {
+              if (discoveryGenRef.current === gen) setGenerating(false);
+            });
+        } else {
+          // No sounds and no cached suggestions — already cleared above
         }
       })
       .catch(() => {});
@@ -138,6 +228,32 @@ export function DiscoveryPanel() {
 
   const handleGenerate = async () => {
     if (!profile || isGenerating) return;
+
+    const state = useDiscoveryStore.getState();
+    // Skip everything currently revealed — user wants a fresh batch
+    const unseenStart = state.revealedCount;
+    const unseen = state.allSuggestions.slice(unseenStart);
+
+    // If pool has unseen items, discard seen ones and present unseen as fresh batch (1/10)
+    if (unseen.length > 0) {
+      stopPreview();
+      useDiscoveryStore.getState().setSuggestions(unseen, buildEnricher());
+      // Persist trimmed pool to cache so restart shows the same fresh state
+      const newState = useDiscoveryStore.getState();
+      commands.updateDiscoveryPool(
+        profile.id,
+        unseen,
+        0,
+        newState.revealedCount,
+        -1
+      ).catch(() => {});
+      triggerBackgroundFetchIfNeeded();
+      return;
+    }
+
+    // Pool exhausted — trigger foreground generation
+    const gen = ++discoveryGenRef.current;
+    const currentIds = state.allSuggestions.map(s => s.videoId);
     setGenerating(true);
     // Clear old suggestions so partials from this run can populate fresh
     useDiscoveryStore.setState({
@@ -145,20 +261,23 @@ export function DiscoveryPanel() {
       visibleSuggestions: [],
       revealedCount: 10,
       currentIndex: 0,
+      visitedIndex: -1,
     });
     try {
-      const results = await commands.startDiscovery(profile.id);
-      setSuggestions(results, buildEnricher());
+      const results = await commands.startDiscovery(profile.id, currentIds);
+      if (discoveryGenRef.current !== gen) return; // stale
+      mergeStreamingSuggestions(results, buildEnricher());
       if (results.length === 0) {
         addToast("No new suggestions found", "info");
       }
     } catch (e) {
+      if (discoveryGenRef.current !== gen) return;
       const msg = String(e);
       if (!msg.includes("cancelled")) {
         addToast(`Discovery failed: ${msg}`, "error");
       }
     } finally {
-      setGenerating(false);
+      if (discoveryGenRef.current === gen) setGenerating(false);
     }
   };
 
@@ -171,6 +290,7 @@ export function DiscoveryPanel() {
     stopPreview();
     removeSuggestion(videoId);
     commands.dismissDiscovery(profile.id, videoId).catch(() => {});
+    persistCursor();
   };
 
   // Preview playback
@@ -199,15 +319,23 @@ export function DiscoveryPanel() {
     await stopPreview();
     setPreviewPlaying(s.videoId, true);
     try {
+      const previewVolume = useDiscoveryStore.getState().previewVolume;
       await commands.playSound(
         "__preview__",
         s.videoId,
         s.cachedPath,
         s.suggestedMomentum,
-        1.0
+        previewVolume
       );
-    } catch {
+    } catch (e) {
+      console.error("[Discovery] Preview playback failed:", e, {
+        videoId: s.videoId,
+        cachedPath: s.cachedPath,
+        predownloadStatus: s.predownloadStatus,
+        momentum: s.suggestedMomentum,
+      });
       setPreviewPlaying(s.videoId, false);
+      addToast("Preview failed — try again", "error");
     }
   };
 
@@ -230,7 +358,8 @@ export function DiscoveryPanel() {
   const handleSeekPreview = async (s: EnrichedSuggestion, position: number) => {
     if (!s.cachedPath) return;
     try {
-      await commands.playSound("__preview__", s.videoId, s.cachedPath, position, 1.0);
+      const previewVolume = useDiscoveryStore.getState().previewVolume;
+      await commands.playSound("__preview__", s.videoId, s.cachedPath, position, previewVolume);
     } catch {
       // ignore
     }
@@ -288,6 +417,7 @@ export function DiscoveryPanel() {
       setTimeout(() => saveCurrentProfile(), 100);
       removeSuggestion(s.videoId);
       addToast(`Added: ${s.title}`, "success");
+      persistCursor();
     } else {
       // Fallback — download then add
       const downloadId = `disc_${Date.now()}_${downloadIdCounter.current++}`;
@@ -311,6 +441,7 @@ export function DiscoveryPanel() {
         setTimeout(() => saveCurrentProfile(), 100);
         removeSuggestion(s.videoId);
         addToast(`Added: ${sound.name}`, "success");
+        persistCursor();
       } catch (e) {
         addToast(`Failed to add: ${e}`, "error");
       }
@@ -331,24 +462,30 @@ export function DiscoveryPanel() {
 
   const handleNext = () => {
     stopPreview();
-    goToNext();
-    // Trigger reveal if near end
     const state = useDiscoveryStore.getState();
-    if (state.currentIndex >= state.revealedCount - 3) {
-      revealMore(buildEnricher());
+    // At page boundary — reveal next batch if pool has more
+    if (state.currentIndex >= state.visibleSuggestions.length - 1) {
+      if (state.allSuggestions.length > state.revealedCount) {
+        revealMore(buildEnricher());
+      }
     }
+    goToNext();
+    persistCursor();
+    triggerBackgroundFetchIfNeeded();
   };
 
   const handlePrev = () => {
     stopPreview();
     goToPrev();
+    persistCursor();
   };
 
   if (!profile) return null;
 
   const current = visibleSuggestions[currentIndex];
-  const total = allSuggestions.length;
   const showing = visibleSuggestions.length;
+  // hasNext: more visible items OR more pool items to reveal
+  const hasNext = currentIndex < showing - 1 || allSuggestions.length > revealedCount;
 
   return (
     <div
@@ -357,18 +494,18 @@ export function DiscoveryPanel() {
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
-      {/* Header: [Discover (1/30) Refresh]  ...  [X] */}
+      {/* Header: [Discover (1/10) Refresh]  ...  [X] */}
       <div className="px-3 pt-2 pb-1 flex items-center justify-between">
         <div className="flex items-center gap-1">
           <h3 className="text-text-muted text-xs font-semibold uppercase tracking-wider">
             Discover
           </h3>
-          {total > 0 && (
+          {showing > 0 && (
             <span className="text-accent-primary text-[10px]">
-              ({currentIndex + 1}/{total})
+              ({currentIndex + 1}/{showing})
             </span>
           )}
-          {hasYoutubeSounds && (
+          {hasDiscoverableSounds && (
             isGenerating ? (
               <button
                 onClick={handleCancel}
@@ -404,18 +541,28 @@ export function DiscoveryPanel() {
 
       {/* Content */}
       <div className="px-3 pb-3">
-        {/* No YouTube sounds */}
-        {!hasYoutubeSounds && (
+        {/* No sounds at all */}
+        {!hasDiscoverableSounds && (
           <p className="text-text-muted text-[10px] italic py-1">
-            Add YouTube sounds to get recommendations
+            Add sounds to get recommendations
           </p>
         )}
 
-        {/* Has YouTube sounds but no suggestions yet */}
-        {hasYoutubeSounds && showing === 0 && !isGenerating && !error && (
+        {/* Has sounds but no suggestions yet */}
+        {hasDiscoverableSounds && showing === 0 && !isGenerating && !error && (
           <p className="text-text-muted text-[10px] italic py-1">
             No suggestions yet
           </p>
+        )}
+
+        {/* Resolving local sounds */}
+        {isResolvingLocals && (
+          <div className="flex items-center gap-2 py-1">
+            <div className="w-3 h-3 border-2 border-accent-secondary border-t-transparent rounded-full animate-spin shrink-0" />
+            <span className="text-text-muted text-[10px]">
+              Identifying {resolvingCount} local sound{resolvingCount !== 1 ? "s" : ""}...
+            </span>
+          </div>
         )}
 
         {/* Generating progress */}
@@ -454,9 +601,54 @@ export function DiscoveryPanel() {
           onPrev={handlePrev}
           onNext={handleNext}
           hasPrev={currentIndex > 0}
-          hasNext={currentIndex < showing - 1}
+          hasNext={hasNext}
         />}
+
+        {/* Preview volume — full-width, below the card */}
+        {current && <PreviewVolumeControl />}
       </div>
+    </div>
+  );
+}
+
+// ─── Preview Volume ─────────────────────────────────────────────────────────
+
+function PreviewVolumeControl() {
+  const previewVolume = useDiscoveryStore((s) => s.previewVolume);
+  const setPreviewVolume = useDiscoveryStore((s) => s.setPreviewVolume);
+
+  const volWheelRef = useWheelSlider({
+    value: previewVolume, min: 0, max: 1, step: 0.01,
+    onChange: setPreviewVolume,
+  });
+
+  return (
+    <div className="mt-2 flex items-center gap-2 opacity-40 hover:opacity-100 transition-opacity">
+      <svg
+        className="w-3 h-3 shrink-0 text-text-muted"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        {previewVolume === 0 ? (
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+        ) : previewVolume < 0.5 ? (
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM15.536 8.464a5 5 0 010 7.072" />
+        ) : (
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728" />
+        )}
+      </svg>
+      <input
+        ref={volWheelRef}
+        type="range"
+        min={0}
+        max={1}
+        step={0.01}
+        value={previewVolume}
+        onChange={(e) => setPreviewVolume(parseFloat(e.target.value))}
+        className="flex-1 h-2 accent-accent-primary cursor-pointer"
+        title={`Preview volume: ${Math.round(previewVolume * 100)}%`}
+      />
     </div>
   );
 }
@@ -485,6 +677,35 @@ interface SuggestionCardProps {
   hasNext: boolean;
 }
 
+/** Truncate names smartly: short by default, but extend when names share the same prefix */
+function smartTruncateNames(names: string[], maxLen = 25, extraChars = 5): string[] {
+  return names.map((name, i) => {
+    if (name.length <= maxLen) return name;
+
+    // Check if any other name collides (same prefix up to maxLen)
+    const hasCollision = names.some(
+      (other, j) => j !== i && other.slice(0, maxLen) === name.slice(0, maxLen)
+    );
+
+    if (!hasCollision) return name.slice(0, maxLen) + "…";
+
+    // Find longest shared prefix with any colliding name
+    let maxCommon = 0;
+    for (let j = 0; j < names.length; j++) {
+      if (j === i) continue;
+      const other = names[j];
+      if (other.slice(0, maxLen) !== name.slice(0, maxLen)) continue;
+      let k = 0;
+      const limit = Math.min(name.length, other.length);
+      while (k < limit && name[k] === other[k]) k++;
+      if (k > maxCommon) maxCommon = k;
+    }
+
+    const showLen = Math.min(name.length, maxCommon + extraChars);
+    return showLen >= name.length ? name : name.slice(0, showLen) + "…";
+  });
+}
+
 function SuggestionCard({
   suggestion: s,
   profile,
@@ -501,10 +722,11 @@ function SuggestionCard({
 }: SuggestionCardProps) {
   const playingTracks = useAudioStore((st) => st.playingTracks);
   const addToast = useToastStore((st) => st.addToast);
+  const downloadProgress = useDiscoveryStore((st) => st.downloadProgresses[s.videoId] ?? s.downloadProgress);
   const previewEntry = playingTracks.get("__preview__");
   const previewPosition =
     previewEntry && previewEntry.soundId === s.videoId
-      ? previewEntry.position
+      ? useAudioStore.getState().getPosition("__preview__")
       : undefined;
 
   const isReady = s.predownloadStatus === "ready";
@@ -604,7 +826,8 @@ function SuggestionCard({
   const titleTooltip = [
     s.title,
     s.channel && `Channel: ${s.channel}`,
-    s.occurrenceCount > 1 && `Found via: ${s.sourceSeedNames.join(", ")}`,
+    s.occurrenceCount > 1 && `Score: ${s.occurrenceCount}`,
+    s.occurrenceCount > 1 && `Found via: ${smartTruncateNames(s.sourceSeedNames).join(", ")}`,
   ].filter(Boolean).join("\n");
 
   const timingDisplay = s.suggestedMomentum > 0
@@ -660,10 +883,10 @@ function SuggestionCard({
             />
           )}
           {s.predownloadStatus === "idle" && (
-            <div className="w-full bg-bg-secondary/50 rounded" style={{ height: 28 }} />
+            <WaveformDisplay waveformData={null} height={28} />
           )}
           {isDownloading && (
-            <div className="w-full bg-bg-secondary/50 rounded" style={{ height: 28 }} />
+            <WaveformDisplay waveformData={null} isLoading height={28} />
           )}
           {isError && (
             <div
@@ -678,7 +901,7 @@ function SuggestionCard({
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-bg-tertiary rounded overflow-hidden">
               <div
                 className="bg-accent-primary/50 h-full rounded transition-all"
-                style={{ width: `${s.downloadProgress}%` }}
+                style={{ width: `${downloadProgress}%` }}
               />
             </div>
           )}

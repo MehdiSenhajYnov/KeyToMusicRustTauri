@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -7,8 +8,18 @@ use std::time::{Duration, Instant};
 use cpal::traits::{DeviceTrait, HostTrait};
 use rodio::{OutputStream, OutputStreamHandle};
 
+use crate::audio::symphonia_source::SymphoniaSource;
 use crate::audio::track::AudioTrack;
 use crate::types::{SoundId, TrackId};
+
+/// Atomically store/load an f32 via AtomicU32.
+fn atomic_store_f32(atomic: &AtomicU32, val: f32) {
+    atomic.store(val.to_bits(), Ordering::Relaxed);
+}
+
+fn atomic_load_f32(atomic: &AtomicU32) -> f32 {
+    f32::from_bits(atomic.load(Ordering::Relaxed))
+}
 
 /// Info needed to resume a track after device switch.
 struct TrackResumeInfo {
@@ -22,11 +33,22 @@ struct TrackResumeInfo {
 
 /// Commands sent to the audio thread.
 pub enum AudioCommand {
+    /// Fallback: create source on audio thread (used by device resume).
     PlaySound {
         track_id: TrackId,
         sound_id: SoundId,
         file_path: String,
         start_position: f64,
+        sound_volume: f32,
+        crossfade_duration_ms: u32,
+    },
+    /// Play a sound with a pre-created source (avoids file I/O on the audio thread).
+    PlaySoundPrepared {
+        track_id: TrackId,
+        sound_id: SoundId,
+        file_path: String,
+        start_position: f64,
+        source: SymphoniaSource,
         sound_volume: f32,
         crossfade_duration_ms: u32,
     },
@@ -80,28 +102,27 @@ pub enum AudioEvent {
 #[derive(Clone)]
 pub struct AudioEngineHandle {
     command_tx: Sender<AudioCommand>,
-    pub events: Arc<Mutex<Vec<AudioEvent>>>,
-    pub master_volume: Arc<Mutex<f32>>,
+    pub event_rx: Arc<Mutex<Receiver<AudioEvent>>>,
+    pub master_volume: Arc<AtomicU32>,
 }
 
 impl AudioEngineHandle {
     /// Start the audio engine in a separate thread and return a handle.
     pub fn new(initial_device: Option<String>) -> Result<Self, String> {
         let (command_tx, command_rx) = mpsc::channel::<AudioCommand>();
-        let events = Arc::new(Mutex::new(Vec::<AudioEvent>::new()));
-        let master_volume = Arc::new(Mutex::new(0.8f32));
+        let (event_tx, event_rx) = mpsc::channel::<AudioEvent>();
+        let master_volume = Arc::new(AtomicU32::new(0.8f32.to_bits()));
 
-        let events_clone = events.clone();
         let master_volume_clone = master_volume.clone();
 
         // Spawn audio thread
         thread::spawn(move || {
-            audio_thread_main(command_rx, events_clone, master_volume_clone, initial_device);
+            audio_thread_main(command_rx, event_tx, master_volume_clone, initial_device);
         });
 
         Ok(Self {
             command_tx,
-            events,
+            event_rx: Arc::new(Mutex::new(event_rx)),
             master_volume,
         })
     }
@@ -113,7 +134,8 @@ impl AudioEngineHandle {
             .map_err(|e| format!("Failed to send audio command: {}", e))
     }
 
-    /// Play a sound on a track.
+    /// Play a sound on a track (fallback — creates source on audio thread).
+    #[allow(dead_code)]
     pub fn play_sound(
         &self,
         track_id: TrackId,
@@ -133,6 +155,28 @@ impl AudioEngineHandle {
         })
     }
 
+    /// Play a pre-created source on a track (no file I/O on the audio thread).
+    pub fn play_sound_prepared(
+        &self,
+        track_id: TrackId,
+        sound_id: SoundId,
+        file_path: String,
+        start_position: f64,
+        source: SymphoniaSource,
+        sound_volume: f32,
+        crossfade_duration_ms: u32,
+    ) -> Result<(), String> {
+        self.send_command(AudioCommand::PlaySoundPrepared {
+            track_id,
+            sound_id,
+            file_path,
+            start_position,
+            source,
+            sound_volume,
+            crossfade_duration_ms,
+        })
+    }
+
     /// Stop a specific track.
     pub fn stop_track(&self, track_id: TrackId) -> Result<(), String> {
         self.send_command(AudioCommand::StopTrack { track_id })
@@ -145,7 +189,7 @@ impl AudioEngineHandle {
 
     /// Set master volume.
     pub fn set_master_volume(&self, volume: f32) -> Result<(), String> {
-        *self.master_volume.lock().unwrap() = volume;
+        atomic_store_f32(&self.master_volume, volume);
         self.send_command(AudioCommand::SetMasterVolume { volume })
     }
 
@@ -226,20 +270,17 @@ fn get_default_device_name() -> Option<String> {
 /// The main loop of the audio thread.
 fn audio_thread_main(
     command_rx: Receiver<AudioCommand>,
-    events: Arc<Mutex<Vec<AudioEvent>>>,
-    master_volume: Arc<Mutex<f32>>,
+    event_tx: Sender<AudioEvent>,
+    master_volume: Arc<AtomicU32>,
     initial_device: Option<String>,
 ) {
     // Initialize audio output
     let (mut _stream, mut stream_handle) = match create_output_stream(&initial_device) {
         Ok(s) => s,
         Err(e) => {
-            emit_event(
-                &events,
-                AudioEvent::Error {
-                    message: format!("Failed to initialize audio output: {}", e),
-                },
-            );
+            let _ = event_tx.send(AudioEvent::Error {
+                message: format!("Failed to initialize audio output: {}", e),
+            });
             return;
         }
     };
@@ -253,7 +294,7 @@ fn audio_thread_main(
     let mut current_device: Option<String> = initial_device;
     let mut last_default_device_name: Option<String> = get_default_device_name();
     let mut last_device_check = Instant::now();
-    let device_check_interval = Duration::from_secs(3);
+    let device_check_interval = Duration::from_secs(5);
 
     // Progress emission timer
     let mut last_progress_emit = Instant::now();
@@ -279,17 +320,14 @@ fn audio_thread_main(
                 sound_volume,
                 crossfade_duration_ms,
             }) => {
-                let mv = *master_volume.lock().unwrap();
+                let mv = atomic_load_f32(&master_volume);
 
                 // Create track if it doesn't exist
                 if !tracks.contains_key(&track_id) {
                     if tracks.len() >= 20 {
-                        emit_event(
-                            &events,
-                            AudioEvent::Error {
-                                message: "Maximum number of tracks (20) reached".to_string(),
-                            },
-                        );
+                        let _ = event_tx.send(AudioEvent::Error {
+                            message: "Maximum number of tracks (20) reached".to_string(),
+                        });
                         continue;
                     }
                     tracks.insert(
@@ -311,16 +349,62 @@ fn audio_thread_main(
                         crossfade_duration_ms,
                     ) {
                         Ok(()) => {
-                            emit_event(
-                                &events,
-                                AudioEvent::SoundStarted {
-                                    track_id: track_id.clone(),
-                                    sound_id,
-                                },
-                            );
+                            let _ = event_tx.send(AudioEvent::SoundStarted {
+                                track_id: track_id.clone(),
+                                sound_id,
+                            });
                         }
                         Err(e) => {
-                            emit_event(&events, AudioEvent::Error { message: e });
+                            let _ = event_tx.send(AudioEvent::Error { message: e });
+                        }
+                    }
+                }
+            }
+            Ok(AudioCommand::PlaySoundPrepared {
+                track_id,
+                sound_id,
+                file_path,
+                start_position,
+                source,
+                sound_volume,
+                crossfade_duration_ms,
+            }) => {
+                let mv = atomic_load_f32(&master_volume);
+
+                if !tracks.contains_key(&track_id) {
+                    if tracks.len() >= 20 {
+                        let _ = event_tx.send(AudioEvent::Error {
+                            message: "Maximum number of tracks (20) reached".to_string(),
+                        });
+                        continue;
+                    }
+                    tracks.insert(
+                        track_id.clone(),
+                        AudioTrack::new(stream_handle.clone()),
+                    );
+                }
+
+                if let Some(track) = tracks.get_mut(&track_id) {
+                    sound_volumes.insert(sound_id.clone(), sound_volume);
+                    track_sounds.insert(track_id.clone(), sound_id.clone());
+
+                    match track.play_prepared(
+                        sound_id.clone(),
+                        &file_path,
+                        start_position,
+                        source,
+                        sound_volume,
+                        mv,
+                        crossfade_duration_ms,
+                    ) {
+                        Ok(()) => {
+                            let _ = event_tx.send(AudioEvent::SoundStarted {
+                                track_id: track_id.clone(),
+                                sound_id,
+                            });
+                        }
+                        Err(e) => {
+                            let _ = event_tx.send(AudioEvent::Error { message: e });
                         }
                     }
                 }
@@ -330,13 +414,10 @@ fn audio_thread_main(
                     let sound_id = track.currently_playing.clone();
                     track.stop();
                     if let Some(sid) = sound_id {
-                        emit_event(
-                            &events,
-                            AudioEvent::SoundEnded {
-                                track_id: track_id.clone(),
-                                sound_id: sid,
-                            },
-                        );
+                        let _ = event_tx.send(AudioEvent::SoundEnded {
+                            track_id: track_id.clone(),
+                            sound_id: sid,
+                        });
                     }
                 }
             }
@@ -345,13 +426,10 @@ fn audio_thread_main(
                     let sound_id = track.currently_playing.clone();
                     track.stop();
                     if let Some(sid) = sound_id {
-                        emit_event(
-                            &events,
-                            AudioEvent::SoundEnded {
-                                track_id: tid.clone(),
-                                sound_id: sid,
-                            },
-                        );
+                        let _ = event_tx.send(AudioEvent::SoundEnded {
+                            track_id: tid.clone(),
+                            sound_id: sid,
+                        });
                     }
                 }
             }
@@ -368,7 +446,7 @@ fn audio_thread_main(
             }
             Ok(AudioCommand::SetTrackVolume { track_id, volume }) => {
                 if let Some(track) = tracks.get_mut(&track_id) {
-                    let mv = *master_volume.lock().unwrap();
+                    let mv = atomic_load_f32(&master_volume);
                     let sv = track_sounds
                         .get(&track_id)
                         .and_then(|sid| sound_volumes.get(sid))
@@ -382,14 +460,14 @@ fn audio_thread_main(
                 sound_volumes.insert(sound_id, volume);
                 // Recalculate final volume on the track's sink
                 if let Some(track) = tracks.get_mut(&track_id) {
-                    let mv = *master_volume.lock().unwrap();
+                    let mv = atomic_load_f32(&master_volume);
                     if track.crossfade.is_none() {
                         track.update_master_volume(volume, mv);
                     }
                 }
             }
             Ok(AudioCommand::SetAudioDevice { device_name }) => {
-                let mv = *master_volume.lock().unwrap();
+                let mv = atomic_load_f32(&master_volume);
                 let resume_list = capture_and_stop_tracks(&mut tracks, &sound_volumes);
 
                 // Rebuild the output stream
@@ -401,7 +479,7 @@ fn audio_thread_main(
                         last_default_device_name = get_default_device_name();
                     }
                     Err(e) => {
-                        emit_event(&events, AudioEvent::Error {
+                        let _ = event_tx.send(AudioEvent::Error {
                             message: format!("Failed to switch audio device: {}", e),
                         });
                         // Try falling back to default
@@ -416,7 +494,7 @@ fn audio_thread_main(
                     }
                 }
 
-                resume_tracks(resume_list, &mut tracks, &mut sound_volumes, &mut track_sounds, &stream_handle, mv, &events);
+                resume_tracks(resume_list, &mut tracks, &mut sound_volumes, &mut track_sounds, &stream_handle, mv, &event_tx);
             }
             Ok(AudioCommand::SetErrorSoundPath { path }) => {
                 error_sound_path = Some(path);
@@ -427,14 +505,14 @@ fn audio_thread_main(
                     match SymphoniaSource::new(path, 0.0) {
                         Ok(source) => {
                             if let Ok(sink) = rodio::Sink::try_new(&stream_handle) {
-                                let mv = *master_volume.lock().unwrap();
+                                let mv = atomic_load_f32(&master_volume);
                                 sink.set_volume(mv * 0.5);
                                 sink.append(source);
                                 sink.detach(); // fire-and-forget
                             }
                         }
                         Err(e) => {
-                            emit_event(&events, AudioEvent::Error {
+                            let _ = event_tx.send(AudioEvent::Error {
                                 message: format!("Failed to play error sound: {}", e),
                             });
                         }
@@ -463,19 +541,19 @@ fn audio_thread_main(
             let new_default = get_default_device_name();
             if new_default != last_default_device_name {
                 last_default_device_name = new_default;
-                let mv = *master_volume.lock().unwrap();
+                let mv = atomic_load_f32(&master_volume);
                 let resume_list = capture_and_stop_tracks(&mut tracks, &sound_volumes);
 
                 if let Ok((new_stream, new_handle)) = create_output_stream(&None) {
                     _stream = new_stream;
                     stream_handle = new_handle;
-                    resume_tracks(resume_list, &mut tracks, &mut sound_volumes, &mut track_sounds, &stream_handle, mv, &events);
+                    resume_tracks(resume_list, &mut tracks, &mut sound_volumes, &mut track_sounds, &stream_handle, mv, &event_tx);
                 }
             }
         }
 
-        // Update crossfades
-        let mv = *master_volume.lock().unwrap();
+        // Update crossfades and volume ramps
+        let mv = atomic_load_f32(&master_volume);
         for (tid, track) in tracks.iter_mut() {
             if track.crossfade.is_some() {
                 let sv = track_sounds
@@ -484,6 +562,8 @@ fn audio_thread_main(
                     .copied()
                     .unwrap_or(1.0);
                 track.update_crossfade(sv, mv);
+            } else {
+                track.tick_volume_ramp();
             }
         }
 
@@ -501,13 +581,10 @@ fn audio_thread_main(
                 track.currently_playing = None;
                 track.start_time = None;
             }
-            emit_event(
-                &events,
-                AudioEvent::SoundEnded {
-                    track_id: tid,
-                    sound_id: sid,
-                },
-            );
+            let _ = event_tx.send(AudioEvent::SoundEnded {
+                track_id: tid,
+                sound_id: sid,
+            });
         }
 
         // Emit progress events
@@ -515,22 +592,13 @@ fn audio_thread_main(
             last_progress_emit = Instant::now();
             for (tid, track) in tracks.iter() {
                 if track.is_playing() {
-                    emit_event(
-                        &events,
-                        AudioEvent::PlaybackProgress {
-                            track_id: tid.clone(),
-                            position: track.get_position(),
-                        },
-                    );
+                    let _ = event_tx.send(AudioEvent::PlaybackProgress {
+                        track_id: tid.clone(),
+                        position: track.get_position(),
+                    });
                 }
             }
         }
-    }
-}
-
-fn emit_event(events: &Arc<Mutex<Vec<AudioEvent>>>, event: AudioEvent) {
-    if let Ok(mut events) = events.lock() {
-        events.push(event);
     }
 }
 
@@ -570,7 +638,7 @@ fn resume_tracks(
     track_sounds: &mut HashMap<TrackId, SoundId>,
     stream_handle: &OutputStreamHandle,
     master_volume: f32,
-    events: &Arc<Mutex<Vec<AudioEvent>>>,
+    event_tx: &Sender<AudioEvent>,
 ) {
     for info in resume_list {
         let mut new_track = AudioTrack::new(stream_handle.clone());
@@ -585,7 +653,7 @@ fn resume_tracks(
         ) {
             Ok(()) => {}
             Err(e) => {
-                emit_event(events, AudioEvent::Error {
+                let _ = event_tx.send(AudioEvent::Error {
                     message: format!("Failed to resume track {}: {}", info.track_id, e),
                 });
             }

@@ -1,14 +1,15 @@
+use crate::audio::analysis::WaveformData;
 use crate::storage;
 use crate::types::{Profile, SoundSource};
-use super::ExportMetadata;
+use super::{ExportMetadata, ImportResult};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
 use zip::ZipArchive;
 
-/// Import a .ktm file, returning the new profile ID.
-pub fn import_profile(ktm_path: &str) -> Result<String, String> {
+/// Import a .ktm file, returning the new profile ID and any embedded waveform data.
+pub fn import_profile(ktm_path: &str) -> Result<ImportResult, String> {
     let ktm_file = Path::new(ktm_path);
     if !ktm_file.exists() {
         return Err(format!("File not found: {}", ktm_path));
@@ -64,6 +65,9 @@ pub fn import_profile(ktm_path: &str) -> Result<String, String> {
     fs::create_dir_all(&sounds_dir)
         .map_err(|e| format!("Failed to create imported sounds directory: {}", e))?;
 
+    // Map from ZIP-relative path ("sounds/filename.mp3") to new absolute path
+    let mut zip_to_abs: HashMap<String, String> = HashMap::new();
+
     // Extract sound files and update paths
     for sound in &mut profile.sounds {
         // Update sound ID
@@ -110,14 +114,14 @@ pub fn import_profile(ktm_path: &str) -> Result<String, String> {
 
         let mut entry = archive.by_name(&entry_name)
             .map_err(|e| format!("Failed to read '{}' from archive: {}", entry_name, e))?;
-        let mut data = Vec::new();
-        entry.read_to_end(&mut data)
-            .map_err(|e| format!("Failed to read '{}' from archive: {}", entry_name, e))?;
-        fs::write(&dest_path, &data)
-            .map_err(|e| format!("Failed to write '{}': {}", dest_path.display(), e))?;
+        let mut dest_file = fs::File::create(&dest_path)
+            .map_err(|e| format!("Failed to create '{}': {}", dest_path.display(), e))?;
+        std::io::copy(&mut entry, &mut dest_file)
+            .map_err(|e| format!("Failed to extract '{}': {}", entry_name, e))?;
 
         // Update the source to use the absolute path
         let abs_path = dest_path.to_string_lossy().to_string();
+        zip_to_abs.insert(zip_entry_path, abs_path.clone());
         sound.source = SoundSource::Local { path: abs_path };
     }
 
@@ -138,5 +142,30 @@ pub fn import_profile(ktm_path: &str) -> Result<String, String> {
     // Save the new profile
     storage::save_profile(&profile)?;
 
-    Ok(new_profile_id)
+    // Read waveforms.json (optional — old exports won't have it)
+    let waveforms = if let Ok(mut entry) = archive.by_name("waveforms.json") {
+        let mut contents = String::new();
+        if entry.read_to_string(&mut contents).is_ok() {
+            if let Ok(zip_waveforms) = serde_json::from_str::<HashMap<String, WaveformData>>(&contents) {
+                // Remap keys from ZIP-relative paths to new absolute paths
+                zip_waveforms
+                    .into_iter()
+                    .filter_map(|(zip_key, data)| {
+                        zip_to_abs.get(&zip_key).map(|abs| (abs.clone(), data))
+                    })
+                    .collect()
+            } else {
+                HashMap::new()
+            }
+        } else {
+            HashMap::new()
+        }
+    } else {
+        HashMap::new()
+    };
+
+    Ok(ImportResult {
+        profile_id: new_profile_id,
+        waveforms,
+    })
 }

@@ -38,8 +38,10 @@ export function MainContent() {
       const delta = startY.current - clientY;
       const containerHeight = containerRef.current.clientHeight;
       const maxHeight = containerHeight - 100;
-      const newHeight = Math.min(maxHeight, Math.max(120, startHeight.current + delta));
-      setPanelHeight(newHeight);
+      requestAnimationFrame(() => {
+        const newHeight = Math.min(maxHeight, Math.max(120, startHeight.current + delta));
+        setPanelHeight(newHeight);
+      });
     };
 
     const handleMouseUp = () => {

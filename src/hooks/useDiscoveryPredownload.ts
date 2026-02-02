@@ -7,10 +7,13 @@ import * as commands from "../utils/tauriCommands";
  * Pre-downloads a window of suggestions around the current carousel index.
  * Downloads [current-2, ..., current+3] with max 3 concurrent downloads.
  * Asymmetric window (3 ahead, 2 behind) since users mostly navigate forward.
+ * Also pre-downloads the first 2 items that would appear on refresh (unseen pool items).
  */
 export function useDiscoveryPredownload() {
   const currentIndex = useDiscoveryStore((s) => s.currentIndex);
   const visibleSuggestions = useDiscoveryStore((s) => s.visibleSuggestions);
+  const allSuggestions = useDiscoveryStore((s) => s.allSuggestions);
+  const revealedCount = useDiscoveryStore((s) => s.revealedCount);
   const setPredownloadStatus = useDiscoveryStore(
     (s) => s.setPredownloadStatus
   );
@@ -19,6 +22,9 @@ export function useDiscoveryPredownload() {
   );
   const updateSuggestionAssignment = useDiscoveryStore(
     (s) => s.updateSuggestionAssignment
+  );
+  const setPoolPredownload = useDiscoveryStore(
+    (s) => s.setPoolPredownload
   );
 
   const activeDownloads = useRef(new Set<string>());
@@ -104,4 +110,44 @@ export function useDiscoveryPredownload() {
     setPredownloadStatus,
     updateSuggestionAssignment,
   ]);
+
+  // Pre-download first 2 items that would appear on refresh (unseen pool items).
+  // Uses revealedCount as offset because handleGenerate shows allSuggestions[revealedCount..] on refresh.
+  useEffect(() => {
+    const store = useDiscoveryStore.getState();
+    const refreshStart = revealedCount;
+
+    for (let i = 0; i < 2; i++) {
+      const poolIdx = refreshStart + i;
+      if (poolIdx >= allSuggestions.length) break;
+
+      const s = allSuggestions[poolIdx];
+      // Skip if already visible (will be handled by the main window)
+      if (visibleSuggestions.some((v) => v.videoId === s.videoId)) continue;
+      // Skip if already predownloaded in pool cache
+      if (store.poolPredownloads[s.videoId]) continue;
+      // Skip if already active
+      if (activeDownloads.current.has(s.videoId)) continue;
+      // Respect concurrency limit
+      if (activeDownloads.current.size >= 3) break;
+
+      const downloadId = `predl_${Date.now()}_${dlCounter.current++}`;
+      activeDownloads.current.add(s.videoId);
+
+      commands
+        .predownloadSuggestion(s.url, s.videoId, downloadId)
+        .then((result) => {
+          activeDownloads.current.delete(s.videoId);
+          setPoolPredownload(s.videoId, {
+            cachedPath: result.cachedPath,
+            waveform: result.waveform,
+            duration: result.duration,
+            suggestedMomentum: result.waveform.suggestedMomentum ?? 0,
+          });
+        })
+        .catch(() => {
+          activeDownloads.current.delete(s.videoId);
+        });
+    }
+  }, [revealedCount, allSuggestions, visibleSuggestions, setPoolPredownload]);
 }

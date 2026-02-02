@@ -11,6 +11,9 @@ pub struct ProfileSummary {
     pub updated_at: String,
 }
 
+/// List all profiles by extracting only the 4 summary fields (id, name, createdAt, updatedAt).
+/// Uses serde_json::Value for partial parsing to avoid deserializing the large
+/// sounds/tracks/keyBindings arrays that can be 50KB-1MB per profile.
 pub fn list_profiles() -> Result<Vec<ProfileSummary>, String> {
     let profiles_dir = get_app_data_dir().join("profiles");
 
@@ -26,13 +29,21 @@ pub fn list_profiles() -> Result<Vec<ProfileSummary>, String> {
 
         if path.extension().and_then(|s| s.to_str()) == Some("json") {
             if let Ok(contents) = fs::read_to_string(&path) {
-                if let Ok(profile) = serde_json::from_str::<Profile>(&contents) {
-                    summaries.push(ProfileSummary {
-                        id: profile.id,
-                        name: profile.name,
-                        created_at: profile.created_at,
-                        updated_at: profile.updated_at,
-                    });
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&contents) {
+                    let id = val.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+                    let name = val.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+                    let created_at = val.get("createdAt").and_then(|v| v.as_str()).unwrap_or_default();
+                    let updated_at = val.get("updatedAt").and_then(|v| v.as_str()).unwrap_or_default();
+
+                    // Skip entries that lack an id (not a valid profile)
+                    if !id.is_empty() {
+                        summaries.push(ProfileSummary {
+                            id: id.to_string(),
+                            name: name.to_string(),
+                            created_at: created_at.to_string(),
+                            updated_at: updated_at.to_string(),
+                        });
+                    }
                 }
             }
         }

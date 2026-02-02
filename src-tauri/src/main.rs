@@ -80,17 +80,28 @@ fn main() {
     key_detector.set_key_detection_shortcut(config.key_detection_shortcut.clone());
     key_detector.set_auto_momentum_shortcut(config.auto_momentum_shortcut.clone());
 
-    // Initialize YouTube cache
+    // Initialize YouTube cache (load index only; cleanup deferred to background)
     let mut youtube_cache = youtube::YouTubeCache::new();
     if let Err(e) = youtube_cache.load_index() {
         tracing::warn!("Failed to load YouTube cache index: {}", e);
     }
-    youtube_cache.verify_integrity();
-    youtube_cache.cleanup_unused();
-    youtube_cache.save_index().ok();
 
     // Create app state
     let app_state = AppState::new(config, audio_engine, key_detector.clone(), youtube_cache);
+
+    // Defer YouTube cache cleanup to a background thread (saves ~500ms startup)
+    {
+        let yt_cache = app_state.youtube_cache.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(5));
+            if let Ok(mut cache) = yt_cache.lock() {
+                cache.verify_integrity();
+                cache.cleanup_unused();
+                cache.save_index().ok();
+                tracing::info!("YouTube cache cleanup completed (deferred)");
+            }
+        });
+    }
 
     tauri::Builder::default()
         // Allow rdev (global keyboard hook) to receive events even when window is focused
@@ -144,50 +155,115 @@ fn main() {
                 }
             });
 
-            // Start audio event polling thread
+            // Start audio event forwarding thread (mpsc channel instead of polling)
             let app_handle_audio = app.handle().clone();
-            let audio_events = {
+            let event_rx = {
                 let state: tauri::State<'_, AppState> = app.state();
-                state.audio_engine.events.clone()
+                state.audio_engine.event_rx.clone()
             };
 
             std::thread::spawn(move || {
+                let rx = event_rx.lock().unwrap();
                 loop {
-                    std::thread::sleep(Duration::from_millis(100));
-                    let events: Vec<AudioEvent> = {
-                        let mut lock = audio_events.lock().unwrap();
-                        lock.drain(..).collect()
-                    };
-                    for event in events {
-                        match event {
-                            AudioEvent::SoundStarted { track_id, sound_id } => {
-                                let _ = app_handle_audio.emit("sound_started", serde_json::json!({
-                                    "trackId": track_id,
-                                    "soundId": sound_id,
-                                }));
+                    // Block until an event arrives, with timeout to allow shutdown
+                    match rx.recv_timeout(Duration::from_millis(50)) {
+                        Ok(event) => {
+                            match event {
+                                AudioEvent::SoundStarted { track_id, sound_id } => {
+                                    let _ = app_handle_audio.emit("sound_started", serde_json::json!({
+                                        "trackId": track_id,
+                                        "soundId": sound_id,
+                                    }));
+                                }
+                                AudioEvent::SoundEnded { track_id, sound_id } => {
+                                    let _ = app_handle_audio.emit("sound_ended", serde_json::json!({
+                                        "trackId": track_id,
+                                        "soundId": sound_id,
+                                    }));
+                                }
+                                AudioEvent::PlaybackProgress { track_id, position } => {
+                                    let _ = app_handle_audio.emit("playback_progress", serde_json::json!({
+                                        "trackId": track_id,
+                                        "position": position,
+                                    }));
+                                }
+                                AudioEvent::Error { message } => {
+                                    tracing::error!("[audio] {}", message);
+                                    let _ = app_handle_audio.emit("audio_error", serde_json::json!({
+                                        "message": message,
+                                    }));
+                                }
                             }
-                            AudioEvent::SoundEnded { track_id, sound_id } => {
-                                let _ = app_handle_audio.emit("sound_ended", serde_json::json!({
-                                    "trackId": track_id,
-                                    "soundId": sound_id,
-                                }));
+                            // Drain any remaining events without blocking
+                            while let Ok(event) = rx.try_recv() {
+                                match event {
+                                    AudioEvent::SoundStarted { track_id, sound_id } => {
+                                        let _ = app_handle_audio.emit("sound_started", serde_json::json!({
+                                            "trackId": track_id,
+                                            "soundId": sound_id,
+                                        }));
+                                    }
+                                    AudioEvent::SoundEnded { track_id, sound_id } => {
+                                        let _ = app_handle_audio.emit("sound_ended", serde_json::json!({
+                                            "trackId": track_id,
+                                            "soundId": sound_id,
+                                        }));
+                                    }
+                                    AudioEvent::PlaybackProgress { track_id, position } => {
+                                        let _ = app_handle_audio.emit("playback_progress", serde_json::json!({
+                                            "trackId": track_id,
+                                            "position": position,
+                                        }));
+                                    }
+                                    AudioEvent::Error { message } => {
+                                        tracing::error!("[audio] {}", message);
+                                        let _ = app_handle_audio.emit("audio_error", serde_json::json!({
+                                            "message": message,
+                                        }));
+                                    }
+                                }
                             }
-                            AudioEvent::PlaybackProgress { track_id, position } => {
-                                let _ = app_handle_audio.emit("playback_progress", serde_json::json!({
-                                    "trackId": track_id,
-                                    "position": position,
-                                }));
-                            }
-                            AudioEvent::Error { message } => {
-                                tracing::error!("[audio] {}", message);
-                                let _ = app_handle_audio.emit("audio_error", serde_json::json!({
-                                    "message": message,
-                                }));
-                            }
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                            // No events, continue waiting
+                        }
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                            // Audio engine shut down
+                            break;
                         }
                     }
                 }
             });
+
+            // Config debounce flush thread (saves every 2s if dirty)
+            {
+                let app_handle_config = app.handle().clone();
+                std::thread::spawn(move || {
+                    loop {
+                        std::thread::sleep(Duration::from_secs(2));
+                        let state: tauri::State<'_, AppState> = app_handle_config.state();
+                        if let Err(e) = state.flush_config() {
+                            tracing::warn!("Failed to flush config: {}", e);
+                        }
+                    }
+                });
+            }
+
+            // Waveform cache flush thread (saves every 5s if dirty)
+            {
+                let waveform_cache = {
+                    let state: tauri::State<'_, AppState> = app.state();
+                    state.waveform_cache.clone()
+                };
+                std::thread::spawn(move || {
+                    loop {
+                        std::thread::sleep(Duration::from_secs(5));
+                        if let Ok(mut cache) = waveform_cache.lock() {
+                            cache.flush_if_dirty();
+                        }
+                    }
+                });
+            }
 
             Ok(())
         })
@@ -220,6 +296,7 @@ fn main() {
             add_sound_from_youtube,
             search_youtube,
             fetch_playlist,
+            get_youtube_stream_url,
             check_yt_dlp_installed,
             install_yt_dlp,
             check_ffmpeg_installed,
@@ -243,6 +320,8 @@ fn main() {
             dismiss_discovery,
             cancel_discovery,
             predownload_suggestion,
+            save_discovery_cursor,
+            update_discovery_pool,
             // Legacy import commands
             pick_legacy_file,
             import_legacy_save,

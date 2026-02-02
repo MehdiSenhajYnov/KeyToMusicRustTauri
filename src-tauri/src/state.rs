@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 
 use crate::audio::AudioEngineHandle;
@@ -17,11 +17,28 @@ pub struct AppState {
     pub youtube_cache: Arc<Mutex<YouTubeCache>>,
     pub waveform_cache: Arc<Mutex<WaveformCache>>,
     pub discovery_cancel: Arc<AtomicBool>,
+    /// Shared Rayon thread pool (4 threads) for CPU-bound audio operations
+    /// (waveform computation, duration reading). Limits concurrent CPU work.
+    pub cpu_pool: Arc<rayon::ThreadPool>,
+    /// Generation counter for profile loads. Incremented each time a profile
+    /// is preloaded. CPU-bound batch operations check this to bail early
+    /// when a newer load has started.
+    pub profile_load_gen: Arc<AtomicU64>,
+    /// Dirty flag for debounced config writes (flushed every 2s by background thread).
+    pub config_dirty: Arc<AtomicBool>,
 }
 
 impl AppState {
     pub fn new(config: AppConfig, audio_engine: AudioEngineHandle, key_detector: KeyDetector, youtube_cache: YouTubeCache) -> Self {
         let cache_path = storage::get_app_data_dir().join("cache").join("waveforms.json");
+        let cpu_pool = Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(4)
+                .thread_name(|i| format!("cpu-pool-{}", i))
+                .build()
+                .expect("Failed to build CPU thread pool")
+        );
+        tracing::info!("CPU thread pool created (4 threads)");
         Self {
             config: Mutex::new(config),
             audio_engine,
@@ -29,12 +46,15 @@ impl AppState {
             youtube_cache: Arc::new(Mutex::new(youtube_cache)),
             waveform_cache: Arc::new(Mutex::new(WaveformCache::new_with_disk(50, cache_path))),
             discovery_cancel: Arc::new(AtomicBool::new(false)),
+            cpu_pool,
+            profile_load_gen: Arc::new(AtomicU64::new(0)),
+            config_dirty: Arc::new(AtomicBool::new(false)),
         }
     }
 
     /// Get a clone of the current config.
     pub fn get_config(&self) -> AppConfig {
-        self.config.lock().unwrap().clone()
+        self.config.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     /// Update the config with a closure and return the new config.
@@ -42,8 +62,22 @@ impl AppState {
     where
         F: FnOnce(&mut AppConfig),
     {
-        let mut config = self.config.lock().unwrap();
+        let mut config = self.config.lock().unwrap_or_else(|e| e.into_inner());
         updater(&mut config);
         config.clone()
+    }
+
+    /// Mark config as dirty for debounced saving (flushed every 2s by background thread).
+    pub fn schedule_config_save(&self) {
+        self.config_dirty.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Flush config to disk if dirty. Called periodically by background thread.
+    pub fn flush_config(&self) -> Result<(), String> {
+        if self.config_dirty.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            let config = self.get_config();
+            crate::storage::save_config(&config)?;
+        }
+        Ok(())
     }
 }

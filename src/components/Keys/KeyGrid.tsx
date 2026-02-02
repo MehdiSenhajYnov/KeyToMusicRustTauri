@@ -27,7 +27,7 @@ function usePlayingSoundIds(): Set<string> {
     }
     // Return previous reference if contents are identical (prevents re-render)
     const prev = prevRef.current;
-    if (next.size === prev.size && [...next].every((id) => prev.has(id))) {
+    if (next.size === prev.size && (() => { for (const id of next) { if (!prev.has(id)) return false; } return true; })()) {
       return prev;
     }
     prevRef.current = next;

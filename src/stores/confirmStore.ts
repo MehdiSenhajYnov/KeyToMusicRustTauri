@@ -15,7 +15,16 @@ export const useConfirmStore = create<ConfirmState>((set, get) => ({
 
   confirm: (message: string) => {
     return new Promise<boolean>((resolve) => {
-      set({ isOpen: true, message, resolve });
+      const timeout = setTimeout(() => {
+        get().close(false);
+      }, 30000);
+
+      const wrappedResolve = (value: boolean) => {
+        clearTimeout(timeout);
+        resolve(value);
+      };
+
+      set({ isOpen: true, message, resolve: wrappedResolve });
     });
   },
 

@@ -205,104 +205,103 @@ unsafe fn process_raw_input(hrawinput: HRAWINPUT) {
     }
 }
 
+/// Pre-computed lookup tables for zero-allocation key code conversion.
+static LETTER_CODES: [&str; 26] = [
+    "KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyF", "KeyG", "KeyH", "KeyI",
+    "KeyJ", "KeyK", "KeyL", "KeyM", "KeyN", "KeyO", "KeyP", "KeyQ", "KeyR",
+    "KeyS", "KeyT", "KeyU", "KeyV", "KeyW", "KeyX", "KeyY", "KeyZ",
+];
+
+static DIGIT_CODES: [&str; 10] = [
+    "Digit0", "Digit1", "Digit2", "Digit3", "Digit4",
+    "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
+];
+
+static NUMPAD_CODES: [&str; 10] = [
+    "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4",
+    "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9",
+];
+
+static F_KEY_CODES: [&str; 24] = [
+    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+    "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24",
+];
+
 /// Convert Windows virtual key code to Web KeyboardEvent.code format
 fn vk_to_code(vk: u32, scan_code: u32, is_extended: bool) -> String {
-    match vk {
+    let static_code: Option<&'static str> = match vk {
         // Letters A-Z (0x41-0x5A)
-        0x41..=0x5A => format!("Key{}", (vk as u8) as char),
+        0x41..=0x5A => Some(LETTER_CODES[(vk - 0x41) as usize]),
 
         // Digits 0-9 (0x30-0x39)
-        0x30..=0x39 => format!("Digit{}", (vk as u8 - 0x30)),
+        0x30..=0x39 => Some(DIGIT_CODES[(vk - 0x30) as usize]),
 
         // Numpad 0-9 (0x60-0x69)
-        0x60..=0x69 => format!("Numpad{}", vk - 0x60),
+        0x60..=0x69 => Some(NUMPAD_CODES[(vk - 0x60) as usize]),
 
         // Numpad operators
-        0x6A => "NumpadMultiply".to_string(),
-        0x6B => "NumpadAdd".to_string(),
-        0x6C => "NumpadComma".to_string(),
-        0x6D => "NumpadSubtract".to_string(),
-        0x6E => "NumpadDecimal".to_string(),
-        0x6F => "NumpadDivide".to_string(),
+        0x6A => Some("NumpadMultiply"),
+        0x6B => Some("NumpadAdd"),
+        0x6C => Some("NumpadComma"),
+        0x6D => Some("NumpadSubtract"),
+        0x6E => Some("NumpadDecimal"),
+        0x6F => Some("NumpadDivide"),
 
-        // Function keys F1-F12 (0x70-0x7B)
-        0x70..=0x7B => format!("F{}", vk - 0x70 + 1),
-
-        // Function keys F13-F24 (0x7C-0x87)
-        0x7C..=0x87 => format!("F{}", vk - 0x7C + 13),
+        // Function keys F1-F24 (0x70-0x87)
+        0x70..=0x87 => Some(F_KEY_CODES[(vk - 0x70) as usize]),
 
         // Arrow keys
-        0x25 => "ArrowLeft".to_string(),
-        0x26 => "ArrowUp".to_string(),
-        0x27 => "ArrowRight".to_string(),
-        0x28 => "ArrowDown".to_string(),
+        0x25 => Some("ArrowLeft"),
+        0x26 => Some("ArrowUp"),
+        0x27 => Some("ArrowRight"),
+        0x28 => Some("ArrowDown"),
 
         // Special keys
-        0x08 => "Backspace".to_string(),
-        0x09 => "Tab".to_string(),
-        0x0D => {
-            if is_extended {
-                "NumpadEnter".to_string()
-            } else {
-                "Enter".to_string()
-            }
-        }
+        0x08 => Some("Backspace"),
+        0x09 => Some("Tab"),
+        0x0D => Some(if is_extended { "NumpadEnter" } else { "Enter" }),
         // Shift: scan code 0x36 is right shift, 0x2A is left shift
-        0x10 | 0xA0 | 0xA1 => {
-            if scan_code == 0x36 {
-                "ShiftRight".to_string()
-            } else {
-                "ShiftLeft".to_string()
-            }
-        }
+        0x10 | 0xA0 | 0xA1 => Some(if scan_code == 0x36 { "ShiftRight" } else { "ShiftLeft" }),
         // Control
-        0x11 | 0xA2 | 0xA3 => {
-            if is_extended {
-                "ControlRight".to_string()
-            } else {
-                "ControlLeft".to_string()
-            }
-        }
+        0x11 | 0xA2 | 0xA3 => Some(if is_extended { "ControlRight" } else { "ControlLeft" }),
         // Alt (Menu)
-        0x12 | 0xA4 | 0xA5 => {
-            if is_extended {
-                "AltRight".to_string()
-            } else {
-                "AltLeft".to_string()
-            }
-        }
-        0x13 => "Pause".to_string(),
-        0x14 => "CapsLock".to_string(),
-        0x1B => "Escape".to_string(),
-        0x20 => "Space".to_string(),
-        0x21 => "PageUp".to_string(),
-        0x22 => "PageDown".to_string(),
-        0x23 => "End".to_string(),
-        0x24 => "Home".to_string(),
-        0x2C => "PrintScreen".to_string(),
-        0x2D => "Insert".to_string(),
-        0x2E => "Delete".to_string(),
-        0x5B => "MetaLeft".to_string(),
-        0x5C => "MetaRight".to_string(),
-        0x5D => "ContextMenu".to_string(),
-        0x90 => "NumLock".to_string(),
-        0x91 => "ScrollLock".to_string(),
+        0x12 | 0xA4 | 0xA5 => Some(if is_extended { "AltRight" } else { "AltLeft" }),
+        0x13 => Some("Pause"),
+        0x14 => Some("CapsLock"),
+        0x1B => Some("Escape"),
+        0x20 => Some("Space"),
+        0x21 => Some("PageUp"),
+        0x22 => Some("PageDown"),
+        0x23 => Some("End"),
+        0x24 => Some("Home"),
+        0x2C => Some("PrintScreen"),
+        0x2D => Some("Insert"),
+        0x2E => Some("Delete"),
+        0x5B => Some("MetaLeft"),
+        0x5C => Some("MetaRight"),
+        0x5D => Some("ContextMenu"),
+        0x90 => Some("NumLock"),
+        0x91 => Some("ScrollLock"),
 
         // Punctuation and symbols (US keyboard layout)
-        0xBA => "Semicolon".to_string(),
-        0xBB => "Equal".to_string(),
-        0xBC => "Comma".to_string(),
-        0xBD => "Minus".to_string(),
-        0xBE => "Period".to_string(),
-        0xBF => "Slash".to_string(),
-        0xC0 => "Backquote".to_string(),
-        0xDB => "BracketLeft".to_string(),
-        0xDC => "Backslash".to_string(),
-        0xDD => "BracketRight".to_string(),
-        0xDE => "Quote".to_string(),
-        0xE2 => "IntlBackslash".to_string(),
+        0xBA => Some("Semicolon"),
+        0xBB => Some("Equal"),
+        0xBC => Some("Comma"),
+        0xBD => Some("Minus"),
+        0xBE => Some("Period"),
+        0xBF => Some("Slash"),
+        0xC0 => Some("Backquote"),
+        0xDB => Some("BracketLeft"),
+        0xDC => Some("Backslash"),
+        0xDD => Some("BracketRight"),
+        0xDE => Some("Quote"),
+        0xE2 => Some("IntlBackslash"),
 
-        // Unknown
-        _ => format!("Unknown(0x{:02X})", vk),
+        _ => None,
+    };
+
+    match static_code {
+        Some(s) => s.to_string(),
+        None => format!("Unknown(0x{:02X})", vk),
     }
 }

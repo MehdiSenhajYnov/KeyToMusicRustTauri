@@ -1,114 +1,93 @@
-# KeyToMusic - Tasks Overview
+# KeyToMusic - Tasks
 
-> Document de suivi des tâches de développement
-> Dernière mise à jour: 2026-02-01
+> Dernière mise à jour: 2026-02-02
 
-## Statut Global
-
-| Phase | Nom | Statut | Détails |
-|-------|-----|--------|---------|
-| 0 | Initialisation du Projet | ✅ Complété | [PHASE_0.md](./PHASE_0.md) |
-| 1 | Fondations Backend (Rust) | ✅ Complété | [PHASE_1.md](./PHASE_1.md) |
-| 2 | Moteur Audio | ✅ Complété | [PHASE_2.md](./PHASE_2.md) |
-| 3 | Détection des Touches | ✅ Complété | [PHASE_3.md](./PHASE_3.md) |
-| 4 | Interface Utilisateur (React) | ✅ Complété | [PHASE_4.md](./PHASE_4.md) |
-| 4.5 | Bug Fixes & Améliorations | ✅ Complété | [PHASE_4_5.md](./PHASE_4_5.md) |
-| 4.6 | UX Enhancements & Key Management | ✅ Complété | [PHASE_4_6.md](./PHASE_4_6.md) |
-| 5 | Téléchargement YouTube | ✅ Complété | [PHASE_5.md](./PHASE_5.md) |
-| 6 | Import/Export | ✅ Complété | [PHASE_6.md](./PHASE_6.md) |
-| 6.5 | Concurrent Downloads & Key Cycling | ✅ Complété | [PHASE_6_5.md](./PHASE_6_5.md) |
-| 7 | Gestion des Erreurs | ✅ Complété | [PHASE_7.md](./PHASE_7.md) |
-| 7.5 | Legacy Import | ✅ Complété | [PHASE_7_5.md](./PHASE_7_5.md) |
-| 8 | Nouvelles Features | ✅ Complété | [PHASE_8.md](./PHASE_8.md) |
-| SD | Smart Discovery & Auto-Setup | ✅ Complété | [updates/SMART_DISCOVERY.md](./updates/SMART_DISCOVERY.md) |
-| 9 | Polish & Optimisations | 🔄 Partiel | [PHASE_9.md](./PHASE_9.md) |
-| 10 | Tests & Validation | ⏳ Planifié | [PHASE_10.md](./PHASE_10.md) |
-| 11 | Build & Release | ⏳ Planifié | [PHASE_11.md](./PHASE_11.md) |
-
-## Historique des Completions
-
-- **2026-01-20** - Phase 0 complétée
-- **2026-01-23** - Phases 1, 2, 3, 4, 4.5, 4.6 complétées
-- **2026-01-24** - Phases 5, 6, 6.5, 7, 7.5 complétées
-- **2026-01-25** - Phase 8 complétée (Profile Duplication, Combined Shortcuts, Undo/Redo, Multi-Key Chords, Momentum Modifier)
-- **2026-01-31** - Smart Discovery complété (YouTube Search, Playlist Import, Waveform RMS, Auto-Momentum, YouTube Mix Discovery, Pre-download, Smart Auto-Assignment)
-
-## Résumé des Features Implémentées
-
-### Core Features
-- Multi-track audio playback avec crossfade
-- Détection globale des touches (fonctionne en arrière-plan)
-- Système de profils (création, sauvegarde, duplication)
-- YouTube downloads avec cache
-- Import/Export de profils (.ktm)
-- Gestion des erreurs (fichiers manquants, son d'erreur)
-
-### Phase 8 Features
-- **Profile Duplication** - Dupliquer un profil existant
-- **Combined Key Shortcuts** - Support Ctrl+A, Shift+F1, etc.
-- **Multi-Key Chords** - Support A+Z (touches simultanées, style jeu de combat)
-- **Undo/Redo** - Ctrl+Z / Ctrl+Y pour annuler/refaire
-- **Configurable Momentum Modifier** - Shift/Ctrl/Alt/Disabled pour le momentum
-
-### Smart Discovery Features
-- **YouTube Search** - Recherche YouTube intégrée dans l'app
-- **Playlist Import** - Import de playlists YouTube
-- **Waveform RMS** - Visualisation d'énergie audio (canvas dual-layer)
-- **Auto-Momentum** - Détection automatique du point de momentum optimal
-- **YouTube Mix Discovery** - Recommandations croisées basées sur les sons existants
-- **Pre-download** - Pré-téléchargement intelligent des suggestions
-- **Smart Auto-Assignment** - Assignation automatique touches/pistes selon le mode du profil
-
-### Performance Optimizations
-- Dual-canvas WaveformDisplay (static + cursor)
-- KeyGrid re-render optimization (usePlayingSoundIds)
-- SoundDetails targeted Zustand subscription
-- Batched duration updates (single state update)
-- Progress emission rate reduced (250ms)
-- Disk-persistent waveform cache with mtime invalidation
-
-### Configuration
-- Chord Window: 20-100ms (détection multi-touches)
-- Key Cooldown: 0-5000ms
-- Crossfade Duration: 100-2000ms
-- Audio Device selection
-- Momentum Modifier: Shift/Ctrl/Alt/Disabled
-- Playlist Import toggle
-
-## Navigation Rapide
-
-### Récemment complété
-- [Smart Discovery](./updates/SMART_DISCOVERY.md) - YouTube Search, Waveform, Auto-Momentum, Discovery Engine
-- [Phase 8 - Nouvelles Features](./PHASE_8.md) - Profile Duplication, Combined Shortcuts, Undo/Redo, Multi-Key Chords
-
-### En attente
-- [Multi-Selection](./MULTI_SELECTION.md) - Sélection multiple de bindings dans KeyGrid
-
-### Prochaines étapes
-- [Phase 9 - Polish & Optimisations](./PHASE_9.md) - Partiellement complété (audio + rendering optimisations)
-- [Phase 10 - Tests & Validation](./PHASE_10.md)
-- [Phase 11 - Build & Release](./PHASE_11.md)
-
-## Structure du Projet
+## Organisation
 
 ```
-KeyToMusic/
-├── src/                    # Frontend React/TypeScript
-│   ├── components/
-│   │   ├── Discovery/     # DiscoveryPanel (YouTube Mix recommendations)
-│   │   ├── common/        # WaveformDisplay, WarningTooltip
-│   │   └── ...
-│   ├── stores/            # 9 Zustand stores (profile, audio, discovery, history, settings, error, export, toast, confirm)
-│   ├── hooks/             # useAudioEvents, useKeyDetection, useDiscovery, useDiscoveryPredownload, useUndoRedo
-│   └── utils/             # tauriCommands, keyMapping, profileAnalysis, errorMessages, etc.
-├── src-tauri/              # Backend Rust
-│   ├── src/
-│   │   ├── audio/          # Moteur audio, crossfade, analysis.rs (waveform)
-│   │   ├── keys/           # Détection touches, chord.rs
-│   │   ├── discovery/      # YouTube Mix engine, cache, mix_fetcher
-│   │   ├── youtube/        # Downloads YouTube, search, playlists
-│   │   ├── storage/        # Profils, config
-│   │   └── import_export/  # .ktm files
-├── docs/                   # Documentation technique
-└── Tasks/                  # Ce dossier - suivi des tâches
+Tasks/
+├── todo/              Ce qui reste à faire
+├── done/
+│   ├── features/      Features implémentées (doc technique consultable)
+│   ├── fixes/         Bug fixes & corrections de perf
+│   └── infrastructure/  Setup projet, config, tooling
+└── post-dev/          Tests & Release
 ```
+
+### Où ajouter une nouvelle tâche ?
+
+**Toujours dans `todo/`.** Un template est dispo : `todo/_TEMPLATE.md`
+
+### Où ranger une tâche terminée ?
+
+| La tâche...                                  | Va dans              |
+|----------------------------------------------|----------------------|
+| **Ajoute** quelque chose de nouveau           | `done/features/`     |
+| **Corrige/améliore** un truc existant         | `done/fixes/`        |
+| C'est du setup, tests, build, release        | `done/infrastructure/` |
+
+---
+
+## Todo
+
+| Nom | Statut | Fichier |
+|-----|--------|---------|
+| Polish & Optimisations | 🔄 Partiel | [POLISH_OPTIMIZATIONS.md](./todo/POLISH_OPTIMIZATIONS.md) |
+| Multi-Selection | ⏳ Planifié | [MULTI_SELECTION.md](./todo/MULTI_SELECTION.md) |
+| Discovery — Sons Locaux | ⏳ Planifié | [DISCOVERY_LOCAL_SOUNDS.md](./todo/DISCOVERY_LOCAL_SOUNDS.md) |
+| Discovery — Switch Profil & Preload | 🔄 Partiel (P0+P1 done, P2 optionnel) | [DISCOVERY_PROFILE_SWITCH_PRELOAD.md](./todo/DISCOVERY_PROFILE_SWITCH_PRELOAD.md) |
+| Discovery — Volume de Preview | ✅ Completed | [DISCOVERY_PREVIEW_VOLUME.md](./todo/DISCOVERY_PREVIEW_VOLUME.md) |
+| YouTube Search Preview (Streaming) | ✅ Completed | [YOUTUBE_SEARCH_PREVIEW.md](./todo/YOUTUBE_SEARCH_PREVIEW.md) |
+| Sliders — Contrôle Molette | ⏳ Planifié | [SLIDER_MOUSE_WHEEL.md](./todo/SLIDER_MOUSE_WHEEL.md) |
+| Momentum — Détection & Visibilité | ⏳ Planifié | [MOMENTUM_SUGGESTION_FIX.md](./todo/MOMENTUM_SUGGESTION_FIX.md) |
+
+## Post-dev
+
+| Nom | Statut | Fichier |
+|-----|--------|---------|
+| Tests & Validation | ⏳ Planifié | [TESTS_VALIDATION.md](./post-dev/TESTS_VALIDATION.md) |
+| Build & Release | ⏳ Planifié | [BUILD_RELEASE.md](./post-dev/BUILD_RELEASE.md) |
+
+---
+
+## Done — Features
+
+| Nom | Fichier |
+|-----|---------|
+| Fondations Backend (Rust) | [BACKEND_FOUNDATIONS.md](./done/features/BACKEND_FOUNDATIONS.md) |
+| Moteur Audio | [AUDIO_ENGINE.md](./done/features/AUDIO_ENGINE.md) |
+| Détection des Touches | [KEY_DETECTION.md](./done/features/KEY_DETECTION.md) |
+| Interface Utilisateur (React) | [USER_INTERFACE.md](./done/features/USER_INTERFACE.md) |
+| Téléchargement YouTube | [YOUTUBE_DOWNLOADS.md](./done/features/YOUTUBE_DOWNLOADS.md) |
+| Import/Export | [IMPORT_EXPORT.md](./done/features/IMPORT_EXPORT.md) |
+| Gestion des Erreurs | [ERROR_HANDLING.md](./done/features/ERROR_HANDLING.md) |
+| UX & Key Management | [UX_KEY_MANAGEMENT.md](./done/features/UX_KEY_MANAGEMENT.md) |
+| Concurrent Downloads & Key Cycling | [CONCURRENT_DOWNLOADS.md](./done/features/CONCURRENT_DOWNLOADS.md) |
+| Legacy Import | [LEGACY_IMPORT.md](./done/features/LEGACY_IMPORT.md) |
+| Chords, Undo/Redo & Momentum | [CHORDS_UNDO_MOMENTUM.md](./done/features/CHORDS_UNDO_MOMENTUM.md) |
+| Smart Discovery | [SMART_DISCOVERY.md](./done/features/Smart_Discovery/SMART_DISCOVERY.md) |
+
+## Done — Fixes
+
+| Nom | Fichier |
+|-----|---------|
+| Bug Fixes & Améliorations | [BUG_FIXES.md](./done/fixes/BUG_FIXES.md) |
+| Audio MicroFreeze Fix | [AUDIO_MICROFREEZE_FIX.md](./done/fixes/Audio_MicroFreeze_Fix/AUDIO_MICROFREEZE_FIX.md) |
+
+## Done — Infrastructure
+
+| Nom | Fichier |
+|-----|---------|
+| Initialisation du Projet | [PROJECT_SETUP.md](./done/infrastructure/PROJECT_SETUP.md) |
+
+---
+
+## Historique
+
+- **2026-01-20** — Setup projet
+- **2026-01-23** — Backend, Audio, Key Detection, UI, Bug Fixes, UX
+- **2026-01-24** — YouTube, Import/Export, Concurrent Downloads, Error Handling, Legacy Import
+- **2026-01-25** — Chords, Undo/Redo, Momentum Modifier
+- **2026-01-31** — Smart Discovery
+- **2026-02-01** — Audio MicroFreeze Fix
+- **2026-02-02** — YouTube Search Preview (Streaming)

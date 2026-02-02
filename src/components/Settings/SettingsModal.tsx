@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useWheelSlider } from "../../hooks/useWheelSlider";
 import { useProfileStore } from "../../stores/profileStore";
 import { useExportStore } from "../../stores/exportStore";
 import {
@@ -69,6 +70,19 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       currentProfile.keyBindings
     );
   }, [config.momentumModifier, shortcuts, currentProfile]);
+
+  const cooldownWheelRef = useWheelSlider({
+    value: config.keyCooldown, min: 0, max: 2000, step: 50,
+    onChange: setKeyCooldown,
+  });
+  const chordWheelRef = useWheelSlider({
+    value: config.chordWindowMs, min: 20, max: 100, step: 5,
+    onChange: setChordWindowMs,
+  });
+  const crossfadeWheelRef = useWheelSlider({
+    value: config.crossfadeDuration, min: 100, max: 2000, step: 50,
+    onChange: setCrossfadeDuration,
+  });
 
   // Get conflict for a specific shortcut by name
   const getShortcutConflict = (shortcutName: string) => {
@@ -334,6 +348,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </span>
               </div>
               <input
+                ref={cooldownWheelRef}
                 type="range"
                 min="0"
                 max="2000"
@@ -359,6 +374,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </span>
               </div>
               <input
+                ref={chordWheelRef}
                 type="range"
                 min="20"
                 max="100"
@@ -439,6 +455,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                 </span>
               </div>
               <input
+                ref={crossfadeWheelRef}
                 type="range"
                 min="100"
                 max="2000"

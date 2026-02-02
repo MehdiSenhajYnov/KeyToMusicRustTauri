@@ -4,7 +4,35 @@ import * as commands from "../utils/tauriCommands";
 import type { ProfileSummary } from "../utils/tauriCommands";
 import { useErrorStore } from "./errorStore";
 import { useHistoryStore, captureProfileState, applyHistoryState } from "./historyStore";
+import { useWaveformStore } from "./waveformStore";
 import { getSoundFilePath } from "../utils/soundHelpers";
+
+/** Generation counter to cancel stale profile-load operations.
+ *  Incremented at the start of each loadProfile(). Fire-and-forget callbacks
+ *  check this before doing work — if it changed, the load is stale. */
+let _loadGen = 0;
+
+/** Batch preload waveforms for all sounds that have a known duration. */
+async function preloadWaveforms(sounds: Sound[]): Promise<void> {
+  const entries = sounds
+    .filter((s) => s.duration > 0)
+    .map((s) => ({ path: getSoundFilePath(s), numPoints: 200 }));
+  if (entries.length === 0) return;
+
+  const wfStore = useWaveformStore.getState();
+  // Only request waveforms not already cached
+  const needed = entries.filter((e) => !wfStore.waveforms.has(e.path));
+  if (needed.length === 0) return;
+
+  wfStore.setLoading(true);
+  try {
+    const result = await commands.getWaveformsBatch(needed);
+    useWaveformStore.getState().setBatch(result);
+  } catch {
+    // Non-critical — waveforms are optional visual data
+    useWaveformStore.getState().setLoading(false);
+  }
+}
 
 /** Compute missing durations for all sounds in a profile (background).
  *  Returns a map of soundId -> duration, or null if nothing needed. */
@@ -87,12 +115,19 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   },
 
   loadProfile: async (id) => {
+    // Bump generation — any in-flight fire-and-forget from a previous load becomes stale
+    const gen = ++_loadGen;
+
     try {
       // Stop any playing sounds before switching
       await commands.stopAllSounds().catch(() => {});
       // Clear undo history when switching profiles
       useHistoryStore.getState().clear();
       const profile = await commands.loadProfile(id);
+
+      // Stale check: another loadProfile was called while we awaited
+      if (gen !== _loadGen) return;
+
       // Clean up orphaned sounds (not referenced by any key binding)
       const referencedIds = new Set(
         profile.keyBindings.flatMap((kb) => kb.soundIds)
@@ -107,6 +142,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       // Verify sound files exist
       try {
         const missing = await commands.verifyProfileSounds(profile);
+        if (gen !== _loadGen) return;
         const { addMissing } = useErrorStore.getState();
         for (const entry of missing) {
           const sound = profile.sounds.find((s) => s.id === entry.soundId);
@@ -122,17 +158,32 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       } catch (e) {
         console.error("Failed to verify profile sounds:", e);
       }
-      // Compute durations in background — single batched update
+
+      // Note: we do NOT clear the waveform store here — backend cache persists
+      // across profile switches, and the frontend store serves as a superset cache.
+      // Clearing it would force a redundant getWaveformsBatch call.
+
+      // Compute durations in background — single batched update, then preload waveforms
       computeProfileDurations(profile).then((durations) => {
-        if (!durations) return;
+        // Stale check: profile switched since this was fired
+        if (gen !== _loadGen) return;
+
+        if (!durations) {
+          // No durations to update, but still preload waveforms for sounds that already have durations
+          preloadWaveforms(profile.sounds);
+          return;
+        }
         set((state) => {
           if (!state.currentProfile) return state;
+          const updatedSounds = state.currentProfile.sounds.map((s) =>
+            durations[s.id] != null ? { ...s, duration: durations[s.id] } : s
+          );
+          // Preload waveforms after durations are known
+          preloadWaveforms(updatedSounds);
           return {
             currentProfile: {
               ...state.currentProfile,
-              sounds: state.currentProfile.sounds.map((s) =>
-                durations[s.id] != null ? { ...s, duration: durations[s.id] } : s
-              ),
+              sounds: updatedSounds,
             },
           };
         });

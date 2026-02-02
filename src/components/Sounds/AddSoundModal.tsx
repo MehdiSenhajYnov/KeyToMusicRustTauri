@@ -1,14 +1,27 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useProfileStore } from "../../stores/profileStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useToastStore } from "../../stores/toastStore";
+import { useWheelSlider } from "../../hooks/useWheelSlider";
+import { useWaveformStore } from "../../stores/waveformStore";
 import { keyCodeToDisplay } from "../../utils/keyMapping";
 import { formatDuration } from "../../utils/fileHelpers";
 import * as commands from "../../utils/tauriCommands";
 import { KeyCaptureSlot } from "../Keys/KeyCaptureSlot";
 import type { LoopMode, SoundSource, YoutubeSearchResult, YoutubePlaylist, WaveformData } from "../../types";
 import { WaveformDisplay } from "../common/WaveformDisplay";
+import { SearchResultPreview } from "./SearchResultPreview";
+
+function WheelInput(props: React.InputHTMLAttributes<HTMLInputElement> & { wheelStep: number; wheelMin: number; wheelMax: number; onWheelChange: (v: number) => void }) {
+  const { wheelStep, wheelMin, wheelMax, onWheelChange, ...inputProps } = props;
+  const ref = useWheelSlider({
+    value: Number(inputProps.value ?? 0),
+    min: wheelMin, max: wheelMax, step: wheelStep,
+    onChange: onWheelChange,
+  });
+  return <input ref={ref} {...inputProps} />;
+}
 
 type SourceMode = "local" | "youtube";
 
@@ -19,6 +32,59 @@ interface FileEntry {
   name?: string;
   source?: SoundSource;
 }
+
+/** Memoized wrapper that manages its own waveform loading state per file. */
+const FileWaveform = React.memo(function FileWaveform({
+  path,
+  duration,
+  momentum,
+  onMomentumChange,
+  suggestedMomentumAccept,
+  height = 50,
+}: {
+  path: string;
+  duration: number;
+  momentum: number;
+  onMomentumChange?: (m: number) => void;
+  suggestedMomentumAccept?: () => void;
+  height?: number;
+}) {
+  const [waveform, setWaveform] = useState<WaveformData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!path || duration <= 0) return;
+
+    // Check global store first (non-reactive)
+    const cached = useWaveformStore.getState().waveforms.get(path);
+    if (cached) {
+      setWaveform(cached);
+      return;
+    }
+
+    setLoading(true);
+    commands
+      .getWaveform(path, 200)
+      .then((data) => {
+        setWaveform(data);
+        useWaveformStore.getState().setOne(path, data);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [path, duration]);
+
+  return (
+    <WaveformDisplay
+      waveformData={waveform}
+      momentum={momentum}
+      onMomentumChange={onMomentumChange}
+      isLoading={loading}
+      suggestedMomentum={waveform?.suggestedMomentum}
+      onAcceptSuggestion={suggestedMomentumAccept}
+      height={height}
+    />
+  );
+});
 
 interface AddSoundModalProps {
   targetKey?: string;
@@ -53,10 +119,9 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   const [downloadEntirePlaylist, setDownloadEntirePlaylist] = useState(
     useSettingsStore.getState().config.playlistImportEnabled
   );
-  const [waveforms, setWaveforms] = useState<Map<string, WaveformData>>(new Map());
-  const [loadingWaveforms, setLoadingWaveforms] = useState<Set<string>>(new Set());
   const unlistenRef = useRef<(() => void) | null>(null);
   const downloadIdCounter = useRef(0);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectedTrackIdRef = useRef(currentProfile?.tracks[0]?.id || "");
   // Key assignment: array of key codes (e.g., ["KeyA", "Ctrl+KeyB"])
@@ -68,9 +133,59 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   const [volume, setVolume] = useState(100);
   const [loopMode, setLoopMode] = useState<LoopMode>("off");
   const [previewingIndex, setPreviewingIndex] = useState<number | null>(null);
+  const [streamPreview, setStreamPreview] = useState<{
+    videoId: string;
+    streamUrl: string;
+    duration: number;
+    isLoading: boolean;
+  } | null>(null);
+
+  // Pre-fetched stream URLs (videoId → {streamUrl, duration})
+  const prefetchedUrls = useRef<Map<string, { streamUrl: string; duration: number }>>(new Map());
 
   const tracks = currentProfile?.tracks || [];
   const isSingleFile = files.length <= 1;
+
+  const volumeWheelRef = useWheelSlider({
+    value: volume, min: 0, max: 100, step: 1,
+    onChange: setVolume,
+  });
+
+  // Auto-search YouTube when typing (debounced, non-URL only)
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    const query = youtubeUrl.trim();
+    const looksLikeUrl = query.toLowerCase().includes("youtube.com") || query.toLowerCase().includes("youtu.be");
+    if (sourceMode !== "youtube" || query.length < 3 || looksLikeUrl) return;
+    searchDebounceRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await commands.searchYoutube(query, 6);
+        setSearchResults(results);
+      } catch {
+        // Silent fail for auto-search — user can still click Search
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [youtubeUrl, sourceMode]);
+
+  // Pre-fetch stream URLs for first 2 search results (background, silent)
+  // By the time user clicks play, the URL is already cached in backend → instant preview
+  useEffect(() => {
+    if (searchResults.length === 0 || !ytDlpInstalled) return;
+    for (const result of searchResults.slice(0, 4)) {
+      if (prefetchedUrls.current.has(result.videoId)) continue;
+      commands.getYoutubeStreamUrl(result.videoId)
+        .then((r) => {
+          prefetchedUrls.current.set(result.videoId, { streamUrl: r.url, duration: r.duration });
+        })
+        .catch(() => {});
+    }
+  }, [searchResults, ytDlpInstalled]);
 
   // Handle initialFiles: on mount just fetch durations, on subsequent changes append files
   useEffect(() => {
@@ -99,28 +214,6 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     }
   }, [initialFiles]);
 
-  const fetchWaveform = useCallback((path: string) => {
-    if (waveforms.has(path) || loadingWaveforms.has(path)) return;
-    setLoadingWaveforms((prev) => new Set(prev).add(path));
-    commands.getWaveform(path, 200).then((data) => {
-      setWaveforms((prev) => new Map(prev).set(path, data));
-    }).catch(() => {}).finally(() => {
-      setLoadingWaveforms((prev) => {
-        const next = new Set(prev);
-        next.delete(path);
-        return next;
-      });
-    });
-  }, [waveforms, loadingWaveforms]);
-
-  // Fetch waveforms when file durations become known
-  useEffect(() => {
-    for (const file of files) {
-      if (file.duration > 0 && file.path && !waveforms.has(file.path)) {
-        fetchWaveform(file.path);
-      }
-    }
-  }, [files, fetchWaveform]);
 
   const handleStopPreview = useCallback(() => {
     if (selectedTrackId) {
@@ -213,7 +306,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     if (!query) return;
     setIsSearching(true);
     try {
-      const results = await commands.searchYoutube(query, 10);
+      const results = await commands.searchYoutube(query, 6);
       setSearchResults(results);
     } catch (e) {
       addToast(`Search failed: ${e}`, "error");
@@ -307,6 +400,49 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
           return next;
         });
       });
+  };
+
+  const handleStreamPreview = async (videoId: string) => {
+    // If already previewing this video, close it
+    if (streamPreview?.videoId === videoId) {
+      setStreamPreview(null);
+      return;
+    }
+
+    // Check pre-fetch cache for instant play
+    const cached = prefetchedUrls.current.get(videoId);
+    if (cached) {
+      setStreamPreview({
+        videoId,
+        streamUrl: cached.streamUrl,
+        duration: cached.duration,
+        isLoading: false,
+      });
+      return;
+    }
+
+    // Fallback: fetch on demand
+    setStreamPreview({ videoId, streamUrl: "", duration: 0, isLoading: true });
+
+    try {
+      const result = await commands.getYoutubeStreamUrl(videoId);
+      // Guard: only apply result if this video is still the target
+      setStreamPreview((prev) => {
+        if (prev?.videoId !== videoId) return prev;
+        return {
+          videoId,
+          streamUrl: result.url,
+          duration: result.duration,
+          isLoading: false,
+        };
+      });
+    } catch {
+      setStreamPreview((prev) => {
+        if (prev?.videoId !== videoId) return prev;
+        return null;
+      });
+      addToast("Failed to load stream preview", "error");
+    }
   };
 
   const handleYoutubeDownload = async () => {
@@ -552,6 +688,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
 
   const handleClose = () => {
     handleStopPreview();
+    setStreamPreview(null);
     onClose();
   };
 
@@ -576,7 +713,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
         {/* Source mode toggle */}
         <div className="flex gap-1 bg-bg-tertiary rounded p-0.5">
           <button
-            onClick={() => setSourceMode("local")}
+            onClick={() => { setSourceMode("local"); setStreamPreview(null); }}
             className={`flex-1 px-3 py-1.5 text-sm rounded transition-colors ${
               sourceMode === "local"
                 ? "bg-bg-secondary text-text-primary"
@@ -675,32 +812,62 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                 {/* Search results */}
                 {searchResults.length > 0 && (
                   <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                    {searchResults.map((result) => (
-                      <div
-                        key={result.videoId}
-                        className="flex items-center gap-2 bg-bg-tertiary rounded p-2 hover:bg-bg-hover transition-colors"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-text-primary text-xs truncate">{result.title}</p>
-                          <div className="flex items-center gap-2 text-text-muted text-[10px]">
-                            {result.channel && <span className="truncate">{result.channel}</span>}
-                            {result.duration > 0 && (
-                              <span className="shrink-0">{formatDuration(result.duration)}</span>
+                    {searchResults.map((result) => {
+                      const isPreviewTarget = streamPreview?.videoId === result.videoId;
+                      const isPreviewLoading = isPreviewTarget && streamPreview?.isLoading;
+                      return (
+                        <div key={result.videoId}>
+                          <div className="flex items-center gap-2 bg-bg-tertiary rounded p-2 hover:bg-bg-hover transition-colors">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-text-primary text-xs truncate">{result.title}</p>
+                              <div className="flex items-center gap-2 text-text-muted text-[10px]">
+                                {result.channel && <span className="truncate">{result.channel}</span>}
+                                {result.duration > 0 && (
+                                  <span className="shrink-0">{formatDuration(result.duration)}</span>
+                                )}
+                                {result.alreadyDownloaded && (
+                                  <span className="text-green-400 shrink-0">Downloaded</span>
+                                )}
+                              </div>
+                            </div>
+                            {ytDlpInstalled && (
+                              <button
+                                onClick={() => handleStreamPreview(result.videoId)}
+                                disabled={isPreviewLoading}
+                                className={`w-6 h-6 flex items-center justify-center rounded shrink-0 ${
+                                  isPreviewTarget
+                                    ? "bg-accent-primary/20 text-accent-primary"
+                                    : "text-text-muted hover:text-accent-primary hover:bg-bg-secondary"
+                                } disabled:opacity-50`}
+                                title={isPreviewTarget ? "Stop preview" : "Preview"}
+                              >
+                                {isPreviewLoading ? (
+                                  <div className="w-3 h-3 border-2 border-accent-primary border-t-transparent rounded-full animate-spin" />
+                                ) : isPreviewTarget ? (
+                                  "\u25A0"
+                                ) : (
+                                  "\u25B6"
+                                )}
+                              </button>
                             )}
-                            {result.alreadyDownloaded && (
-                              <span className="text-green-400 shrink-0">Downloaded</span>
-                            )}
+                            <button
+                              onClick={() => { handleSearchResultAdd(result); if (isPreviewTarget) setStreamPreview(null); }}
+                              disabled={activeDownloads.size > 0 && [...activeDownloads.values()].some(d => d.url === result.url)}
+                              className="px-2 py-1 bg-accent-primary/20 text-accent-primary rounded text-xs hover:bg-accent-primary/30 disabled:opacity-50 shrink-0"
+                            >
+                              Add
+                            </button>
                           </div>
+                          {isPreviewTarget && streamPreview.streamUrl && (
+                            <SearchResultPreview
+                              streamUrl={streamPreview.streamUrl}
+                              duration={streamPreview.duration}
+                              onClose={() => setStreamPreview(null)}
+                            />
+                          )}
                         </div>
-                        <button
-                          onClick={() => handleSearchResultAdd(result)}
-                          disabled={activeDownloads.size > 0 && [...activeDownloads.values()].some(d => d.url === result.url)}
-                          className="px-2 py-1 bg-accent-primary/20 text-accent-primary rounded text-xs hover:bg-accent-primary/30 disabled:opacity-50 shrink-0"
-                        >
-                          {result.alreadyDownloaded ? "Add" : "Add"}
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
                 {/* Playlist checkbox for video+playlist URLs */}
@@ -834,20 +1001,18 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                     </button>
                   </div>
                   {/* Waveform display */}
-                  {(waveforms.has(file.path) || loadingWaveforms.has(file.path)) && (
-                    <WaveformDisplay
-                      waveformData={waveforms.get(file.path) || null}
-                      momentum={file.momentum}
-                      onMomentumChange={(m) => handleMomentumChange(i, m)}
-                      isLoading={loadingWaveforms.has(file.path)}
-                      suggestedMomentum={waveforms.get(file.path)?.suggestedMomentum}
-                      onAcceptSuggestion={() => {
-                        const suggested = waveforms.get(file.path)?.suggestedMomentum;
-                        if (suggested != null) handleMomentumChange(i, Math.round(suggested * 10) / 10);
-                      }}
-                      height={50}
-                    />
-                  )}
+                  <FileWaveform
+                    path={file.path}
+                    duration={file.duration}
+                    momentum={file.momentum}
+                    onMomentumChange={(m) => handleMomentumChange(i, m)}
+                    suggestedMomentumAccept={() => {
+                      const cached = useWaveformStore.getState().waveforms.get(file.path);
+                      const suggested = cached?.suggestedMomentum;
+                      if (suggested != null) handleMomentumChange(i, Math.round(suggested * 10) / 10);
+                    }}
+                    height={50}
+                  />
                   {/* Momentum editor */}
                   <div className="flex items-center gap-2 text-xs text-text-muted">
                     <span className="text-text-secondary whitespace-nowrap">Mom:</span>
@@ -864,7 +1029,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                       className="w-14 bg-bg-secondary border border-border-color rounded px-1 py-0.5 text-text-primary text-xs"
                     />
                     <span>s</span>
-                    <input
+                    <WheelInput
                       type="range"
                       min="0"
                       max={file.duration > 0 ? file.duration : 1}
@@ -875,6 +1040,8 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                         handleMomentumChange(i, Number(e.target.value));
                       }}
                       className="flex-1 h-1 accent-accent-primary disabled:opacity-30"
+                      wheelStep={0.5} wheelMin={0} wheelMax={file.duration > 0 ? file.duration : 1}
+                      onWheelChange={(v) => handleMomentumChange(i, v)}
                     />
                     <span className="text-text-muted whitespace-nowrap">
                       {formatDuration(file.duration)}
@@ -990,6 +1157,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
             Volume ({volume}%)
           </label>
           <input
+            ref={volumeWheelRef}
             type="range"
             min="0"
             max="100"

@@ -34,12 +34,12 @@ interface KeyPressedPayload {
 
 function selectSound(
   soundIds: string[],
-  sounds: Sound[],
+  soundMap: Map<string, Sound>,
   loopMode: LoopMode,
   currentIndex: number
 ): { sound: Sound | null; nextIndex: number } {
   const available = soundIds
-    .map((id) => sounds.find((s) => s.id === id))
+    .map((id) => soundMap.get(id))
     .filter((s): s is Sound => s !== undefined);
 
   if (available.length === 0) return { sound: null, nextIndex: 0 };
@@ -75,20 +75,20 @@ function selectSound(
 
 export function useKeyDetection() {
   const setLastKeyPressed = useAudioStore((s) => s.setLastKeyPressed);
-  const currentProfile = useProfileStore((s) => s.currentProfile);
-  const updateKeyBinding = useProfileStore((s) => s.updateKeyBinding);
-  const config = useSettingsStore((s) => s.config);
   const toggleKeyDetection = useSettingsStore((s) => s.toggleKeyDetection);
   const toggleAutoMomentum = useSettingsStore((s) => s.toggleAutoMomentum);
   const lastTriggerTime = useRef(0);
 
+  // Read currentProfile and config via getState() inside the handler
+  // to avoid re-creating the callback when they change.
   const handleKeyPress = useCallback(
     async (payload: KeyPressedPayload) => {
+      const config = useSettingsStore.getState().config;
       if (!config.keyDetectionEnabled) return;
 
       setLastKeyPressed(payload.keyCode);
-      setTimeout(() => setLastKeyPressed(null), 300);
 
+      const currentProfile = useProfileStore.getState().currentProfile;
       if (!currentProfile) return;
 
       // Try to find binding with the exact combined key code first
@@ -117,9 +117,10 @@ export function useKeyDetection() {
         return;
       }
 
+      const soundMap = new Map(currentProfile.sounds.map(s => [s.id, s]));
       const { sound, nextIndex } = selectSound(
         binding.soundIds,
-        currentProfile.sounds,
+        soundMap,
         binding.loopMode,
         binding.currentIndex
       );
@@ -127,7 +128,7 @@ export function useKeyDetection() {
 
       // Update currentIndex for off/sequential/random
       if (binding.loopMode !== "single") {
-        updateKeyBinding(binding.keyCode, { currentIndex: nextIndex });
+        useProfileStore.getState().updateKeyBinding(binding.keyCode, { currentIndex: nextIndex });
       }
 
       // Use momentum if autoMomentum is on, or if Shift was used with a non-Shift binding
@@ -154,10 +155,11 @@ export function useKeyDetection() {
         }
       }
     },
-    [currentProfile, config.autoMomentum, config.keyCooldown, config.keyDetectionEnabled, config.momentumModifier, setLastKeyPressed, updateKeyBinding]
+    [setLastKeyPressed]
   );
 
   // Listen for Tauri events from rdev (background key detection)
+  // Runs once on mount — handleKeyPress is stable because it reads state via getState()
   useEffect(() => {
     const unlistenKey = listen<KeyPressedPayload>(
       "key_pressed",
@@ -189,6 +191,24 @@ export function useKeyDetection() {
   // Browser keyboard events - only for shortcuts and preventDefault
   // Sound triggering is handled by the backend chord detector (rdev global hook)
   const pressedKeysRef = useRef<Set<string>>(new Set());
+  const bindingPartsRef = useRef<{ parts: Set<string>[] }>({ parts: [] });
+
+  useEffect(() => {
+    const currentProfile = useProfileStore.getState().currentProfile;
+    bindingPartsRef.current.parts = (currentProfile?.keyBindings ?? []).map(
+      (kb) => new Set(kb.keyCode.split("+"))
+    );
+  }, []);
+
+  // Also subscribe to profile changes
+  useEffect(() => {
+    const unsub = useProfileStore.subscribe((state) => {
+      bindingPartsRef.current.parts = (state.currentProfile?.keyBindings ?? []).map(
+        (kb) => new Set(kb.keyCode.split("+"))
+      );
+    });
+    return unsub;
+  }, []);
 
   useEffect(() => {
     const handleBrowserKeyDown = (e: KeyboardEvent) => {
@@ -201,6 +221,9 @@ export function useKeyDetection() {
       const resolvedCode = getKeyCode(e);
       pressedKeysRef.current.add(resolvedCode);
       recordKeyLayout(resolvedCode, e.key);
+
+      // Read config via getState() to avoid dependency on config changes
+      const config = useSettingsStore.getState().config;
 
       // Check key detection toggle shortcut (works even when detection is off)
       if (
@@ -237,14 +260,13 @@ export function useKeyDetection() {
       // The actual sound triggering is handled by the backend chord detector
       const baseKeyCode = getKeyCode(e);
 
-      // Check if any binding contains this key (single key or as part of a combo)
-      const hasRelatedBinding = currentProfile?.keyBindings.some((kb) => {
-        const parts = kb.keyCode.split("+");
-        return parts.includes(baseKeyCode) ||
-               parts.includes("Ctrl") && e.ctrlKey ||
-               parts.includes("Shift") && e.shiftKey ||
-               parts.includes("Alt") && e.altKey;
-      });
+      // Use pre-built Sets for efficient lookup
+      const hasRelatedBinding = bindingPartsRef.current.parts.some((partsSet) =>
+        partsSet.has(baseKeyCode) ||
+        (partsSet.has("Ctrl") && e.ctrlKey) ||
+        (partsSet.has("Shift") && e.shiftKey) ||
+        (partsSet.has("Alt") && e.altKey)
+      );
 
       if (hasRelatedBinding) {
         e.preventDefault();
@@ -268,5 +290,5 @@ export function useKeyDetection() {
       window.removeEventListener("keyup", handleBrowserKeyUp);
       window.removeEventListener("blur", handleWindowBlur);
     };
-  }, [currentProfile, config.masterStopShortcut, config.keyDetectionShortcut, config.autoMomentumShortcut, setLastKeyPressed, toggleKeyDetection, toggleAutoMomentum]);
+  }, [setLastKeyPressed, toggleKeyDetection, toggleAutoMomentum]);
 }

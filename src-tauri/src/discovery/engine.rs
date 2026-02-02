@@ -1,12 +1,15 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use futures::stream::{self, StreamExt};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use super::mix_fetcher;
+use crate::audio::analysis;
+use crate::youtube::{cache::YouTubeCache, search};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -170,4 +173,135 @@ impl DiscoveryEngine {
 
         build_suggestions(&occurrence_map, &existing_set)
     }
+}
+
+// Pre-compiled regexes for filename cleaning (compiled once, reused across calls)
+static NOISE_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"(?i)\b(copy|final|v\d+|edit|\d{2,3}kbps|track\s?\d+)\b").expect("invalid noise regex")
+});
+static BRACKET_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"[\[\(](.*?)[\]\)]").expect("invalid bracket regex")
+});
+static USEFUL_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"(?i)\b(OST|Soundtrack|Original)\b").expect("invalid useful regex")
+});
+static LEADING_NUM_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"^\d+\s+").expect("invalid leading num regex")
+});
+static SPACES_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"\s{2,}").expect("invalid spaces regex")
+});
+
+/// Clean a filename into a search query by removing extensions, noise, and formatting.
+pub fn clean_filename_for_search(filename: &str) -> String {
+    // Remove extension
+    let name = std::path::Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(filename);
+
+    // Replace separators with spaces
+    let result = name.replace(['_', '-', '.'], " ");
+
+    // Remove parasitic patterns (case-insensitive)
+    let result = NOISE_RE.replace_all(&result, " ");
+
+    // Remove brackets/parentheses content EXCEPT useful keywords
+    let mut preserved = Vec::new();
+    for cap in BRACKET_RE.captures_iter(&result) {
+        if let Some(inner) = cap.get(1) {
+            let inner_str = inner.as_str();
+            if USEFUL_RE.is_match(inner_str) {
+                for m in USEFUL_RE.find_iter(inner_str) {
+                    preserved.push(m.as_str().to_string());
+                }
+            }
+        }
+    }
+    let result = BRACKET_RE.replace_all(&result, " ");
+    let mut result = result.to_string();
+    for kw in &preserved {
+        result.push(' ');
+        result.push_str(kw);
+    }
+
+    // Remove leading isolated numbers (track numbers)
+    let result = LEADING_NUM_RE.replace(&result, "");
+
+    // Collapse multiple spaces
+    let result = SPACES_RE.replace_all(&result, " ");
+
+    result.trim().to_string()
+}
+
+/// Result of resolving a local sound to a YouTube video ID.
+pub struct ResolvedLocal {
+    pub sound_id: String,
+    pub video_id: String,
+}
+
+/// Resolve local sounds to YouTube video IDs by searching their metadata/filenames.
+/// Returns resolved pairs (sound_id, video_id). Skips sounds with unusable queries.
+pub async fn resolve_local_seeds(
+    locals: Vec<(String, String, String)>, // (sound_id, file_path, sound_name)
+    youtube_cache: Arc<Mutex<YouTubeCache>>,
+) -> Vec<ResolvedLocal> {
+    if locals.is_empty() {
+        return Vec::new();
+    }
+
+    let results: Vec<Option<ResolvedLocal>> = stream::iter(locals.into_iter())
+        .map(|(sound_id, file_path, sound_name)| {
+            let cache = youtube_cache.clone();
+            async move {
+                // Build query via cascade: tags > title > filename
+                let query = build_search_query(&file_path, &sound_name);
+
+                if query.len() < 3 {
+                    tracing::debug!("Skipping local sound '{}': query too short", sound_name);
+                    return None;
+                }
+
+                tracing::info!("Resolving local sound '{}' with query: '{}'", sound_name, query);
+
+                match search::search_youtube(&query, 1, cache).await {
+                    Ok(results) if !results.is_empty() => {
+                        let video_id = results[0].video_id.clone();
+                        tracing::info!("Resolved '{}' → {}", sound_name, video_id);
+                        Some(ResolvedLocal { sound_id, video_id })
+                    }
+                    Ok(_) => {
+                        tracing::debug!("No YouTube results for '{}'", sound_name);
+                        None
+                    }
+                    Err(e) => {
+                        tracing::warn!("YouTube search failed for '{}': {}", sound_name, e);
+                        None
+                    }
+                }
+            }
+        })
+        .buffer_unordered(5) // Max 5 concurrent to avoid spamming yt-dlp
+        .collect()
+        .await;
+
+    results.into_iter().flatten().collect()
+}
+
+/// Build the best search query for a local sound using the cascade:
+/// 1. Tags (title + artist) — best quality
+/// 2. Tag title alone
+/// 3. Cleaned filename — fallback
+fn build_search_query(file_path: &str, sound_name: &str) -> String {
+    if let Some(tags) = analysis::read_audio_metadata_tags(file_path) {
+        if let (Some(ref title), Some(ref artist)) = (&tags.title, &tags.artist) {
+            return format!("{} {}", title, artist);
+        }
+        if let Some(ref title) = tags.title {
+            return title.clone();
+        }
+    }
+
+    // Fallback: clean filename
+    clean_filename_for_search(sound_name)
 }

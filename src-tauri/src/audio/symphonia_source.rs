@@ -1,4 +1,8 @@
 use std::fs::File;
+use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 
 use rodio::Source;
@@ -10,24 +14,33 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::Time;
 
+/// Max iterations when scanning for a valid packet (avoids unbounded loops on
+/// files with many non-audio or corrupted packets).
+const MAX_DECODE_ITERATIONS: usize = 50;
+
+/// Number of decoded sample buffers to keep ahead in the channel.
+const PREFETCH_BUFFERS: usize = 4;
+
 /// A rodio-compatible Source that uses symphonia for fast byte-level seeking.
-/// Unlike rodio's skip_duration (which decodes sample-by-sample),
-/// symphonia seeks directly to the byte offset in the file.
+/// Decoding happens in a separate thread to avoid blocking the audio callback.
 pub struct SymphoniaSource {
-    reader: Box<dyn FormatReader>,
-    decoder: Box<dyn Decoder>,
-    track_id: u32,
     sample_rate: u32,
     channels: u16,
-    // Current decoded samples buffer
+    // Current decoded samples buffer (consumed by Iterator::next)
     sample_buf: Vec<f32>,
     sample_pos: usize,
     finished: bool,
+    // Channel to receive pre-decoded buffers from the decode thread
+    buf_rx: mpsc::Receiver<Vec<f32>>,
+    // Signal to stop the decode thread
+    stop_flag: Arc<AtomicBool>,
 }
 
 impl SymphoniaSource {
     /// Open a file and seek to the given position in seconds.
     /// The seek is fast (byte-level for most formats).
+    /// Decoding is done in a background thread; the returned source reads
+    /// from a bounded channel of pre-decoded sample buffers.
     pub fn new(file_path: &str, seek_to_secs: f64) -> Result<Self, String> {
         let file = File::open(file_path)
             .map_err(|e| format!("Failed to open file: {}", e))?;
@@ -44,7 +57,7 @@ impl SymphoniaSource {
             .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
             .map_err(|e| format!("Failed to probe audio format: {}", e))?;
 
-        let reader = probed.format;
+        let mut reader = probed.format;
 
         // Find the first audio track
         let track = reader
@@ -63,92 +76,129 @@ impl SymphoniaSource {
             .unwrap_or(2);
 
         // Create decoder
-        let decoder = symphonia::default::get_codecs()
+        let mut decoder = symphonia::default::get_codecs()
             .make(&codec_params, &DecoderOptions::default())
             .map_err(|e| format!("Failed to create decoder: {}", e))?;
 
-        let mut source = Self {
-            reader,
-            decoder,
-            track_id,
-            sample_rate,
-            channels,
-            sample_buf: Vec::new(),
-            sample_pos: 0,
-            finished: false,
-        };
-
         // Seek to the target position
         if seek_to_secs > 0.0 {
-            source.seek(seek_to_secs);
+            let seek_to = SeekTo::Time {
+                time: Time::from(seek_to_secs),
+                track_id: Some(track_id),
+            };
+            match reader.seek(SeekMode::Coarse, seek_to) {
+                Ok(_) => { decoder.reset(); }
+                Err(_) => {
+                    return Err("Seek failed".to_string());
+                }
+            }
         }
 
-        // Pre-fill the first buffer
-        source.decode_next_packet();
+        // Bounded channel for pre-decoded buffers
+        let (buf_tx, buf_rx) = mpsc::sync_channel::<Vec<f32>>(PREFETCH_BUFFERS);
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let stop_flag_clone = stop_flag.clone();
 
-        Ok(source)
-    }
+        // Spawn the decode thread
+        thread::Builder::new()
+            .name("symphonia-decode".into())
+            .spawn(move || {
+                decode_thread(reader, decoder, track_id, sample_rate, buf_tx, stop_flag_clone);
+            })
+            .map_err(|e| format!("Failed to spawn decode thread: {}", e))?;
 
-    /// Seek to a position in seconds (fast byte-level seek).
-    fn seek(&mut self, position_secs: f64) {
-        let seek_to = SeekTo::Time {
-            time: Time::from(position_secs),
-            track_id: Some(self.track_id),
+        // Pre-fill the first buffer so the source is immediately ready
+        let (sample_buf, finished) = match buf_rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(buf) => (buf, false),
+            Err(_) => (Vec::new(), true),
         };
 
-        match self.reader.seek(SeekMode::Coarse, seek_to) {
-            Ok(_seeked_to) => {
-                // Reset decoder state after seeking
-                self.decoder.reset();
-                self.sample_buf.clear();
-                self.sample_pos = 0;
-                self.finished = false;
-            }
-            Err(_) => {
-                // Seek failed - mark as finished
-                self.finished = true;
-            }
-        }
+        Ok(Self {
+            sample_rate,
+            channels,
+            sample_buf,
+            sample_pos: 0,
+            finished,
+            buf_rx,
+            stop_flag,
+        })
     }
+}
 
-    /// Decode the next packet into the sample buffer.
-    fn decode_next_packet(&mut self) {
-        loop {
-            let packet = match self.reader.next_packet() {
+/// Background thread that decodes packets and sends sample buffers over the channel.
+fn decode_thread(
+    mut reader: Box<dyn FormatReader>,
+    mut decoder: Box<dyn Decoder>,
+    track_id: u32,
+    sample_rate: u32,
+    buf_tx: mpsc::SyncSender<Vec<f32>>,
+    stop_flag: Arc<AtomicBool>,
+) {
+    let mut decode_buf: Option<SampleBuffer<f32>> = None;
+
+    loop {
+        if stop_flag.load(Ordering::Relaxed) {
+            break;
+        }
+
+        let mut iterations = 0;
+        let packet_result = loop {
+            if iterations >= MAX_DECODE_ITERATIONS {
+                break None;
+            }
+            iterations += 1;
+
+            let packet = match reader.next_packet() {
                 Ok(p) => p,
-                Err(_) => {
-                    self.finished = true;
-                    return;
-                }
+                Err(_) => break None,
             };
 
             // Skip packets from other tracks
-            if packet.track_id() != self.track_id {
+            if packet.track_id() != track_id {
                 continue;
             }
 
-            match self.decoder.decode(&packet) {
+            match decoder.decode(&packet) {
                 Ok(decoded) => {
-                    let spec = decoded.spec().clone();
+                    let spec = *decoded.spec();
                     let duration = decoded.capacity();
                     if duration == 0 {
                         continue;
                     }
-                    let signal_spec = SignalSpec::new(self.sample_rate, spec.channels);
-                    let mut sample_buf = SampleBuffer::<f32>::new(duration as u64, signal_spec);
-                    sample_buf.copy_interleaved_ref(decoded);
-                    self.sample_buf = sample_buf.samples().to_vec();
-                    self.sample_pos = 0;
-                    return;
+                    let signal_spec = SignalSpec::new(sample_rate, spec.channels);
+
+                    // Reuse the persistent SampleBuffer if capacity is sufficient
+                    let buf = match &mut decode_buf {
+                        Some(buf) if buf.capacity() >= duration => buf,
+                        _ => {
+                            decode_buf = Some(SampleBuffer::<f32>::new(duration as u64, signal_spec));
+                            decode_buf.as_mut().unwrap()
+                        }
+                    };
+                    buf.copy_interleaved_ref(decoded);
+
+                    break Some(buf.samples().to_vec());
                 }
                 Err(symphonia::core::errors::Error::DecodeError(_)) => {
                     // Skip corrupted packets
                     continue;
                 }
-                Err(_) => {
-                    self.finished = true;
-                    return;
+                Err(_) => break None,
+            }
+        };
+
+        match packet_result {
+            Some(samples) => {
+                // Send blocks if channel is full (backpressure), which is fine —
+                // it means the audio thread hasn't consumed yet.
+                if buf_tx.send(samples).is_err() {
+                    // Receiver dropped (source was dropped) — exit
+                    break;
                 }
+            }
+            None => {
+                // End of stream or unrecoverable error
+                break;
             }
         }
     }
@@ -163,9 +213,23 @@ impl Iterator for SymphoniaSource {
         }
 
         if self.sample_pos >= self.sample_buf.len() {
-            self.decode_next_packet();
-            if self.finished {
-                return None;
+            // Try to get the next pre-decoded buffer (non-blocking)
+            match self.buf_rx.try_recv() {
+                Ok(buf) => {
+                    self.sample_buf = buf;
+                    self.sample_pos = 0;
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    // Decode thread is still working but no buffer ready yet.
+                    // Return silence to avoid blocking the real-time audio thread.
+                    // The prefetch buffer will catch up on the next callback.
+                    return Some(0.0);
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    // Decode thread has exited (end of stream or error)
+                    self.finished = true;
+                    return None;
+                }
             }
         }
 
@@ -182,7 +246,7 @@ impl Source for SymphoniaSource {
         } else if self.sample_pos < self.sample_buf.len() {
             Some(self.sample_buf.len() - self.sample_pos)
         } else {
-            // Next packet will be decoded on demand
+            // Next buffer will come from decode thread
             Some(4096)
         }
     }
@@ -197,5 +261,12 @@ impl Source for SymphoniaSource {
 
     fn total_duration(&self) -> Option<Duration> {
         None
+    }
+}
+
+impl Drop for SymphoniaSource {
+    fn drop(&mut self) {
+        // Signal the decode thread to stop
+        self.stop_flag.store(true, Ordering::Relaxed);
     }
 }

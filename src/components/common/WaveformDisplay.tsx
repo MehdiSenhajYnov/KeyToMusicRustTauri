@@ -1,10 +1,21 @@
 import { useRef, useEffect, useCallback } from "react";
 import type { WaveformData } from "../../types";
 
+// Static placeholder waveform — gentle sine combination that looks like a muted audio contour
+const PLACEHOLDER_POINTS = Array.from({ length: 50 }, (_, i) => {
+  const t = i / 49;
+  return (
+    0.25 +
+    0.12 * Math.sin(t * Math.PI * 5) +
+    0.08 * Math.sin(t * Math.PI * 13) +
+    0.04 * Math.sin(t * Math.PI * 21)
+  );
+});
+
 interface WaveformDisplayProps {
   waveformData: WaveformData | null;
-  momentum: number;
-  onMomentumChange: (momentum: number) => void;
+  momentum?: number;
+  onMomentumChange?: (momentum: number) => void;
   onDragEnd?: (momentum: number) => void;
   isLoading?: boolean;
   playbackPosition?: number;
@@ -15,7 +26,7 @@ interface WaveformDisplayProps {
 
 export function WaveformDisplay({
   waveformData,
-  momentum,
+  momentum = 0,
   onMomentumChange,
   onDragEnd,
   isLoading,
@@ -25,6 +36,7 @@ export function WaveformDisplay({
   height = 60,
 }: WaveformDisplayProps) {
   const staticCanvasRef = useRef<HTMLCanvasElement>(null);
+  const markersCanvasRef = useRef<HTMLCanvasElement>(null);
   const cursorCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -43,7 +55,7 @@ export function WaveformDisplay({
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (!waveformData || waveformData.duration <= 0) return;
+      if (!waveformData || waveformData.duration <= 0 || !onMomentumChange) return;
       isDragging.current = true;
       let lastTime = Math.round(posToTime(e.clientX) * 10) / 10;
       onMomentumChange(lastTime);
@@ -69,7 +81,7 @@ export function WaveformDisplay({
     [waveformData, posToTime, onMomentumChange, onDragEnd]
   );
 
-  // Draw static waveform (only when data, momentum, or suggested momentum changes)
+  // Draw static waveform shape only (no markers)
   useEffect(() => {
     const canvas = staticCanvasRef.current;
     if (!canvas) return;
@@ -88,11 +100,33 @@ export function WaveformDisplay({
     ctx.clearRect(0, 0, w, h);
 
     if (!waveformData || waveformData.points.length === 0) {
+      // Draw placeholder ghost waveform
+      ctx.beginPath();
+      ctx.moveTo(0, h);
+      for (let i = 0; i < PLACEHOLDER_POINTS.length; i++) {
+        const x = (i / (PLACEHOLDER_POINTS.length - 1)) * w;
+        const y = h - PLACEHOLDER_POINTS[i] * h * 0.9;
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(w, h);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(99, 102, 241, 0.08)";
+      ctx.fill();
+
+      ctx.beginPath();
+      for (let i = 0; i < PLACEHOLDER_POINTS.length; i++) {
+        const x = (i / (PLACEHOLDER_POINTS.length - 1)) * w;
+        const y = h - PLACEHOLDER_POINTS[i] * h * 0.9;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = "rgba(99, 102, 241, 0.15)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
       return;
     }
 
     const points = waveformData.points;
-    const duration = waveformData.duration;
 
     // Draw filled area
     ctx.beginPath();
@@ -118,6 +152,29 @@ export function WaveformDisplay({
     ctx.strokeStyle = "rgba(99, 102, 241, 0.6)";
     ctx.lineWidth = 1;
     ctx.stroke();
+  }, [waveformData, height]);
+
+  // Draw momentum markers on the markers canvas (middle layer)
+  useEffect(() => {
+    const canvas = markersCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
+
+    const w = rect.width;
+    const h = rect.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    if (!waveformData || waveformData.points.length === 0) return;
+
+    const duration = waveformData.duration;
 
     // Draw suggested momentum marker (dashed line)
     if (
@@ -200,20 +257,20 @@ export function WaveformDisplay({
     );
   }
 
-  if (!waveformData) {
-    return null;
-  }
-
   return (
     <div
       ref={containerRef}
-      className="w-full relative cursor-crosshair rounded overflow-hidden"
+      className={`w-full relative rounded overflow-hidden ${waveformData ? "cursor-crosshair" : ""}`}
       style={{ height }}
     >
       <canvas
         ref={staticCanvasRef}
         className="w-full h-full"
         onMouseDown={handleMouseDown}
+      />
+      <canvas
+        ref={markersCanvasRef}
+        className="absolute inset-0 w-full h-full pointer-events-none"
       />
       <canvas
         ref={cursorCanvasRef}
@@ -223,6 +280,7 @@ export function WaveformDisplay({
       {suggestedMomentum != null &&
         suggestedMomentum > 0 &&
         onAcceptSuggestion &&
+        waveformData &&
         waveformData.duration > 0 &&
         Math.abs(suggestedMomentum - momentum) > 1 && (
           <button
