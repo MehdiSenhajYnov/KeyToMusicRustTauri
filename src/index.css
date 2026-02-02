@@ -37,6 +37,37 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+
+  /* Scrollbar — Standard (Firefox) */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+/* Scrollbar — WebKit (Tauri WebView on all platforms) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 100px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: rgba(99, 102, 241, 0.45);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 body {
@@ -62,4 +93,14 @@ body {
     transform: translateX(0);
     opacity: 1;
   }
+}
+
+/* Fade-in transition when React content replaces skeleton */
+#root > *:not(.skeleton-app) {
+  opacity: 0;
+  transition: opacity 0.25s ease-out;
+}
+
+#root.loaded > *:not(.skeleton-app) {
+  opacity: 1;
 }

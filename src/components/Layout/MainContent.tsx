@@ -1,25 +1,53 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { TrackView } from "../Tracks/TrackView";
-import { KeyGrid } from "../Keys/KeyGrid";
+import { KeyGrid, usePlayingSoundIds } from "../Keys/KeyGrid";
 import { SoundDetails } from "../Sounds/SoundDetails";
 import { MultiKeyDetails } from "../Sounds/MultiKeyDetails";
-import { AddSoundModal } from "../Sounds/AddSoundModal";
 import { useProfileStore } from "../../stores/profileStore";
 import { isAudioFile } from "../../utils/fileHelpers";
+import { SearchFilterBar, type SearchFilterBarHandle } from "../common/SearchFilterBar";
+import { keyCodeToDisplay } from "../../utils/keyMapping";
+import type { KeyGridFilter } from "../../types";
+
+const AddSoundModal = lazy(() => import("../Sounds/AddSoundModal").then(m => ({ default: m.AddSoundModal })));
+
+function MainContentSkeleton() {
+  return (
+    <main className="flex-1 flex flex-col bg-bg-primary overflow-hidden p-4 space-y-4">
+      {/* Track skeleton */}
+      <div className="flex gap-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="flex-1 h-12 bg-bg-tertiary rounded-md animate-pulse" />
+        ))}
+      </div>
+      {/* Key Assignments label skeleton */}
+      <div className="h-3 w-32 bg-bg-tertiary rounded animate-pulse" />
+      {/* Key grid skeleton */}
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(56px,1fr))] gap-1.5">
+        {Array.from({ length: 15 }, (_, i) => (
+          <div key={i} className="aspect-square bg-bg-tertiary rounded-md animate-pulse" />
+        ))}
+      </div>
+    </main>
+  );
+}
 
 export function MainContent() {
   const currentProfile = useProfileStore((s) => s.currentProfile);
+  const isLoading = useProfileStore((s) => s.isLoading);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
   const [showAddSound, setShowAddSound] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<string[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [panelHeight, setPanelHeight] = useState(256);
+  const [filter, setFilter] = useState<KeyGridFilter | null>(null);
   const isResizing = useRef(false);
   const startY = useRef(0);
   const startHeight = useRef(0);
   const containerRef = useRef<HTMLElement>(null);
+  const searchBarRef = useRef<SearchFilterBarHandle>(null);
 
   const handleResizeStart = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
@@ -87,16 +115,73 @@ export function MainContent() {
     };
   }, [currentProfile]);
 
-  // Reset selection when profile changes
+  // Reset selection and filter when profile changes
   useEffect(() => {
     setSelectedKeys(new Set());
     setAnchorKey(null);
+    setFilter(null);
   }, [currentProfile?.id]);
+
+  // Ctrl+F to focus search bar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault();
+        searchBarRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   // Filter out stale keys (e.g. after undo/redo removes bindings)
   const validSelectedKeys = currentProfile
     ? new Set([...selectedKeys].filter((k) => currentProfile.keyBindings.some((kb) => kb.keyCode === k)))
     : new Set<string>();
+
+  // Reuse the same stable hook as KeyGrid (shallow-compared, no re-render on position-only changes)
+  const playingSoundIds = usePlayingSoundIds();
+
+  const matchingKeys = useMemo(() => {
+    if (!currentProfile || !filter) return null;
+
+    const { keyBindings, sounds, tracks } = currentProfile;
+    const matched = new Set<string>();
+
+    for (const kb of keyBindings) {
+      // Text search
+      const matchesText = !filter.searchText || (() => {
+        const text = filter.searchText.toLowerCase();
+        if (keyCodeToDisplay(kb.keyCode).toLowerCase().includes(text)) return true;
+        if (kb.name?.toLowerCase().includes(text)) return true;
+        return kb.soundIds.some((sid) => {
+          const sound = sounds.find((s) => s.id === sid);
+          return sound?.name.toLowerCase().includes(text);
+        });
+      })();
+
+      // Track filter
+      const matchesTrack = !filter.trackName || (() => {
+        const track = tracks.find((t) => t.id === kb.trackId);
+        return track?.name.toLowerCase().includes(filter.trackName!.toLowerCase()) ?? false;
+      })();
+
+      // Loop mode filter
+      const matchesLoop = !filter.loopMode || kb.loopMode === filter.loopMode;
+
+      // Status filter
+      const matchesStatus = !filter.status || (() => {
+        const isPlaying = kb.soundIds.some((id) => playingSoundIds.has(id));
+        return filter.status === "playing" ? isPlaying : !isPlaying;
+      })();
+
+      if (matchesText && matchesTrack && matchesLoop && matchesStatus) {
+        matched.add(kb.keyCode);
+      }
+    }
+
+    return matched;
+  }, [currentProfile, filter, playingSoundIds]);
 
   const handleKeySelect = useCallback((keyCode: string, event: React.MouseEvent) => {
     if (!currentProfile) return;
@@ -136,14 +221,20 @@ export function MainContent() {
 
   const handleSelectAll = useCallback(() => {
     if (!currentProfile) return;
-    const allKeys = currentProfile.keyBindings.map((kb) => kb.keyCode);
+    const allKeys = currentProfile.keyBindings
+      .filter((kb) => !matchingKeys || matchingKeys.has(kb.keyCode))
+      .map((kb) => kb.keyCode);
     setSelectedKeys(new Set(allKeys));
-  }, [currentProfile]);
+  }, [currentProfile, matchingKeys]);
 
   const handleCloseModal = () => {
     setShowAddSound(false);
     setDroppedFiles([]);
   };
+
+  if (isLoading) {
+    return <MainContentSkeleton />;
+  }
 
   if (!currentProfile) {
     return (
@@ -172,14 +263,21 @@ export function MainContent() {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         <TrackView />
 
-        <div className="flex items-center justify-between">
-          <h2 className="text-text-primary text-sm font-semibold">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-text-primary text-sm font-semibold whitespace-nowrap">
             Key Assignments
           </h2>
+          <SearchFilterBar
+            ref={searchBarRef}
+            totalCount={currentProfile.keyBindings.length}
+            matchCount={matchingKeys?.size ?? currentProfile.keyBindings.length}
+            onFilterChange={setFilter}
+            tracks={currentProfile.tracks}
+          />
           {currentProfile.tracks.length > 0 && (
             <button
               onClick={() => setShowAddSound(true)}
-              className="px-3 py-1.5 bg-accent-primary text-white text-xs rounded hover:bg-accent-primary/80"
+              className="px-3 py-1.5 bg-accent-primary text-white text-xs rounded hover:bg-accent-primary/80 whitespace-nowrap"
             >
               + Add Sound
             </button>
@@ -190,6 +288,7 @@ export function MainContent() {
           selectedKeys={validSelectedKeys}
           onKeySelect={handleKeySelect}
           onSelectAll={handleSelectAll}
+          matchingKeys={matchingKeys}
         />
 
         {currentProfile.tracks.length === 0 && (
@@ -229,12 +328,14 @@ export function MainContent() {
         </>
       )}
 
-      {showAddSound && (
-        <AddSoundModal
-          initialFiles={droppedFiles.length > 0 ? droppedFiles : undefined}
-          onClose={handleCloseModal}
-        />
-      )}
+      <Suspense fallback={null}>
+        {showAddSound && (
+          <AddSoundModal
+            initialFiles={droppedFiles.length > 0 ? droppedFiles : undefined}
+            onClose={handleCloseModal}
+          />
+        )}
+      </Suspense>
     </main>
   );
 }

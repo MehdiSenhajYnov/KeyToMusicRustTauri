@@ -111,7 +111,7 @@ pub async fn download_audio(
 
     // Check cache first (by canonical URL)
     {
-        let cache_guard = cache.lock().unwrap();
+        let mut cache_guard = cache.lock().unwrap();
         if let Some(entry) = cache_guard.get(&cache_url) {
             return Ok(entry.clone());
         }

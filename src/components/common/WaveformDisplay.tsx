@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 import type { WaveformData } from "../../types";
 
 // Static placeholder waveform — gentle sine combination that looks like a muted audio contour
@@ -20,7 +20,7 @@ interface WaveformDisplayProps {
   isLoading?: boolean;
   playbackPosition?: number;
   suggestedMomentum?: number | null;
-  onAcceptSuggestion?: () => void;
+  showSuggestionLabel?: boolean;
   height?: number;
 }
 
@@ -32,7 +32,7 @@ export function WaveformDisplay({
   isLoading,
   playbackPosition,
   suggestedMomentum,
-  onAcceptSuggestion,
+  showSuggestionLabel = true,
   height = 60,
 }: WaveformDisplayProps) {
   const staticCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -40,6 +40,17 @@ export function WaveformDisplay({
   const cursorCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
+  const [isNewSuggestion, setIsNewSuggestion] = useState(false);
+
+  useEffect(() => {
+    if (suggestedMomentum != null) {
+      setIsNewSuggestion(true);
+      const timer = setTimeout(() => setIsNewSuggestion(false), 2000);
+      return () => clearTimeout(timer);
+    } else {
+      setIsNewSuggestion(false);
+    }
+  }, [suggestedMomentum]);
 
   const posToTime = useCallback(
     (clientX: number): number => {
@@ -127,24 +138,25 @@ export function WaveformDisplay({
     }
 
     const points = waveformData.points;
+    const total = points.length;
 
     // Draw filled area
     ctx.beginPath();
     ctx.moveTo(0, h);
-    for (let i = 0; i < points.length; i++) {
-      const x = (i / (points.length - 1)) * w;
+    for (let i = 0; i < total; i++) {
+      const x = (i / (total - 1)) * w;
       const y = h - points[i] * h * 0.9;
       ctx.lineTo(x, y);
     }
-    ctx.lineTo(w, h);
+    ctx.lineTo((total - 1) / (total - 1) * w, h);
     ctx.closePath();
     ctx.fillStyle = "rgba(99, 102, 241, 0.25)";
     ctx.fill();
 
     // Draw contour line
     ctx.beginPath();
-    for (let i = 0; i < points.length; i++) {
-      const x = (i / (points.length - 1)) * w;
+    for (let i = 0; i < total; i++) {
+      const x = (i / (total - 1)) * w;
       const y = h - points[i] * h * 0.9;
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
@@ -176,30 +188,47 @@ export function WaveformDisplay({
 
     const duration = waveformData.duration;
 
-    // Draw suggested momentum marker (dashed line)
+    // Draw suggested momentum marker (cyan dashed line)
     if (
       suggestedMomentum != null &&
       suggestedMomentum > 0 &&
       duration > 0 &&
-      Math.abs(suggestedMomentum - momentum) > 1
+      Math.abs(suggestedMomentum - momentum) > 0.3
     ) {
       const sx = (suggestedMomentum / duration) * w;
-      ctx.setLineDash([3, 3]);
+      const suggestedColor = "rgba(34, 211, 238, 0.85)";
+
+      ctx.save();
+      if (isNewSuggestion) {
+        ctx.shadowColor = suggestedColor;
+        ctx.shadowBlur = 8;
+      }
+
+      ctx.setLineDash([4, 2]);
       ctx.beginPath();
       ctx.moveTo(sx, 0);
       ctx.lineTo(sx, h);
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = suggestedColor;
+      ctx.lineWidth = 2;
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Small label
-      ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-      ctx.font = "9px sans-serif";
-      const label = `${suggestedMomentum.toFixed(1)}s`;
-      const labelW = ctx.measureText(label).width;
-      const labelX = Math.min(sx + 2, w - labelW - 2);
-      ctx.fillText(label, labelX, 10);
+      ctx.shadowBlur = 0;
+
+      // Label with background for contrast (optional, hidden in compact views)
+      if (showSuggestionLabel) {
+        ctx.font = "bold 11px Inter, sans-serif";
+        const label = `Sugg: ${suggestedMomentum.toFixed(1)}s`;
+        const labelW = ctx.measureText(label).width;
+        const labelX = Math.min(sx + 4, w - labelW - 4);
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+        ctx.fillRect(labelX - 2, 2, labelW + 4, 14);
+
+        ctx.fillStyle = suggestedColor;
+        ctx.fillText(label, labelX, 13);
+      }
+      ctx.restore();
     }
 
     // Draw momentum marker (solid yellow line)
@@ -212,7 +241,7 @@ export function WaveformDisplay({
       ctx.lineWidth = 2;
       ctx.stroke();
     }
-  }, [waveformData, momentum, suggestedMomentum, height]);
+  }, [waveformData, momentum, suggestedMomentum, height, isNewSuggestion, showSuggestionLabel]);
 
   // Draw playback cursor on overlay canvas (lightweight, runs on progress updates)
   useEffect(() => {
@@ -276,30 +305,7 @@ export function WaveformDisplay({
         ref={cursorCanvasRef}
         className="absolute inset-0 w-full h-full pointer-events-none"
       />
-      {/* Click hint for suggested momentum */}
-      {suggestedMomentum != null &&
-        suggestedMomentum > 0 &&
-        onAcceptSuggestion &&
-        waveformData &&
-        waveformData.duration > 0 &&
-        Math.abs(suggestedMomentum - momentum) > 1 && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onAcceptSuggestion();
-            }}
-            className="absolute top-0.5 text-[9px] text-white/50 hover:text-white/80 bg-black/30 rounded px-1 transition-colors"
-            style={{
-              left: `${Math.min(
-                (suggestedMomentum / waveformData.duration) * 100,
-                85
-              )}%`,
-            }}
-            title="Use suggested momentum"
-          >
-            Use
-          </button>
-        )}
+      {/* Suggestion badge is now external (MomentumSuggestionBadge in parent) */}
     </div>
   );
 }

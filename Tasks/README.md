@@ -39,7 +39,13 @@ Tasks/
 | Discovery — Volume de Preview | ✅ Completed | [DISCOVERY_PREVIEW_VOLUME.md](./todo/DISCOVERY_PREVIEW_VOLUME.md) |
 | YouTube Search Preview (Streaming) | ✅ Completed | [YOUTUBE_SEARCH_PREVIEW.md](./todo/YOUTUBE_SEARCH_PREVIEW.md) |
 | Sliders — Contrôle Molette | ⏳ Planifié | [SLIDER_MOUSE_WHEEL.md](./todo/SLIDER_MOUSE_WHEEL.md) |
-| Momentum — Détection & Visibilité | ⏳ Planifié | [MOMENTUM_SUGGESTION_FIX.md](./todo/MOMENTUM_SUGGESTION_FIX.md) |
+| Waveform & Momentum — Perf Fix | ✅ Completed | [WAVEFORM_PERF_FIX.md](./done/fixes/WAVEFORM_PERF_FIX.md) |
+| Momentum — Détection & Visibilité | ✅ Completed | [MOMENTUM_SUGGESTION_FIX.md](./done/fixes/MOMENTUM_SUGGESTION_FIX.md) |
+| Startup Performance | ✅ Completed | [STARTUP_PERFORMANCE.md](./todo/STARTUP_PERFORMANCE.md) |
+| Recherche & Filtre KeyGrid | ✅ Completed | [SEARCH_FILTER_KEYGRID.md](./todo/SEARCH_FILTER_KEYGRID.md) |
+| Nettoyage champs Track morts | ✅ Completed | [TRACK_DEAD_FIELDS_CLEANUP.md](./done/fixes/TRACK_DEAD_FIELDS_CLEANUP.md) |
+| Modal raccourcis clavier | ⏳ Planifie | [KEYBOARD_SHORTCUTS_MODAL.md](./todo/KEYBOARD_SHORTCUTS_MODAL.md) |
+| Discovery — Système de Dislike Permanent | ⏳ Planifié | [updates/DISCOVERY_DISLIKE_SYSTEM.md](./updates/DISCOVERY_DISLIKE_SYSTEM.md) |
 
 ## Post-dev
 
@@ -73,6 +79,9 @@ Tasks/
 |-----|---------|
 | Bug Fixes & Améliorations | [BUG_FIXES.md](./done/fixes/BUG_FIXES.md) |
 | Audio MicroFreeze Fix | [AUDIO_MICROFREEZE_FIX.md](./done/fixes/Audio_MicroFreeze_Fix/AUDIO_MICROFREEZE_FIX.md) |
+| Momentum — Détection & Visibilité | [MOMENTUM_SUGGESTION_FIX.md](./done/fixes/MOMENTUM_SUGGESTION_FIX.md) |
+| Waveform & Momentum — Perf Fix | [WAVEFORM_PERF_FIX.md](./done/fixes/WAVEFORM_PERF_FIX.md) |
+| Nettoyage champs Track morts | [TRACK_DEAD_FIELDS_CLEANUP.md](./done/fixes/TRACK_DEAD_FIELDS_CLEANUP.md) |
 
 ## Done — Infrastructure
 
@@ -91,3 +100,7 @@ Tasks/
 - **2026-01-31** — Smart Discovery
 - **2026-02-01** — Audio MicroFreeze Fix
 - **2026-02-02** — YouTube Search Preview (Streaming)
+- **2026-02-02** — Momentum Suggestion Detection & UX Overhaul
+- **2026-02-02** — Waveform & Momentum Performance Fix
+- **2026-02-02** — Startup Performance Optimization (7 phases)
+- **2026-02-02** — Track dead fields cleanup (removed currentlyPlaying, playbackPosition, isPlaying)

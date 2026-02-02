@@ -1,8 +1,10 @@
+import { lazy, Suspense } from "react";
 import { ProfileSelector } from "../Profiles/ProfileSelector";
 import { GlobalToggles } from "../Controls/GlobalToggles";
 import { MasterStopButton } from "../Controls/MasterStopButton";
 import { NowPlaying } from "../Controls/NowPlaying";
-import { DiscoveryPanel } from "../Discovery/DiscoveryPanel";
+
+const DiscoveryPanel = lazy(() => import("../Discovery/DiscoveryPanel").then(m => ({ default: m.DiscoveryPanel })));
 
 export function Sidebar() {
   return (
@@ -21,7 +23,9 @@ export function Sidebar() {
         <NowPlaying />
       </div>
 
-      <DiscoveryPanel />
+      <Suspense fallback={null}>
+        <DiscoveryPanel />
+      </Suspense>
     </aside>
   );
 }

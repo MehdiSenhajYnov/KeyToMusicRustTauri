@@ -9,6 +9,7 @@
     "core:window:default",
     "core:window:allow-destroy",
     "core:window:allow-close",
+    "core:window:allow-show",
     "shell:allow-open"
   ]
 }

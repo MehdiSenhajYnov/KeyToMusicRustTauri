@@ -50,23 +50,17 @@ fn main() {
         tracing::error!("Failed to initialize app directories: {}", e);
     }
 
-    // Clean up any orphaned temp file from a previously interrupted export
-    import_export::cleanup_interrupted_export();
-
-    // Load config (or create default)
-    let config = storage::load_config().unwrap_or_else(|e| {
-        tracing::warn!("Failed to load config, using defaults: {}", e);
-        types::AppConfig::default()
+    // Load config and clean up export temp in parallel
+    let config = std::thread::scope(|s| {
+        s.spawn(|| import_export::cleanup_interrupted_export());
+        let config_handle = s.spawn(|| {
+            storage::load_config().unwrap_or_else(|e| {
+                tracing::warn!("Failed to load config, using defaults: {}", e);
+                types::AppConfig::default()
+            })
+        });
+        config_handle.join().unwrap()
     });
-
-    // Initialize audio engine with configured device
-    let audio_engine = AudioEngineHandle::new(config.audio_device.clone()).unwrap_or_else(|e| {
-        tracing::error!("Failed to initialize audio engine: {}", e);
-        panic!("Audio engine initialization failed: {}", e);
-    });
-
-    // Set initial master volume from config
-    let _ = audio_engine.set_master_volume(config.master_volume);
 
     // Initialize key detector
     let key_detector = KeyDetector::new(
@@ -80,14 +74,15 @@ fn main() {
     key_detector.set_key_detection_shortcut(config.key_detection_shortcut.clone());
     key_detector.set_auto_momentum_shortcut(config.auto_momentum_shortcut.clone());
 
-    // Initialize YouTube cache (load index only; cleanup deferred to background)
-    let mut youtube_cache = youtube::YouTubeCache::new();
-    if let Err(e) = youtube_cache.load_index() {
-        tracing::warn!("Failed to load YouTube cache index: {}", e);
-    }
+    // Initialize YouTube cache (load deferred to first access via ensure_loaded)
+    let youtube_cache = youtube::YouTubeCache::new();
 
-    // Create app state
-    let app_state = AppState::new(config, audio_engine, key_detector.clone(), youtube_cache);
+    // Save audio_device and master_volume before moving config into AppState
+    let audio_device = config.audio_device.clone();
+    let master_volume = config.master_volume;
+
+    // Create app state (audio engine NOT yet initialized — deferred to setup hook)
+    let app_state = AppState::new(config, key_detector.clone(), youtube_cache);
 
     // Defer YouTube cache cleanup to a background thread (saves ~500ms startup)
     {
@@ -95,6 +90,7 @@ fn main() {
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(5));
             if let Ok(mut cache) = yt_cache.lock() {
+                cache.ensure_loaded();
                 cache.verify_integrity();
                 cache.cleanup_unused();
                 cache.save_index().ok();
@@ -109,29 +105,68 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .manage(app_state)
         .setup(move |app| {
-            // Resolve and set error sound path
-            let error_sound_path = if let Ok(resource_dir) = app.path().resource_dir() {
-                // Try multiple possible locations for the bundled resource
-                let candidates = [
-                    resource_dir.join("resources/sounds/error.mp3"),
-                    resource_dir.join("error.mp3"),
-                ];
-                candidates.into_iter().find(|p| p.exists())
-            } else {
-                None
-            };
-            if let Some(path) = error_sound_path {
+            // --- Deferred audio engine initialization (async, non-blocking) ---
+            let audio_cell = {
                 let state: tauri::State<'_, AppState> = app.state();
-                let _ = state.audio_engine.set_error_sound_path(
-                    path.to_string_lossy().to_string(),
-                );
-                tracing::info!("Error sound loaded: {:?}", path);
-            } else {
-                tracing::warn!("Error sound not found in resource directory");
-            }
+                state.audio_engine.clone()
+            };
+            let app_handle_audio_init = app.handle().clone();
+            std::thread::spawn(move || {
+                tracing::info!("Audio engine init starting (deferred)");
+                match AudioEngineHandle::new(audio_device) {
+                    Ok(engine) => {
+                        let _ = engine.set_master_volume(master_volume);
+
+                        // Resolve and set error sound path
+                        if let Ok(resource_dir) = app_handle_audio_init.path().resource_dir() {
+                            let candidates = [
+                                resource_dir.join("resources/sounds/error.mp3"),
+                                resource_dir.join("error.mp3"),
+                            ];
+                            if let Some(path) = candidates.into_iter().find(|p| p.exists()) {
+                                let _ = engine.set_error_sound_path(
+                                    path.to_string_lossy().to_string(),
+                                );
+                                tracing::info!("Error sound loaded: {:?}", path);
+                            }
+                        }
+
+                        // Start audio event forwarding thread
+                        let event_rx = engine.event_rx.clone();
+                        let app_handle_events = app_handle_audio_init.clone();
+                        std::thread::spawn(move || {
+                            let rx = event_rx.lock().unwrap();
+                            loop {
+                                match rx.recv_timeout(Duration::from_millis(50)) {
+                                    Ok(event) => {
+                                        emit_audio_event(&app_handle_events, event);
+                                        while let Ok(event) = rx.try_recv() {
+                                            emit_audio_event(&app_handle_events, event);
+                                        }
+                                    }
+                                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                                }
+                            }
+                        });
+
+                        // Store engine in OnceCell — commands can now use it
+                        let _ = audio_cell.set(engine);
+                        tracing::info!("Audio engine initialized (deferred)");
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to initialize audio engine: {}", e);
+                    }
+                }
+            });
 
             // Start key detection with Tauri event emitter
             let app_handle = app.handle().clone();
+            // Need a reference to the audio_engine cell for MasterStop
+            let audio_cell_keys = {
+                let state: tauri::State<'_, AppState> = app.state();
+                state.audio_engine.clone()
+            };
 
             key_detector.start(move |event| {
                 match event {
@@ -142,8 +177,9 @@ fn main() {
                         }));
                     }
                     KeyEvent::MasterStop => {
-                        let state: tauri::State<'_, AppState> = app_handle.state();
-                        let _ = state.audio_engine.stop_all();
+                        if let Some(engine) = audio_cell_keys.get() {
+                            let _ = engine.stop_all();
+                        }
                         let _ = app_handle.emit("master_stop_triggered", serde_json::json!({}));
                     }
                     KeyEvent::ToggleKeyDetection => {
@@ -151,86 +187,6 @@ fn main() {
                     }
                     KeyEvent::ToggleAutoMomentum => {
                         let _ = app_handle.emit("toggle_auto_momentum", serde_json::json!({}));
-                    }
-                }
-            });
-
-            // Start audio event forwarding thread (mpsc channel instead of polling)
-            let app_handle_audio = app.handle().clone();
-            let event_rx = {
-                let state: tauri::State<'_, AppState> = app.state();
-                state.audio_engine.event_rx.clone()
-            };
-
-            std::thread::spawn(move || {
-                let rx = event_rx.lock().unwrap();
-                loop {
-                    // Block until an event arrives, with timeout to allow shutdown
-                    match rx.recv_timeout(Duration::from_millis(50)) {
-                        Ok(event) => {
-                            match event {
-                                AudioEvent::SoundStarted { track_id, sound_id } => {
-                                    let _ = app_handle_audio.emit("sound_started", serde_json::json!({
-                                        "trackId": track_id,
-                                        "soundId": sound_id,
-                                    }));
-                                }
-                                AudioEvent::SoundEnded { track_id, sound_id } => {
-                                    let _ = app_handle_audio.emit("sound_ended", serde_json::json!({
-                                        "trackId": track_id,
-                                        "soundId": sound_id,
-                                    }));
-                                }
-                                AudioEvent::PlaybackProgress { track_id, position } => {
-                                    let _ = app_handle_audio.emit("playback_progress", serde_json::json!({
-                                        "trackId": track_id,
-                                        "position": position,
-                                    }));
-                                }
-                                AudioEvent::Error { message } => {
-                                    tracing::error!("[audio] {}", message);
-                                    let _ = app_handle_audio.emit("audio_error", serde_json::json!({
-                                        "message": message,
-                                    }));
-                                }
-                            }
-                            // Drain any remaining events without blocking
-                            while let Ok(event) = rx.try_recv() {
-                                match event {
-                                    AudioEvent::SoundStarted { track_id, sound_id } => {
-                                        let _ = app_handle_audio.emit("sound_started", serde_json::json!({
-                                            "trackId": track_id,
-                                            "soundId": sound_id,
-                                        }));
-                                    }
-                                    AudioEvent::SoundEnded { track_id, sound_id } => {
-                                        let _ = app_handle_audio.emit("sound_ended", serde_json::json!({
-                                            "trackId": track_id,
-                                            "soundId": sound_id,
-                                        }));
-                                    }
-                                    AudioEvent::PlaybackProgress { track_id, position } => {
-                                        let _ = app_handle_audio.emit("playback_progress", serde_json::json!({
-                                            "trackId": track_id,
-                                            "position": position,
-                                        }));
-                                    }
-                                    AudioEvent::Error { message } => {
-                                        tracing::error!("[audio] {}", message);
-                                        let _ = app_handle_audio.emit("audio_error", serde_json::json!({
-                                            "message": message,
-                                        }));
-                                    }
-                                }
-                            }
-                        }
-                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                            // No events, continue waiting
-                        }
-                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                            // Audio engine shut down
-                            break;
-                        }
                     }
                 }
             });
@@ -332,7 +288,39 @@ fn main() {
             get_logs_folder,
             get_data_folder,
             open_folder,
+            // Startup command
+            get_initial_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Emit an audio event to the frontend.
+fn emit_audio_event(app_handle: &tauri::AppHandle, event: AudioEvent) {
+    match event {
+        AudioEvent::SoundStarted { track_id, sound_id } => {
+            let _ = app_handle.emit("sound_started", serde_json::json!({
+                "trackId": track_id,
+                "soundId": sound_id,
+            }));
+        }
+        AudioEvent::SoundEnded { track_id, sound_id } => {
+            let _ = app_handle.emit("sound_ended", serde_json::json!({
+                "trackId": track_id,
+                "soundId": sound_id,
+            }));
+        }
+        AudioEvent::PlaybackProgress { track_id, position } => {
+            let _ = app_handle.emit("playback_progress", serde_json::json!({
+                "trackId": track_id,
+                "position": position,
+            }));
+        }
+        AudioEvent::Error { message } => {
+            tracing::error!("[audio] {}", message);
+            let _ = app_handle.emit("audio_error", serde_json::json!({
+                "message": message,
+            }));
+        }
+    }
 }

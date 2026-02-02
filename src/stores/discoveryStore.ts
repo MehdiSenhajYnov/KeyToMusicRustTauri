@@ -71,7 +71,10 @@ interface DiscoveryState {
   downloadProgresses: Record<string, number>;
 
   // Pre-downloaded pool items (not yet visible) — applied when items become visible
-  poolPredownloads: Record<string, { cachedPath: string; waveform: WaveformData | null; duration: number; suggestedMomentum: number }>;
+  poolPredownloads: Record<string, PoolPredownloadData>;
+
+  // Pre-downloaded refresh items — always mirrors visited+1/+2 for instant refresh
+  refreshPredownloads: Record<string, PoolPredownloadData>;
 
   // Actions
   setSuggestions: (suggestions: DiscoverySuggestion[], enricher: Enricher) => void;
@@ -94,7 +97,8 @@ interface DiscoveryState {
 
   // Infinite pool
   appendToPool: (suggestions: DiscoverySuggestion[]) => void;
-  setPoolPredownload: (videoId: string, data: { cachedPath: string; waveform: WaveformData | null; duration: number; suggestedMomentum: number }) => void;
+  setPoolPredownload: (videoId: string, data: PoolPredownloadData) => void;
+  setRefreshPredownloads: (data: Record<string, PoolPredownloadData>) => void;
   restoreFromCache: (
     suggestions: DiscoverySuggestion[],
     cursorIndex: number,
@@ -130,7 +134,7 @@ interface DiscoveryState {
 const INITIAL_REVEAL = 10;
 const REVEAL_INCREMENT = 10;
 
-type PoolPredownloadData = { cachedPath: string; waveform: WaveformData | null; duration: number; suggestedMomentum: number };
+export type PoolPredownloadData = { cachedPath: string; waveform: WaveformData | null; duration: number; suggestedMomentum: number };
 
 function enrichSuggestion(
   s: DiscoverySuggestion,
@@ -181,20 +185,22 @@ export const useDiscoveryStore = create<DiscoveryState>((set, get) => ({
   previewVolume: parseFloat(localStorage.getItem("discoveryPreviewVolume") ?? "0.5") || 0.5,
   downloadProgresses: {},
   poolPredownloads: {},
+  refreshPredownloads: {},
 
   // Full replacement — used for loading from cache (no streaming)
   setSuggestions: (suggestions, enricher) => {
     const pool = get().poolPredownloads;
+    const refreshPool = get().refreshPredownloads;
     const count = Math.min(INITIAL_REVEAL, suggestions.length);
-    const usedIds = new Set<string>();
+    const usedPoolIds = new Set<string>();
     const visible = suggestions.slice(0, count).map((s, i) => {
-      const pd = pool[s.videoId];
-      if (pd) usedIds.add(s.videoId);
+      const pd = refreshPool[s.videoId] || pool[s.videoId];
+      if (pd && pool[s.videoId]) usedPoolIds.add(s.videoId);
       return enrichSuggestion(s, enricher(s, i), pd);
     });
     // Remove consumed entries from pool predownloads
     const remaining = { ...pool };
-    for (const id of usedIds) delete remaining[id];
+    for (const id of usedPoolIds) delete remaining[id];
     set({
       allSuggestions: suggestions,
       visibleSuggestions: visible,
@@ -203,6 +209,7 @@ export const useDiscoveryStore = create<DiscoveryState>((set, get) => ({
       visitedIndex: visible.length > 0 ? 0 : -1,
       error: null,
       poolPredownloads: remaining,
+      refreshPredownloads: {},
     });
   },
 
@@ -309,6 +316,7 @@ export const useDiscoveryStore = create<DiscoveryState>((set, get) => ({
       error: null,
       downloadProgresses: {},
       poolPredownloads: {},
+      refreshPredownloads: {},
     }),
 
   goToNext: () => {
@@ -383,6 +391,8 @@ export const useDiscoveryStore = create<DiscoveryState>((set, get) => ({
       poolPredownloads: { ...state.poolPredownloads, [videoId]: data },
     })),
 
+  setRefreshPredownloads: (data) => set({ refreshPredownloads: data }),
+
   restoreFromCache: (suggestions, cursorIndex, revealedCount, visitedIndex, enricher) => {
     // Handle old caches where revealedCount=0 (pre-infinite-pool)
     const effectiveRevealed = revealedCount > 0
@@ -391,15 +401,16 @@ export const useDiscoveryStore = create<DiscoveryState>((set, get) => ({
     const effectiveCursor = Math.min(cursorIndex, Math.max(0, effectiveRevealed - 1));
 
     const pool = get().poolPredownloads;
-    const usedIds = new Set<string>();
+    const refreshPool = get().refreshPredownloads;
+    const usedPoolIds = new Set<string>();
     const visible = suggestions.slice(0, effectiveRevealed).map((s, i) => {
-      const pd = pool[s.videoId];
-      if (pd) usedIds.add(s.videoId);
+      const pd = refreshPool[s.videoId] || pool[s.videoId];
+      if (pd && pool[s.videoId]) usedPoolIds.add(s.videoId);
       return enrichSuggestion(s, enricher(s, i), pd);
     });
 
-    const remaining = usedIds.size > 0
-      ? Object.fromEntries(Object.entries(pool).filter(([id]) => !usedIds.has(id)))
+    const remaining = usedPoolIds.size > 0
+      ? Object.fromEntries(Object.entries(pool).filter(([id]) => !usedPoolIds.has(id)))
       : pool;
 
     set({
@@ -410,6 +421,7 @@ export const useDiscoveryStore = create<DiscoveryState>((set, get) => ({
       visitedIndex,
       error: null,
       poolPredownloads: remaining,
+      refreshPredownloads: {},
     });
   },
 

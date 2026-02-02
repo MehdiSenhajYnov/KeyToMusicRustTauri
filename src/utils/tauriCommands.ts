@@ -1,11 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppConfig, Profile, Sound, YoutubeSearchResult, YoutubePlaylist, WaveformData, StreamUrlResult } from "../types";
+import type { AppConfig, Profile, Sound, YoutubeSearchResult, YoutubePlaylist, WaveformData, StreamUrlResult, InitialState } from "../types";
 
 interface ProfileSummary {
   id: string;
   name: string;
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Startup ──────────────────────────────────────────────────────────────
+
+export async function getInitialState(): Promise<InitialState> {
+  return invoke<InitialState>("get_initial_state");
 }
 
 // ─── Config ────────────────────────────────────────────────────────────────
@@ -322,7 +328,7 @@ export interface PredownloadResult {
   cachedPath: string;
   title: string;
   duration: number;
-  waveform: WaveformData;
+  waveform: WaveformData | null;
 }
 
 export async function predownloadSuggestion(

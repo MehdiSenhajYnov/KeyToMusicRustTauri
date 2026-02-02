@@ -19,6 +19,7 @@ import {
   checkShortcutConflicts,
 } from "../../utils/keyMapping";
 import { WaveformDisplay } from "../common/WaveformDisplay";
+import { MomentumSuggestionBadge } from "../common/MomentumSuggestionBadge";
 import * as commands from "../../utils/tauriCommands";
 import type { SoundSource } from "../../types";
 import { analyzeProfile, computeAutoAssign } from "../../utils/profileAnalysis";
@@ -86,9 +87,13 @@ export function DiscoveryPanel() {
   const triggerBackgroundFetchIfNeeded = useCallback(() => {
     if (!profile) return;
     const state = useDiscoveryStore.getState();
-    const THRESHOLD = 15;
+    const THRESHOLD = 20;
+    // Check remaining unrevealed items (what's left for future refreshes),
+    // not just carousel position. Each refresh consumes ~revealedCount items,
+    // so we need to trigger early enough for background discovery to complete.
+    const remaining = state.allSuggestions.length - state.revealedCount;
     if (
-      state.currentIndex >= state.allSuggestions.length - THRESHOLD &&
+      remaining <= THRESHOLD &&
       !state.isBackgroundFetching &&
       !state.isGenerating
     ) {
@@ -230,13 +235,15 @@ export function DiscoveryPanel() {
     if (!profile || isGenerating) return;
 
     const state = useDiscoveryStore.getState();
-    // Skip everything currently revealed — user wants a fresh batch
-    const unseenStart = state.revealedCount;
+    // Skip only items the user actually visited — not the entire revealed batch
+    const unseenStart = state.visitedIndex + 1;
     const unseen = state.allSuggestions.slice(unseenStart);
 
     // If pool has unseen items, discard seen ones and present unseen as fresh batch (1/10)
     if (unseen.length > 0) {
       stopPreview();
+      // refreshPredownloads (synced by useDiscoveryPredownload) ensures items at
+      // visited+1/+2 keep their predownload data through the setSuggestions call
       useDiscoveryStore.getState().setSuggestions(unseen, buildEnricher());
       // Persist trimmed pool to cache so restart shows the same fresh state
       const newState = useDiscoveryStore.getState();
@@ -836,10 +843,27 @@ function SuggestionCard({
 
   return (
     <div className="space-y-1.5 group">
-      {/* Row 1: Title */}
-      <p className="text-text-primary text-sm truncate" title={titleTooltip}>
-        {s.title}
-      </p>
+      {/* Row 1: Title + Momentum badge */}
+      <div className="flex items-center gap-1.5">
+        <p className="text-text-primary text-sm truncate flex-1 min-w-0" title={titleTooltip}>
+          {s.title}
+        </p>
+        {isReady && s.waveform?.suggestedMomentum != null && (
+          <MomentumSuggestionBadge
+            suggestedMomentum={s.waveform.suggestedMomentum}
+            currentMomentum={s.suggestedMomentum}
+            onApply={() => {
+              if (s.waveform?.suggestedMomentum != null) {
+                onUpdateAssignment(s.videoId, {
+                  suggestedMomentum: s.waveform.suggestedMomentum,
+                });
+                if (s.isPreviewPlaying) onSeekPreview(s, s.waveform.suggestedMomentum);
+              }
+            }}
+            size="sm"
+          />
+        )}
+      </div>
 
       {/* Row 2: Play button + Waveform */}
       <div className="flex items-center gap-1.5">
@@ -871,14 +895,7 @@ function SuggestionCard({
               }}
               playbackPosition={previewPosition}
               suggestedMomentum={s.waveform.suggestedMomentum}
-              onAcceptSuggestion={() => {
-                if (s.waveform?.suggestedMomentum != null) {
-                  onUpdateAssignment(s.videoId, {
-                    suggestedMomentum: s.waveform.suggestedMomentum,
-                  });
-                  if (s.isPreviewPlaying) onSeekPreview(s, s.waveform.suggestedMomentum);
-                }
-              }}
+              showSuggestionLabel={false}
               height={28}
             />
           )}

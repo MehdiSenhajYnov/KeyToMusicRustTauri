@@ -11,6 +11,7 @@ import * as commands from "../../utils/tauriCommands";
 import { KeyCaptureSlot } from "../Keys/KeyCaptureSlot";
 import type { LoopMode, SoundSource, YoutubeSearchResult, YoutubePlaylist, WaveformData } from "../../types";
 import { WaveformDisplay } from "../common/WaveformDisplay";
+import { MomentumSuggestionBadge } from "../common/MomentumSuggestionBadge";
 import { SearchResultPreview } from "./SearchResultPreview";
 
 function WheelInput(props: React.InputHTMLAttributes<HTMLInputElement> & { wheelStep: number; wheelMin: number; wheelMax: number; onWheelChange: (v: number) => void }) {
@@ -33,44 +34,88 @@ interface FileEntry {
   source?: SoundSource;
 }
 
-/** Memoized wrapper that manages its own waveform loading state per file. */
+/** Memoized wrapper that manages its own waveform loading state per file.
+ *  Streams partial waveform data from backend for a left-to-right reveal. */
 const FileWaveform = React.memo(function FileWaveform({
   path,
   duration,
   momentum,
   onMomentumChange,
-  suggestedMomentumAccept,
+  onAutoApply,
   height = 50,
 }: {
   path: string;
   duration: number;
   momentum: number;
   onMomentumChange?: (m: number) => void;
-  suggestedMomentumAccept?: () => void;
+  onAutoApply?: (suggestedMomentum: number) => void;
   height?: number;
 }) {
   const [waveform, setWaveform] = useState<WaveformData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const autoApplied = useRef(false);
+  const onAutoApplyRef = useRef(onAutoApply);
+  onAutoApplyRef.current = onAutoApply;
 
   useEffect(() => {
     if (!path || duration <= 0) return;
+
+    let cancelled = false;
+    const tryAutoApply = (suggested: number | null | undefined) => {
+      if (!autoApplied.current && onAutoApplyRef.current && suggested != null) {
+        autoApplied.current = true;
+        onAutoApplyRef.current(suggested);
+      }
+    };
 
     // Check global store first (non-reactive)
     const cached = useWaveformStore.getState().waveforms.get(path);
     if (cached) {
       setWaveform(cached);
+      tryAutoApply(cached.suggestedMomentum);
       return;
     }
 
-    setLoading(true);
+    // Listen for streaming progress — backend emits raw points every 5 iterations
+    const NUM_POINTS = 100;
+    let runningMax = 0.001;
+    const unlistenPromise = listen<{
+      path: string;
+      points: number[];
+      duration: number;
+      sampleRate: number;
+    }>("waveform_progress", (event) => {
+      if (cancelled || event.payload.path !== path) return;
+      const raw = event.payload.points;
+      const batchMax = raw.reduce((m, v) => Math.max(m, v), 0.001);
+      runningMax = Math.max(runningMax, batchMax);
+      // Pad to full size: normalized computed values + zeros for uncomputed portion
+      const points = new Array(NUM_POINTS).fill(0);
+      for (let i = 0; i < raw.length; i++) {
+        points[i] = raw[i] / runningMax;
+      }
+      setWaveform({
+        points,
+        duration: event.payload.duration,
+        sampleRate: event.payload.sampleRate,
+        suggestedMomentum: null,
+      });
+    });
+
+    // Fire the full computation (returns final normalized + smoothed + momentum data)
     commands
-      .getWaveform(path, 200)
+      .getWaveform(path, NUM_POINTS)
       .then((data) => {
+        if (cancelled) return;
         setWaveform(data);
         useWaveformStore.getState().setOne(path, data);
+        tryAutoApply(data.suggestedMomentum);
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      unlistenPromise.then((fn) => fn());
+    };
   }, [path, duration]);
 
   return (
@@ -78,13 +123,31 @@ const FileWaveform = React.memo(function FileWaveform({
       waveformData={waveform}
       momentum={momentum}
       onMomentumChange={onMomentumChange}
-      isLoading={loading}
       suggestedMomentum={waveform?.suggestedMomentum}
-      onAcceptSuggestion={suggestedMomentumAccept}
       height={height}
     />
   );
 });
+
+/** Fetch audio durations with bounded concurrency. */
+function fetchDurationsConcurrent(
+  paths: string[],
+  maxConcurrent: number,
+  onResult: (path: string, duration: number) => void
+) {
+  let i = 0;
+  function next() {
+    if (i >= paths.length) return;
+    const path = paths[i++];
+    commands.getAudioDuration(path)
+      .then((duration) => onResult(path, duration))
+      .catch(() => {})
+      .finally(next);
+  }
+  for (let j = 0; j < Math.min(maxConcurrent, paths.length); j++) {
+    next();
+  }
+}
 
 interface AddSoundModalProps {
   targetKey?: string;
@@ -191,27 +254,23 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   useEffect(() => {
     if (!initialFiles || initialFiles.length === 0) return;
     if (processedFilesRef.current === initialFiles) {
-      // Same reference (mount or StrictMode re-run): just fetch durations
-      for (const path of initialFiles) {
-        commands.getAudioDuration(path).then((duration) => {
-          setFiles((prev) =>
-            prev.map((f) => (f.path === path && f.duration === 0 ? { ...f, duration } : f))
-          );
-        }).catch(() => {});
-      }
+      // Same reference (mount or StrictMode re-run): just fetch durations (max 5 concurrent)
+      fetchDurationsConcurrent(initialFiles, 5, (path, duration) => {
+        setFiles((prev) =>
+          prev.map((f) => (f.path === path && f.duration === 0 ? { ...f, duration } : f))
+        );
+      });
       return;
     }
     // New reference = new drop while modal is open: append files
     processedFilesRef.current = initialFiles;
     const entries: FileEntry[] = initialFiles.map((path) => ({ path, momentum: 0, duration: 0 }));
     setFiles((prev) => [...prev, ...entries]);
-    for (const path of initialFiles) {
-      commands.getAudioDuration(path).then((duration) => {
-        setFiles((prev) =>
-          prev.map((f) => (f.path === path && f.duration === 0 ? { ...f, duration } : f))
-        );
-      }).catch(() => {});
-    }
+    fetchDurationsConcurrent(initialFiles, 5, (path, duration) => {
+      setFiles((prev) =>
+        prev.map((f) => (f.path === path && f.duration === 0 ? { ...f, duration } : f))
+      );
+    });
   }, [initialFiles]);
 
 
@@ -491,16 +550,14 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
       }));
       setFiles((prev) => [...prev, ...newEntries]);
 
-      // Fetch durations in background
-      for (const path of paths) {
-        commands.getAudioDuration(path).then((duration) => {
-          setFiles((prev) =>
-            prev.map((f) =>
-              f.path === path && f.duration === 0 ? { ...f, duration } : f
-            )
-          );
-        }).catch(() => {});
-      }
+      // Fetch durations in background (max 5 concurrent)
+      fetchDurationsConcurrent(paths, 5, (path, duration) => {
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.path === path && f.duration === 0 ? { ...f, duration } : f
+          )
+        );
+      });
     } catch (e) {
       addToast("Failed to open file picker", "error");
     }
@@ -615,9 +672,6 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
         id: trackId,
         name: newTrackName.trim(),
         volume: 1.0,
-        currentlyPlaying: null,
-        playbackPosition: 0,
-        isPlaying: false,
       });
     }
 
@@ -993,6 +1047,19 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                     <span className="text-text-primary text-xs flex-1 truncate">
                       {fileName}
                     </span>
+                    {(() => {
+                      const wf = useWaveformStore.getState().waveforms.get(file.path);
+                      return wf?.suggestedMomentum != null &&
+                        Math.abs(wf.suggestedMomentum - file.momentum) > 0.3 ? (
+                        <span
+                          className="shrink-0 px-1 py-0.5 rounded text-[8px] font-medium
+                                     bg-cyan-500/15 text-cyan-400 border border-cyan-500/30"
+                          title={`Suggested: ${wf.suggestedMomentum.toFixed(1)}s`}
+                        >
+                          Auto
+                        </span>
+                      ) : null;
+                    })()}
                     <button
                       onClick={() => handleRemovePath(i)}
                       className="text-text-muted hover:text-accent-error text-sm shrink-0"
@@ -1006,16 +1073,36 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                     duration={file.duration}
                     momentum={file.momentum}
                     onMomentumChange={(m) => handleMomentumChange(i, m)}
-                    suggestedMomentumAccept={() => {
-                      const cached = useWaveformStore.getState().waveforms.get(file.path);
-                      const suggested = cached?.suggestedMomentum;
-                      if (suggested != null) handleMomentumChange(i, Math.round(suggested * 10) / 10);
-                    }}
+                    onAutoApply={config.autoMomentum ? (suggested) => {
+                      handleMomentumChange(i, Math.round(suggested * 10) / 10);
+                    } : undefined}
                     height={50}
                   />
                   {/* Momentum editor */}
                   <div className="flex items-center gap-2 text-xs text-text-muted">
-                    <span className="text-text-secondary whitespace-nowrap">Mom:</span>
+                    <button
+                      onClick={() => handlePreviewToggle(i)}
+                      className={`w-6 h-6 flex items-center justify-center rounded shrink-0 ${
+                        isPreviewing
+                          ? "bg-accent-error/20 text-accent-error"
+                          : "bg-bg-secondary text-text-secondary hover:text-text-primary"
+                      }`}
+                      title={isPreviewing ? "Stop" : "Play from momentum"}
+                    >
+                      {isPreviewing ? "\u25A0" : "\u25B6"}
+                    </button>
+                    <span className="text-text-secondary whitespace-nowrap">Momentum:</span>
+                    {(() => {
+                      const wf = useWaveformStore.getState().waveforms.get(file.path);
+                      return wf?.suggestedMomentum != null ? (
+                        <MomentumSuggestionBadge
+                          suggestedMomentum={wf.suggestedMomentum}
+                          currentMomentum={file.momentum}
+                          onApply={() => handleMomentumChange(i, Math.round(wf.suggestedMomentum! * 10) / 10)}
+                          size="sm"
+                        />
+                      ) : null;
+                    })()}
                     <input
                       type="number"
                       min="0"
@@ -1046,17 +1133,6 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                     <span className="text-text-muted whitespace-nowrap">
                       {formatDuration(file.duration)}
                     </span>
-                    <button
-                      onClick={() => handlePreviewToggle(i)}
-                      className={`w-6 h-6 flex items-center justify-center rounded shrink-0 ${
-                        isPreviewing
-                          ? "bg-accent-error/20 text-accent-error"
-                          : "bg-bg-secondary text-text-secondary hover:text-text-primary"
-                      }`}
-                      title={isPreviewing ? "Stop" : "Play from momentum"}
-                    >
-                      {isPreviewing ? "\u25A0" : "\u25B6"}
-                    </button>
                   </div>
                 </div>
               );

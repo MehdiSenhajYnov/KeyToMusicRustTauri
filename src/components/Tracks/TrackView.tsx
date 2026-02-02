@@ -62,9 +62,6 @@ export function TrackView() {
       id,
       name: newTrackName.trim(),
       volume: 1.0,
-      currentlyPlaying: null,
-      playbackPosition: 0,
-      isPlaying: false,
     });
     setNewTrackName("");
     setIsAdding(false);

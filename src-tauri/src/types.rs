@@ -71,10 +71,12 @@ pub struct KeyBinding {
 pub struct Track {
     pub id: TrackId,
     pub name: String,
+    #[serde(default = "default_volume")]
     pub volume: f32,
-    pub currently_playing: Option<SoundId>,
-    pub playback_position: f64,
-    pub is_playing: bool,
+}
+
+fn default_volume() -> f32 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

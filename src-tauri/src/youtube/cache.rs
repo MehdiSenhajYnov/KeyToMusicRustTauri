@@ -27,6 +27,8 @@ pub struct YouTubeCache {
     /// Secondary index: video_id -> url for O(1) lookup by video ID.
     /// Maintained alongside `entries` to avoid O(n) scans in remove_entry_by_video_id().
     video_id_index: HashMap<String, String>,
+    /// Whether the index has been loaded from disk (lazy loading).
+    loaded: bool,
 }
 
 impl YouTubeCache {
@@ -38,6 +40,17 @@ impl YouTubeCache {
             index_path,
             entries: HashMap::new(),
             video_id_index: HashMap::new(),
+            loaded: false,
+        }
+    }
+
+    /// Ensure the cache index is loaded from disk. No-op if already loaded.
+    pub fn ensure_loaded(&mut self) {
+        if !self.loaded {
+            if let Err(e) = self.load_index() {
+                tracing::warn!("Failed to load YouTube cache index: {}", e);
+            }
+            self.loaded = true;
         }
     }
 
@@ -87,7 +100,8 @@ impl YouTubeCache {
     }
 
     /// Get a cached entry if it exists and the file is still present.
-    pub fn get(&self, url: &str) -> Option<&CacheEntry> {
+    pub fn get(&mut self, url: &str) -> Option<&CacheEntry> {
+        self.ensure_loaded();
         if let Some(entry) = self.entries.get(url) {
             if Path::new(&entry.cached_path).exists() {
                 return Some(entry);
@@ -104,6 +118,7 @@ impl YouTubeCache {
         title: String,
         file_size: u64,
     ) -> CacheEntry {
+        self.ensure_loaded();
         if let Some(vid) = video_id_from_path(&cached_path) {
             self.video_id_index.insert(vid, url.clone());
         }
@@ -122,6 +137,7 @@ impl YouTubeCache {
     /// Uses the video_id_index for O(1) lookup instead of scanning all entries.
     /// Best-effort: errors are logged but not propagated.
     pub fn remove_entry_by_video_id(&mut self, video_id: &str) {
+        self.ensure_loaded();
         let url = match self.video_id_index.remove(video_id) {
             Some(url) => url,
             None => return,

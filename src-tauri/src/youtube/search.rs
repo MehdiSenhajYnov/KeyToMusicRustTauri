@@ -104,7 +104,7 @@ pub async fn search_youtube(
             let url = canonical_url(&video_id);
 
             let already_downloaded = {
-                let cache_guard = cache.lock().unwrap();
+                let mut cache_guard = cache.lock().unwrap();
                 cache_guard.get(&url).is_some()
             };
 
@@ -235,7 +235,7 @@ pub async fn fetch_playlist(
             let entry_url = canonical_url(&video_id);
 
             let already_downloaded = {
-                let cache_guard = cache.lock().unwrap();
+                let mut cache_guard = cache.lock().unwrap();
                 cache_guard.get(&entry_url).is_some()
             };
 

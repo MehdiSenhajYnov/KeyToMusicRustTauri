@@ -12,7 +12,9 @@ use crate::youtube::YouTubeCache;
 /// Wrapped in Mutex for thread-safe access from multiple command handlers.
 pub struct AppState {
     pub config: Mutex<AppConfig>,
-    pub audio_engine: AudioEngineHandle,
+    /// Audio engine initialized on a background thread after window creation.
+    /// Commands that need audio should call `get_audio_engine()`.
+    pub audio_engine: Arc<std::sync::OnceLock<AudioEngineHandle>>,
     pub key_detector: KeyDetector,
     pub youtube_cache: Arc<Mutex<YouTubeCache>>,
     pub waveform_cache: Arc<Mutex<WaveformCache>>,
@@ -29,7 +31,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config: AppConfig, audio_engine: AudioEngineHandle, key_detector: KeyDetector, youtube_cache: YouTubeCache) -> Self {
+    pub fn new(config: AppConfig, key_detector: KeyDetector, youtube_cache: YouTubeCache) -> Self {
         let cache_path = storage::get_app_data_dir().join("cache").join("waveforms.json");
         let cpu_pool = Arc::new(
             rayon::ThreadPoolBuilder::new()
@@ -41,7 +43,7 @@ impl AppState {
         tracing::info!("CPU thread pool created (4 threads)");
         Self {
             config: Mutex::new(config),
-            audio_engine,
+            audio_engine: Arc::new(std::sync::OnceLock::new()),
             key_detector,
             youtube_cache: Arc::new(Mutex::new(youtube_cache)),
             waveform_cache: Arc::new(Mutex::new(WaveformCache::new_with_disk(50, cache_path))),
@@ -50,6 +52,11 @@ impl AppState {
             profile_load_gen: Arc::new(AtomicU64::new(0)),
             config_dirty: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// Get the audio engine, returning an error if not yet initialized.
+    pub fn get_audio_engine(&self) -> Result<&AudioEngineHandle, String> {
+        self.audio_engine.get().ok_or_else(|| "Audio engine is still initializing".to_string())
     }
 
     /// Get a clone of the current config.

@@ -16,7 +16,7 @@ let _loadGen = 0;
 async function preloadWaveforms(sounds: Sound[]): Promise<void> {
   const entries = sounds
     .filter((s) => s.duration > 0)
-    .map((s) => ({ path: getSoundFilePath(s), numPoints: 200 }));
+    .map((s) => ({ path: getSoundFilePath(s), numPoints: 100 }));
   if (entries.length === 0) return;
 
   const wfStore = useWaveformStore.getState();
@@ -61,6 +61,7 @@ async function computeProfileDurations(
 interface ProfileState {
   profiles: ProfileSummary[];
   currentProfile: Profile | null;
+  isLoading: boolean;
 
   loadProfiles: () => Promise<void>;
   createProfile: (name: string) => Promise<Profile | null>;
@@ -93,6 +94,7 @@ interface ProfileState {
 export const useProfileStore = create<ProfileState>((set, get) => ({
   profiles: [],
   currentProfile: null,
+  isLoading: true,
 
   loadProfiles: async () => {
     try {
@@ -117,6 +119,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   loadProfile: async (id) => {
     // Bump generation — any in-flight fire-and-forget from a previous load becomes stale
     const gen = ++_loadGen;
+    set({ isLoading: true });
 
     try {
       // Stop any playing sounds before switching
@@ -138,7 +141,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         // Save the cleaned profile
         commands.saveProfile(profile).catch(() => {});
       }
-      set({ currentProfile: profile });
+      set({ currentProfile: profile, isLoading: false });
       // Verify sound files exist
       try {
         const missing = await commands.verifyProfileSounds(profile);
@@ -190,6 +193,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       });
     } catch (e) {
       console.error("Failed to load profile:", e);
+      set({ isLoading: false });
     }
   },
 

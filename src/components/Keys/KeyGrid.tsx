@@ -14,11 +14,12 @@ interface KeyGridProps {
   selectedKeys: Set<string>;
   onKeySelect: (keyCode: string, event: React.MouseEvent) => void;
   onSelectAll: () => void;
+  matchingKeys?: Set<string> | null;
 }
 
 /** Extract only the set of playing sound IDs from playingTracks.
  *  Uses shallow comparison to avoid re-renders on position-only changes. */
-function usePlayingSoundIds(): Set<string> {
+export function usePlayingSoundIds(): Set<string> {
   const prevRef = useRef<Set<string>>(new Set());
   return useAudioStore((state) => {
     const next = new Set<string>();
@@ -35,7 +36,7 @@ function usePlayingSoundIds(): Set<string> {
   });
 }
 
-export function KeyGrid({ selectedKeys, onKeySelect, onSelectAll }: KeyGridProps) {
+export function KeyGrid({ selectedKeys, onKeySelect, onSelectAll, matchingKeys }: KeyGridProps) {
   const currentProfile = useProfileStore((s) => s.currentProfile);
   const playingSoundIds = usePlayingSoundIds();
   const lastKeyPressed = useAudioStore((s) => s.lastKeyPressed);
@@ -53,6 +54,10 @@ export function KeyGrid({ selectedKeys, onKeySelect, onSelectAll }: KeyGridProps
       {keyBindings.length === 0 ? (
         <p className="text-text-muted text-xs italic">
           No keys assigned. Use "Add Sound" to create key bindings.
+        </p>
+      ) : matchingKeys != null && matchingKeys.size === 0 ? (
+        <p className="text-text-muted text-xs italic">
+          No matching keys
         </p>
       ) : (
         <div
@@ -74,6 +79,7 @@ export function KeyGrid({ selectedKeys, onKeySelect, onSelectAll }: KeyGridProps
             const isSelected = selectedKeys.has(kb.keyCode);
             const isPlaying = kb.soundIds.some((id) => playingSoundIds.has(id));
             const isJustPressed = lastKeyPressed === kb.keyCode;
+            const isFiltered = matchingKeys != null && !matchingKeys.has(kb.keyCode);
 
             // Check for momentum conflict
             const conflict = getKeyMomentumConflict(
@@ -95,6 +101,7 @@ export function KeyGrid({ selectedKeys, onKeySelect, onSelectAll }: KeyGridProps
                   }
                   ${isPlaying ? "ring-1 ring-accent-success" : ""}
                   ${isJustPressed ? "scale-95" : ""}
+                  ${isFiltered ? "opacity-30 pointer-events-none" : ""}
                 `}
               >
                 {/* Warning icon for momentum conflict */}

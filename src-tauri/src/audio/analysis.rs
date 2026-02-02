@@ -298,7 +298,11 @@ pub fn compute_waveform(file_path: &str, num_points: usize) -> Result<WaveformDa
 /// Compute a waveform by seeking to N positions and decoding a small window at each.
 /// ~40x faster than `compute_waveform` for files with seekable containers (M4A, MP3, FLAC).
 /// Falls back to `compute_waveform` if seeking fails.
-pub fn compute_waveform_sampled(file_path: &str, num_points: usize) -> Result<WaveformData, String> {
+pub fn compute_waveform_sampled(
+    file_path: &str,
+    num_points: usize,
+    progress_cb: Option<&dyn Fn(&[f32], f64, u32)>,
+) -> Result<WaveformData, String> {
     let num_points = num_points.clamp(10, 2000);
 
     let file =
@@ -355,12 +359,10 @@ pub fn compute_waveform_sampled(file_path: &str, num_points: usize) -> Result<Wa
     let mut rms_values: Vec<f32> = Vec::with_capacity(num_points);
     let ch = channels.max(1);
 
-    // Decode a 500ms window (up to 30 packets) per point for statistical accuracy.
-    // For a 20-min file with 200 points, each point covers ~6s; 500ms gives ~8% coverage
-    // vs the old 0.5% (single packet). Total work: ~200×20 packets = constant regardless
-    // of file length.
-    const WINDOW_SECS: f64 = 0.5;
-    const MAX_PACKETS: usize = 30;
+    // Decode a 100ms window (up to 8 packets) per point. Visually identical after
+    // 3-point smoothing — each point is ~2px on screen. Total work: ~100×8 packets.
+    const WINDOW_SECS: f64 = 0.1;
+    const MAX_PACKETS: usize = 8;
     let window_frames = (WINDOW_SECS * sample_rate as f64) as usize;
 
     for i in 0..num_points {
@@ -427,6 +429,12 @@ pub fn compute_waveform_sampled(file_path: &str, num_points: usize) -> Result<Wa
         };
 
         rms_values.push(rms);
+
+        if let Some(ref cb) = progress_cb {
+            if (i + 1) % 5 == 0 || i == num_points - 1 {
+                cb(&rms_values, duration, sample_rate);
+            }
+        }
     }
 
     if rms_values.iter().all(|&v| v == 0.0) {
@@ -473,37 +481,153 @@ pub fn compute_waveform_sampled(file_path: &str, num_points: usize) -> Result<Wa
     })
 }
 
-/// Detect a good momentum (start) point in the waveform.
-/// Looks for the first significant rise after a quiet section, skipping the first 5%.
+/// Adaptive thresholds computed from the waveform's amplitude distribution.
+struct AdaptiveThresholds {
+    quiet: f32,
+    active: f32,
+    gradient: f32,
+}
+
+/// Compute adaptive thresholds from percentiles of the waveform amplitude.
+fn compute_adaptive_thresholds(points: &[f32]) -> AdaptiveThresholds {
+    if points.len() < 4 {
+        return AdaptiveThresholds {
+            quiet: 0.02,
+            active: 0.3,
+            gradient: 0.01,
+        };
+    }
+
+    let mut sorted: Vec<f32> = points.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let len = sorted.len();
+    let p25 = sorted[len / 4];
+    let p50 = sorted[len / 2];
+    let p75 = sorted[len * 3 / 4];
+
+    AdaptiveThresholds {
+        quiet: (p25 * 1.2).max(0.02),
+        active: p50.max(0.3),
+        gradient: ((p75 - p25) * 0.15).max(0.01),
+    }
+}
+
+/// Find candidate momentum points using a windowed gradient approach.
+fn find_momentum_candidates(
+    points: &[f32],
+    thresholds: &AdaptiveThresholds,
+    skip: usize,
+    window: usize,
+) -> Vec<usize> {
+    let mut candidates = Vec::new();
+    let lookahead = window;
+
+    for i in (skip + window)..points.len().saturating_sub(lookahead + 1) {
+        // Average of preceding window (should be quiet)
+        let pre_avg: f32 =
+            points[i.saturating_sub(window)..i].iter().sum::<f32>() / window as f32;
+        if pre_avg >= thresholds.quiet {
+            continue;
+        }
+
+        // Average of following window (should be active)
+        let post_avg: f32 =
+            points[i..i + lookahead].iter().sum::<f32>() / lookahead as f32;
+
+        // Windowed gradient: difference between post and pre averages
+        let windowed_gradient = post_avg - pre_avg;
+        if windowed_gradient > thresholds.gradient && post_avg > thresholds.quiet {
+            candidates.push(i);
+        }
+    }
+
+    candidates
+}
+
+const MIN_QUALITY_SCORE: f64 = 0.15;
+
+/// Score a candidate momentum point based on amplitude rise, sustained energy,
+/// and position (earlier is slightly preferred).
+fn score_candidate(
+    points: &[f32],
+    idx: usize,
+    thresholds: &AdaptiveThresholds,
+    total_len: usize,
+) -> f64 {
+    let window = (total_len / 20).max(3);
+    let remaining = points.len().saturating_sub(idx);
+    if remaining == 0 {
+        return 0.0;
+    }
+    let lookahead = (total_len / 10).max(5).min(remaining);
+
+    // 1) Amplitude rise: how much the signal increases at this point
+    let pre_avg: f32 =
+        points[idx.saturating_sub(window)..idx].iter().sum::<f32>() / window as f32;
+    let post_slice = &points[idx..idx + lookahead];
+    let post_avg: f32 = post_slice.iter().sum::<f32>() / post_slice.len() as f32;
+    let rise = (post_avg - pre_avg).max(0.0) as f64;
+
+    // 2) Sustained energy: what fraction of the post-window is above active threshold
+    let sustained = post_slice
+        .iter()
+        .filter(|&&v| v > thresholds.active * 0.6)
+        .count() as f64
+        / post_slice.len() as f64;
+
+    // 3) Position penalty: slight preference for earlier points (avoid selecting near end)
+    let position_ratio = idx as f64 / total_len as f64;
+    let position_factor = 1.0 - (position_ratio * 0.3); // 1.0 at start, 0.7 at end
+
+    rise * 0.4 + sustained * 0.4 + position_factor * 0.2
+}
+
+/// Detect a good momentum (start) point in the waveform using adaptive thresholds
+/// and multi-pass candidate scoring.
 fn detect_momentum_point(points: &[f32], duration: f64) -> Option<f64> {
     if points.len() < 10 || duration <= 0.0 {
         return None;
     }
 
+    let thresholds = compute_adaptive_thresholds(points);
     let skip = (points.len() as f64 * 0.05).ceil() as usize;
-    let window_size = (points.len() / 20).max(3); // 5% window for quiet detection
-    let quiet_threshold = 0.15;
-    let gradient_threshold = 0.05;
+    let window = (points.len() / 20).max(3);
 
-    for i in (skip + window_size)..points.len().saturating_sub(1) {
-        // Check if preceding window was quiet
-        let window_start = i.saturating_sub(window_size);
-        let window_avg: f32 =
-            points[window_start..i].iter().sum::<f32>() / (i - window_start) as f32;
+    // Pass 1: Find all candidate momentum points
+    let candidates = find_momentum_candidates(points, &thresholds, skip, window);
 
-        if window_avg >= quiet_threshold {
-            continue;
-        }
+    if candidates.is_empty() {
+        return None;
+    }
 
-        // Check if gradient is significantly positive
-        let gradient = points[i + 1] - points[i];
-        if gradient > gradient_threshold {
-            // Found a rise after quiet section
-            let timestamp = (i as f64 / points.len() as f64) * duration;
+    // Pass 2: Score and rank candidates
+    let mut scored: Vec<(usize, f64)> = candidates
+        .into_iter()
+        .map(|idx| (idx, score_candidate(points, idx, &thresholds, points.len())))
+        .collect();
+
+    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    // Pass 3: Select best candidate above quality threshold
+    if let Some(&(best_idx, score)) = scored.first() {
+        if score > MIN_QUALITY_SCORE {
+            let timestamp = (best_idx as f64 / points.len() as f64) * duration;
+            tracing::debug!(
+                "[Momentum] Detected at {:.1}s (score: {:.2}, candidates: {})",
+                timestamp,
+                score,
+                scored.len()
+            );
             return Some(timestamp);
         }
     }
 
+    tracing::debug!(
+        "[Momentum] No candidate above quality threshold ({:.2}), best score: {:.2}",
+        MIN_QUALITY_SCORE,
+        scored.first().map(|s| s.1).unwrap_or(0.0)
+    );
     None
 }
 
@@ -521,6 +645,7 @@ pub struct WaveformCache {
     max_entries: usize,
     disk_path: Option<PathBuf>,
     dirty: bool,
+    loaded: bool,
 }
 
 impl WaveformCache {
@@ -532,23 +657,32 @@ impl WaveformCache {
             max_entries,
             disk_path: None,
             dirty: false,
+            loaded: true,
         }
     }
 
-    /// Create a cache and load persisted entries from disk.
+    /// Create a cache with disk persistence (lazy — loaded on first access).
     pub fn new_with_disk(max_entries: usize, disk_path: PathBuf) -> Self {
-        let mut cache = Self {
+        Self {
             entries: HashMap::new(),
             access_order: Vec::new(),
             max_entries,
             disk_path: Some(disk_path),
             dirty: false,
-        };
-        cache.load_from_disk();
-        cache
+            loaded: false,
+        }
+    }
+
+    /// Ensure the cache is loaded from disk. No-op if already loaded.
+    fn ensure_loaded(&mut self) {
+        if !self.loaded {
+            self.load_from_disk();
+            self.loaded = true;
+        }
     }
 
     pub fn get(&mut self, key: &str) -> Option<&WaveformData> {
+        self.ensure_loaded();
         if self.entries.contains_key(key) {
             // Move to end (most recently used) — single pass removal
             if let Some(pos) = self.access_order.iter().position(|k| k == key) {
@@ -561,6 +695,7 @@ impl WaveformCache {
     }
 
     pub fn insert(&mut self, key: String, data: WaveformData) {
+        self.ensure_loaded();
         if self.entries.len() >= self.max_entries && !self.entries.contains_key(&key) {
             // Evict least recently used
             if let Some(oldest) = self.access_order.first().cloned() {
@@ -690,4 +825,106 @@ fn file_mtime(path: &str) -> u64 {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_silence_returns_none() {
+        // All zeros = total silence → no momentum
+        let points = vec![0.0f32; 200];
+        assert_eq!(detect_momentum_point(&points, 120.0), None);
+    }
+
+    #[test]
+    fn test_constant_loud_returns_none() {
+        // Constant high amplitude = no quiet→loud transition
+        let points = vec![0.8f32; 200];
+        assert_eq!(detect_momentum_point(&points, 120.0), None);
+    }
+
+    #[test]
+    fn test_clear_transition_detected() {
+        // Silence for first half, loud second half
+        let mut points = vec![0.02f32; 200];
+        for i in 100..200 {
+            points[i] = 0.7;
+        }
+        let result = detect_momentum_point(&points, 120.0);
+        assert!(result.is_some());
+        let ts = result.unwrap();
+        // Should detect near the transition point (~60s)
+        assert!(ts > 40.0 && ts < 80.0, "Expected ~60s, got {:.1}s", ts);
+    }
+
+    #[test]
+    fn test_gradual_fade_in_detected() {
+        // Quiet section then gradual fade-in to loud
+        let mut points = vec![0.02f32; 200];
+        // Quiet for first 40%
+        // Fade-in from 40% to 60%
+        for i in 80..120 {
+            points[i] = 0.02 + ((i - 80) as f32 / 40.0) * 0.6;
+        }
+        // Loud from 60% onward
+        for i in 120..200 {
+            points[i] = 0.6 + (i as f32 % 3.0) * 0.05;
+        }
+        let result = detect_momentum_point(&points, 180.0);
+        assert!(result.is_some(), "Fade-in after quiet should be detected");
+    }
+
+    #[test]
+    fn test_short_input_returns_none() {
+        let points = vec![0.5f32; 5];
+        assert_eq!(detect_momentum_point(&points, 10.0), None);
+    }
+
+    #[test]
+    fn test_zero_duration_returns_none() {
+        let points = vec![0.5f32; 200];
+        assert_eq!(detect_momentum_point(&points, 0.0), None);
+    }
+
+    #[test]
+    fn test_intro_then_music() {
+        // Realistic: quiet intro (0-30%), then music (30-100%)
+        let mut points = vec![0.0f32; 200];
+        for i in 0..60 {
+            points[i] = 0.03 + (i as f32 % 3.0) * 0.01; // Low noise
+        }
+        for i in 60..200 {
+            points[i] = 0.5 + (i as f32 % 5.0) * 0.05; // Music
+        }
+        let result = detect_momentum_point(&points, 180.0);
+        assert!(result.is_some());
+        let ts = result.unwrap();
+        // Should detect around 30% mark (~54s)
+        assert!(ts > 30.0 && ts < 90.0, "Expected ~54s, got {:.1}s", ts);
+    }
+
+    #[test]
+    fn test_best_candidate_selected() {
+        // Two transitions: weak at 25%, strong at 50%
+        let mut points = vec![0.02f32; 200];
+        // Weak rise at 50
+        for i in 50..70 {
+            points[i] = 0.2;
+        }
+        // Back to quiet
+        for i in 70..100 {
+            points[i] = 0.02;
+        }
+        // Strong rise at 100
+        for i in 100..200 {
+            points[i] = 0.8;
+        }
+        let result = detect_momentum_point(&points, 120.0);
+        assert!(result.is_some());
+        let ts = result.unwrap();
+        // Should prefer the strong transition at ~60s
+        assert!(ts > 40.0 && ts < 80.0, "Expected ~60s, got {:.1}s", ts);
+    }
 }

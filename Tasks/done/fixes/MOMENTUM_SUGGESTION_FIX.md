@@ -1,6 +1,6 @@
 # Suggestion de Momentum — Détection & UX Moderne
 
-> **Statut:** En attente d'implémentation
+> **Statut:** Implémenté
 > **Type:** Bug Fix + UX Overhaul — La détection automatique du momentum ne fonctionne pas bien et la suggestion est quasi invisible dans l'UI
 > **Priorité:** Haute
 
@@ -407,7 +407,7 @@ if (isNewSuggestion) {
 
 **Objectif :** Passer d'un algorithme naïf à un système multi-passes avec seuils adaptatifs
 
-- [ ] **1.1** Refactoriser `detect_momentum_point()` dans `analysis.rs:478-508`
+- [x] **1.1** Refactoriser `detect_momentum_point()` dans `analysis.rs:478-508`
 
   **Nouvelle architecture :**
 
@@ -427,20 +427,20 @@ if (isNewSuggestion) {
   }
   ```
 
-  - [ ] Implémenter `compute_adaptive_thresholds()` — Calcul des percentiles P25/P50/P75
-  - [ ] Implémenter `find_momentum_candidates()` — Gradient sur fenêtre glissante (5-7 points)
-  - [ ] Implémenter `score_candidates()` — Quality score = f(amplitude_rise, sustained_energy, position)
-  - [ ] Implémenter `select_best_momentum()` — Sélection avec MIN_QUALITY_SCORE
-  - [ ] Ajouter tests unitaires avec cas edge (silence total, bruit constant, fade-in)
+  - [x] Implémenter `compute_adaptive_thresholds()` — Calcul des percentiles P25/P50/P75
+  - [x] Implémenter `find_momentum_candidates()` — Gradient sur fenêtre glissante (5-7 points)
+  - [x] Implémenter `score_candidates()` — Quality score = f(amplitude_rise, sustained_energy, position)
+  - [x] Implémenter `select_best_momentum()` — Sélection avec MIN_QUALITY_SCORE
+  - [x] Ajouter tests unitaires avec cas edge (silence total, bruit constant, fade-in)
 
-- [ ] **1.2** Augmenter la résolution en mode Discovery
-  - [ ] `commands.rs:1207` — Passer de 50 à **150-200 points**
-  - [ ] Mesurer impact perf (devrait être <10ms avec compute_waveform_sampled)
+- [x] **1.2** Augmenter la résolution en mode Discovery
+  - [x] `commands.rs:1207` — Passer de 50 à **150-200 points**
+  - [x] Mesurer impact perf (devrait être <10ms avec compute_waveform_sampled)
 
-- [ ] **1.3** Ajouter logging pour debugging
-  - [ ] Log candidates trouvés avec leurs scores
-  - [ ] Log seuils adaptatifs calculés
-  - [ ] Format : `[Momentum] Detected at 12.5s (score: 0.87, candidates: 3)`
+- [x] **1.3** Ajouter logging pour debugging
+  - [x] Log candidates trouvés avec leurs scores
+  - [x] Log seuils adaptatifs calculés
+  - [x] Format : `[Momentum] Detected at 12.5s (score: 0.87, candidates: 3)`
 
 **Estimation complexité :** O(n) où n = num_points (identique à l'algo actuel)
 
@@ -452,25 +452,25 @@ if (isNewSuggestion) {
 
 #### 2.1 Waveform Display — Indicateurs Visuels WCAG AAA
 
-- [ ] **2.1.1** Améliorer le marqueur suggéré (`WaveformDisplay.tsx:179-203`)
-  - [ ] Couleur distinctive : `rgba(34, 211, 238, 0.85)` (cyan-400)
-  - [ ] Épaisseur ligne : 2px (vs 1px)
-  - [ ] Pattern dash : `[4, 2]` (vs `[3, 3]`)
-  - [ ] Label : 11px bold avec background opaque
-  - [ ] Format label : `"Suggéré: 12.5s"` (vs `"12.5s"`)
+- [x] **2.1.1** Améliorer le marqueur suggéré (`WaveformDisplay.tsx:179-203`)
+  - [x] Couleur distinctive : `rgba(34, 211, 238, 0.85)` (cyan-400)
+  - [x] Épaisseur ligne : 2px (vs 1px)
+  - [x] Pattern dash : `[4, 2]` (vs `[3, 3]`)
+  - [x] Label : 11px bold avec background opaque
+  - [x] Format label : `"Suggéré: 12.5s"` (vs `"12.5s"`)
 
-- [ ] **2.1.2** Ajouter effet pulse pour nouvelle suggestion
-  - [ ] État `isNewSuggestion` (2s duration)
-  - [ ] Shadow glow avec `ctx.shadowBlur = 8`
-  - [ ] Animation pulse subtile (sin wave 0.8-1.0)
+- [x] **2.1.2** Ajouter effet pulse pour nouvelle suggestion
+  - [x] État `isNewSuggestion` (2s duration)
+  - [x] Shadow glow avec `ctx.shadowBlur = 8`
+  - [x] Animation pulse subtile (sin wave 0.8-1.0)
 
-- [ ] **2.1.3** Ajuster condition de masquage
-  - [ ] Changer seuil de 1.0s → 0.3s
-  - [ ] Toujours afficher si momentum actuel = 0 et suggestion > 0
+- [x] **2.1.3** Ajuster condition de masquage
+  - [x] Changer seuil de 1.0s → 0.3s
+  - [x] Toujours afficher si momentum actuel = 0 et suggestion > 0
 
 #### 2.2 Badge d'Action Externe (Progressive Disclosure)
 
-- [ ] **2.2.1** Créer composant `MomentumSuggestionBadge` réutilisable
+- [x] **2.2.1** Créer composant `MomentumSuggestionBadge` réutilisable
 
   ```tsx
   // src/components/common/MomentumSuggestionBadge.tsx
@@ -482,42 +482,42 @@ if (isNewSuggestion) {
   }
   ```
 
-  - [ ] Design : Badge pill avec icône sparkle + valeur + chevron
-  - [ ] Couleurs : bg-cyan-500/20, border-cyan-500/40, text-cyan-400
-  - [ ] Hover state : bg-cyan-500/30, border-cyan-500/60
-  - [ ] Animation : pulse sur l'icône (CSS animate-pulse)
-  - [ ] Accessibilité : Title tooltip explicatif, focus ring, keyboard (Enter)
+  - [x] Design : Badge pill avec icône sparkle + valeur + chevron
+  - [x] Couleurs : bg-cyan-500/20, border-cyan-500/40, text-cyan-400
+  - [x] Hover state : bg-cyan-500/30, border-cyan-500/60
+  - [x] Animation : pulse sur l'icône (CSS animate-pulse)
+  - [x] Accessibilité : Title tooltip explicatif, focus ring, keyboard (Enter)
 
-- [ ] **2.2.2** Intégrer dans `SoundDetails.tsx` (ligne ~458)
-  - [ ] Placer badge entre label "Momentum:" et input number
-  - [ ] Condition : `suggestedMomentum != null && abs(diff) > 0.3`
-  - [ ] onApply : `handleMomentumChange + toast confirmation`
-  - [ ] Toast : `"Momentum appliqué : 12.5s"` (type success, 3s)
+- [x] **2.2.2** Intégrer dans `SoundDetails.tsx` (ligne ~458)
+  - [x] Placer badge entre label "Momentum:" et input number
+  - [x] Condition : `suggestedMomentum != null && abs(diff) > 0.3`
+  - [x] onApply : `handleMomentumChange + toast confirmation`
+  - [x] Toast : `"Momentum appliqué : 12.5s"` (type success, 3s)
 
-- [ ] **2.2.3** Intégrer dans `AddSoundModal.tsx` (bulk add)
-  - [ ] Afficher badge dans la liste des fichiers à côté du nom
-  - [ ] Auto-appliquer lors du bulk add si mode Auto-Momentum actif
-  - [ ] Indicateur visuel : badge "Auto" si auto-appliqué
+- [x] **2.2.3** Intégrer dans `AddSoundModal.tsx` (bulk add)
+  - [x] Afficher badge dans la liste des fichiers à côté du nom
+  - [x] Auto-appliquer lors du bulk add si mode Auto-Momentum actif
+  - [x] Indicateur visuel : badge "Auto" si auto-appliqué
 
-- [ ] **2.2.4** Adapter pour Discovery (`DiscoveryPanel.tsx`)
-  - [ ] Version compacte (size='sm') dans la suggestion card
-  - [ ] Inline avec le waveform (row 2 de la card)
+- [x] **2.2.4** Adapter pour Discovery (`DiscoveryPanel.tsx`)
+  - [x] Version compacte (size='sm') dans la suggestion card
+  - [x] Inline avec le waveform (row 2 de la card)
 
 #### 2.3 Indicateurs Proactifs (Discoverability)
 
-- [ ] **2.3.1** Badge dans liste de sons (`SoundDetails.tsx`)
-  - [ ] Mini badge "Auto" à côté du nom du son
-  - [ ] Style : bg-cyan-500/15, border-cyan-500/30, 9px
-  - [ ] Tooltip : "Momentum suggéré : X.Xs"
-  - [ ] Condition : suggestion disponible ET différente de momentum actuel
+- [x] **2.3.1** Badge dans liste de sons (`SoundDetails.tsx`)
+  - [x] Mini badge "Auto" à côté du nom du son
+  - [x] Style : bg-cyan-500/15, border-cyan-500/30, 9px
+  - [x] Tooltip : "Momentum suggéré : X.Xs"
+  - [x] Condition : suggestion disponible ET différente de momentum actuel
 
-- [ ] **2.3.2** Toast éducatif (première détection)
+- [ ] **2.3.2** Toast éducatif (première détection) — Deferred (not critical)
   - [ ] Toast info avec icône 💡
   - [ ] Message : "Momentum suggéré détecté : X.Xs — cliquez sur le badge pour l'appliquer"
   - [ ] Affichage : 1 seule fois (localStorage flag)
   - [ ] Trigger : Première waveform loaded avec suggestion dans AddSoundModal
 
-- [ ] **2.3.3** Animation lors de l'application
+- [ ] **2.3.3** Animation lors de l'application — Deferred (polish)
   - [ ] Transition smooth du marqueur suggéré → marqueur actuel
   - [ ] Durée : 300ms ease-out
   - [ ] Badge disparaît avec fade-out 200ms
@@ -528,26 +528,26 @@ if (isNewSuggestion) {
 
 **Objectif :** Appliquer automatiquement le momentum suggéré dans les contextes appropriés
 
-- [ ] **3.1** Mode Discovery — Auto-apply par défaut
-  - [ ] Dans `DiscoveryPanel.tsx`, lors de l'enrichment initial
-  - [ ] Si `waveform.suggestedMomentum != null`, set `s.suggestedMomentum = waveform.suggestedMomentum`
-  - [ ] Badge "Auto" visible pour indiquer l'auto-application
-  - [ ] L'utilisateur peut override en drag sur le waveform
+- [x] **3.1** Mode Discovery — Auto-apply par défaut
+  - [x] Dans `DiscoveryPanel.tsx`, lors de l'enrichment initial
+  - [x] Si `waveform.suggestedMomentum != null`, set `s.suggestedMomentum = waveform.suggestedMomentum`
+  - [x] Badge "Auto" visible pour indiquer l'auto-application
+  - [x] L'utilisateur peut override en drag sur le waveform
 
-- [ ] **3.2** Bulk Add — Auto-apply si mode Auto-Momentum actif
-  - [ ] Dans `AddSoundModal.tsx`, lors de l'ajout de multiples fichiers
-  - [ ] Check `config.autoMomentum` (déjà existant dans AppConfig)
-  - [ ] Si true : auto-appliquer suggère à chaque fichier
-  - [ ] Toast récap : "3 sons ajoutés — momentum auto-appliqué"
+- [x] **3.2** Bulk Add — Auto-apply si mode Auto-Momentum actif
+  - [x] Dans `AddSoundModal.tsx`, lors de l'ajout de multiples fichiers
+  - [x] Check `config.autoMomentum` (déjà existant dans AppConfig)
+  - [x] Si true : auto-appliquer suggère à chaque fichier
+  - [ ] Toast récap : "3 sons ajoutés — momentum auto-appliqué" — Deferred
 
-- [ ] **3.3** Edit Manuel — Suggérer sans auto-apply
-  - [ ] Dans `SoundDetails.tsx` (édition individuelle)
-  - [ ] Ne JAMAIS auto-appliquer — toujours montrer le badge
-  - [ ] Respecter l'intention de l'utilisateur (contexte : ajustement fin)
+- [x] **3.3** Edit Manuel — Suggérer sans auto-apply
+  - [x] Dans `SoundDetails.tsx` (édition individuelle)
+  - [x] Ne JAMAIS auto-appliquer — toujours montrer le badge
+  - [x] Respecter l'intention de l'utilisateur (contexte : ajustement fin)
 
-- [ ] **3.4** Undo/Redo compatible
-  - [ ] S'assurer que l'auto-application est captée dans l'historique
-  - [ ] Test : Ajouter son avec auto-momentum → Undo → momentum revient à 0
+- [x] **3.4** Undo/Redo compatible
+  - [x] S'assurer que l'auto-application est captée dans l'historique
+  - [x] Test : Ajouter son avec auto-momentum → Undo → momentum revient à 0
 
 ---
 

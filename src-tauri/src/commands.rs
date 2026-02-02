@@ -88,12 +88,16 @@ pub fn update_config(
 
     // Sync audio device to audio engine
     if updates.get("audioDevice").is_some() {
-        let _ = state.audio_engine.set_audio_device(config.audio_device.clone());
+        if let Ok(engine) = state.get_audio_engine() {
+            let _ = engine.set_audio_device(config.audio_device.clone());
+        }
     }
 
     // Sync master volume to audio engine
     if updates.get("masterVolume").is_some() {
-        let _ = state.audio_engine.set_master_volume(config.master_volume);
+        if let Ok(engine) = state.get_audio_engine() {
+            let _ = engine.set_master_volume(config.master_volume);
+        }
     }
 
     // Sync key detection settings
@@ -156,6 +160,7 @@ pub fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), Stri
     storage::delete_profile(id)?;
     // Cleanup cached YouTube files no longer referenced by any profile
     if let Ok(mut cache) = state.youtube_cache.lock() {
+        cache.ensure_loaded();
         cache.cleanup_unused();
     }
     Ok(())
@@ -178,13 +183,14 @@ pub fn play_sound(
     start_position: f64,
     sound_volume: f32,
 ) -> Result<(), String> {
+    let engine = state.get_audio_engine()?;
     let config = state.get_config();
 
     // Check file exists
     if !std::path::Path::new(&file_path).exists() {
         tracing::warn!("Sound file not found: {} (track: {}, sound: {})", file_path, track_id, sound_id);
         // Play error sound
-        let _ = state.audio_engine.play_error_sound();
+        let _ = engine.play_error_sound();
         // Emit sound_not_found event
         let _ = app.emit("sound_not_found", serde_json::json!({
             "soundId": sound_id,
@@ -197,7 +203,7 @@ pub fn play_sound(
     // Pre-create the source off the audio thread (file I/O + probe + seek + first decode)
     let source = crate::audio::symphonia_source::SymphoniaSource::new(&file_path, start_position)?;
 
-    state.audio_engine.play_sound_prepared(
+    engine.play_sound_prepared(
         track_id,
         sound_id,
         file_path,
@@ -210,12 +216,12 @@ pub fn play_sound(
 
 #[tauri::command]
 pub fn stop_sound(state: State<'_, AppState>, track_id: String) -> Result<(), String> {
-    state.audio_engine.stop_track(track_id)
+    state.get_audio_engine()?.stop_track(track_id)
 }
 
 #[tauri::command]
 pub fn stop_all_sounds(state: State<'_, AppState>) -> Result<(), String> {
-    state.audio_engine.stop_all()
+    state.get_audio_engine()?.stop_all()
 }
 
 #[tauri::command]
@@ -226,8 +232,11 @@ pub fn set_master_volume(state: State<'_, AppState>, volume: f32) -> Result<(), 
     });
     state.schedule_config_save();
 
-    // Update audio engine
-    state.audio_engine.set_master_volume(volume)
+    // Update audio engine (graceful if not yet ready — will pick up from config on init)
+    if let Ok(engine) = state.get_audio_engine() {
+        let _ = engine.set_master_volume(volume);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -236,7 +245,7 @@ pub fn set_track_volume(
     track_id: String,
     volume: f32,
 ) -> Result<(), String> {
-    state.audio_engine.set_track_volume(track_id, volume)
+    state.get_audio_engine()?.set_track_volume(track_id, volume)
 }
 
 #[tauri::command]
@@ -246,7 +255,7 @@ pub fn set_sound_volume(
     sound_id: String,
     volume: f32,
 ) -> Result<(), String> {
-    state.audio_engine.set_sound_volume(track_id, sound_id, volume)
+    state.get_audio_engine()?.set_sound_volume(track_id, sound_id, volume)
 }
 
 #[tauri::command]
@@ -297,25 +306,31 @@ pub async fn preload_profile_sounds(
         let durations: Mutex<std::collections::HashMap<String, f64>> =
             Mutex::new(std::collections::HashMap::new());
 
-        pool.install(|| {
-            needs_work.par_iter().for_each(|entry| {
-                // Bail early if a newer profile load started
-                if gen_counter.load(Ordering::SeqCst) != gen {
-                    return;
-                }
-
-                let path = std::path::Path::new(&entry.file_path);
-                if !path.exists() {
-                    return;
-                }
-
-                if let Ok(dur) = BufferManager::get_audio_duration(&entry.file_path) {
-                    if dur > 0.0 {
-                        durations.lock().unwrap().insert(entry.sound_id.clone(), dur);
+        // Process in chunks of 4 to avoid monopolizing the pool.
+        // Check generation at each chunk boundary for early bail.
+        for chunk in needs_work.chunks(4) {
+            if gen_counter.load(Ordering::SeqCst) != gen {
+                break;
+            }
+            pool.install(|| {
+                chunk.par_iter().for_each(|entry| {
+                    if gen_counter.load(Ordering::SeqCst) != gen {
+                        return;
                     }
-                }
+
+                    let path = std::path::Path::new(&entry.file_path);
+                    if !path.exists() {
+                        return;
+                    }
+
+                    if let Ok(dur) = BufferManager::get_audio_duration(&entry.file_path) {
+                        if dur > 0.0 {
+                            durations.lock().unwrap().insert(entry.sound_id.clone(), dur);
+                        }
+                    }
+                });
             });
-        });
+        }
 
         durations.into_inner().unwrap()
     })
@@ -397,7 +412,7 @@ pub fn set_audio_device(
     device: Option<String>,
 ) -> Result<(), String> {
     // Update audio engine
-    state.audio_engine.set_audio_device(device.clone())?;
+    state.get_audio_engine()?.set_audio_device(device.clone())?;
 
     // Update config
     state.update_config(|config| {
@@ -411,6 +426,7 @@ pub fn set_audio_device(
 
 #[tauri::command]
 pub async fn get_waveform(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     path: String,
     num_points: usize,
@@ -425,12 +441,40 @@ pub async fn get_waveform(
 
     tracing::info!("[cpu-pool] get_waveform START: {}", path);
     let path_clone = path.clone();
+    let path_event = path.clone();
     let pool = state.cpu_pool.clone();
+
+    // Channel for streaming partial results to the frontend
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(Vec<f32>, f64, u32)>();
+
+    // Forwarder: reads from channel and emits Tauri events
+    let app_clone = app.clone();
+    let forwarder = tokio::spawn(async move {
+        while let Some((points, duration, sample_rate)) = rx.recv().await {
+            let _ = app_clone.emit(
+                "waveform_progress",
+                serde_json::json!({
+                    "path": &path_event,
+                    "points": points,
+                    "duration": duration,
+                    "sampleRate": sample_rate,
+                }),
+            );
+        }
+    });
+
     let result = tokio::task::spawn_blocking(move || {
-        pool.install(|| analysis::compute_waveform_sampled(&path_clone, num_points))
+        pool.install(|| {
+            let cb = move |points: &[f32], dur: f64, sr: u32| {
+                let _ = tx.send((points.to_vec(), dur, sr));
+            };
+            analysis::compute_waveform_sampled(&path_clone, num_points, Some(&cb))
+        })
     })
     .await
     .map_err(|e| format!("Waveform task failed: {}", e))??;
+
+    let _ = forwarder.await;
     tracing::info!("[cpu-pool] get_waveform END: {}", path);
 
     // Cache result
@@ -491,17 +535,23 @@ pub async fn get_waveforms_batch(
         let new_results: Mutex<std::collections::HashMap<String, analysis::WaveformData>> =
             Mutex::new(std::collections::HashMap::new());
 
-        pool.install(|| {
-            to_compute.par_iter().for_each(|entry| {
-                // Bail early if a newer profile load started
-                if gen.load(Ordering::SeqCst) != current_gen {
-                    return;
-                }
-                if let Ok(data) = analysis::compute_waveform_sampled(&entry.path, entry.num_points) {
-                    new_results.lock().unwrap().insert(entry.path.clone(), data);
-                }
+        // Process in chunks of 4 to avoid monopolizing the pool.
+        // Check generation at each chunk boundary for early bail.
+        for chunk in to_compute.chunks(4) {
+            if gen.load(Ordering::SeqCst) != current_gen {
+                break;
+            }
+            pool.install(|| {
+                chunk.par_iter().for_each(|entry| {
+                    if gen.load(Ordering::SeqCst) != current_gen {
+                        return;
+                    }
+                    if let Ok(data) = analysis::compute_waveform_sampled(&entry.path, entry.num_points, None) {
+                        new_results.lock().unwrap().insert(entry.path.clone(), data);
+                    }
+                });
             });
-        });
+        }
 
         new_results.into_inner().unwrap()
     })
@@ -688,6 +738,7 @@ pub async fn import_profile(
 
     // Cleanup unused cache entries after import
     if let Ok(mut cache) = state.youtube_cache.lock() {
+        cache.ensure_loaded();
         cache.cleanup_unused();
     }
 
@@ -825,9 +876,6 @@ pub async fn import_legacy_save(path: String) -> Result<Profile, String> {
         id: track_id.clone(),
         name: "OST".to_string(),
         volume: 1.0,
-        currently_playing: None,
-        playback_position: 0.0,
-        is_playing: false,
     };
 
     let mut sounds: Vec<Sound> = Vec::new();
@@ -1129,6 +1177,7 @@ pub fn dismiss_discovery(
     let vid = video_id.clone();
     std::thread::spawn(move || {
         if let Ok(mut cache) = cache.lock() {
+            cache.ensure_loaded();
             cache.remove_entry_by_video_id(&vid);
         }
     });
@@ -1151,7 +1200,7 @@ pub struct PredownloadResult {
     pub cached_path: String,
     pub title: String,
     pub duration: f64,
-    pub waveform: analysis::WaveformData,
+    pub waveform: Option<analysis::WaveformData>,
 }
 
 /// Pre-download a suggestion's audio to cache WITHOUT adding it to the profile.
@@ -1165,7 +1214,6 @@ pub async fn predownload_suggestion(
     download_id: String,
 ) -> Result<PredownloadResult, String> {
     let cache = state.youtube_cache.clone();
-    let waveform_cache = state.waveform_cache.clone();
 
     let app_handle = app.clone();
     let did = download_id.clone();
@@ -1181,50 +1229,37 @@ pub async fn predownload_suggestion(
 
     let cached_path = entry.cached_path.clone();
 
-    // Check waveform cache before spawning work
-    let cached_waveform = {
-        let mut cache_guard = waveform_cache.lock().unwrap();
-        cache_guard.get(&cached_path).cloned()
-    };
+    // Compute waveform (includes duration + momentum detection) during predownload
+    // so momentum is available immediately when the user navigates to this suggestion
+    tracing::info!("[cpu-pool] predownload_suggestion waveform START: {}", video_id);
+    let waveform_path = cached_path.clone();
+    let cache_path = cached_path.clone();
+    let pool = state.cpu_pool.clone();
+    let vid_log = video_id.clone();
 
-    // Compute duration and waveform in parallel (both via shared CPU pool)
-    tracing::info!("[cpu-pool] predownload_suggestion compute START: {}", video_id);
-    let duration_path = cached_path.clone();
-    let wf_path = cached_path.clone();
-    let need_waveform = cached_waveform.is_none();
-    let pool_dur = state.cpu_pool.clone();
-    let pool_wf = state.cpu_pool.clone();
-
-    let (duration_result, waveform_result) = tokio::join!(
-        tokio::task::spawn_blocking(move || {
-            pool_dur.install(|| BufferManager::get_audio_duration(&duration_path).unwrap_or(0.0))
-        }),
-        async {
-            if !need_waveform {
-                return Ok(None);
+    let (duration, waveform) = tokio::task::spawn_blocking(move || {
+        pool.install(|| {
+            match analysis::compute_waveform_sampled(&waveform_path, 80, None) {
+                Ok(wf) => (wf.duration, Some(wf)),
+                Err(e) => {
+                    tracing::warn!("Waveform computation failed for {}: {}", vid_log, e);
+                    let dur = BufferManager::get_audio_duration(&waveform_path).unwrap_or(0.0);
+                    (dur, None)
+                }
             }
-            tokio::task::spawn_blocking(move || {
-                pool_wf.install(|| analysis::compute_waveform_sampled(&wf_path, 50).map(Some))
-            })
-            .await
-            .map_err(|e| format!("Waveform task failed: {}", e))?
-        }
-    );
+        })
+    })
+    .await
+    .map_err(|e| format!("Predownload task failed: {}", e))?;
 
-    let duration = duration_result.map_err(|e| format!("Duration task failed: {}", e))?;
+    tracing::info!("[cpu-pool] predownload_suggestion waveform END: {}", video_id);
 
-    let waveform = if let Some(w) = cached_waveform {
-        w
-    } else {
-        let result = waveform_result?;
-        let result = result.ok_or_else(|| "Waveform computation returned None".to_string())?;
-        // Cache the result
-        let mut cache_guard = waveform_cache.lock().unwrap();
-        cache_guard.insert(cached_path.clone(), result.clone());
-        result
-    };
+    // Cache waveform for future get_waveform calls
+    if let Some(ref wf) = waveform {
+        let mut cache = state.waveform_cache.lock().unwrap();
+        cache.insert(cache_path, wf.clone());
+    }
 
-    tracing::info!("[cpu-pool] predownload_suggestion compute END: {}", video_id);
     Ok(PredownloadResult {
         video_id,
         cached_path,
@@ -1344,4 +1379,33 @@ pub fn open_folder(path: String) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+// ─── Startup Command ──────────────────────────────────────────────────────
+
+/// Unified initial state command — replaces 3 sequential IPC calls with 1.
+/// Returns config + profile list + current profile (if any) in a single round-trip.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InitialState {
+    pub config: AppConfig,
+    pub profiles: Vec<storage::ProfileSummary>,
+    pub current_profile: Option<Profile>,
+}
+
+#[tauri::command]
+pub fn get_initial_state(state: State<'_, AppState>) -> Result<InitialState, String> {
+    let config = state.get_config();
+    let profiles = storage::list_profiles()?;
+    let current_profile = if let Some(ref id) = config.current_profile_id {
+        storage::load_profile(id.clone()).ok()
+    } else {
+        None
+    };
+
+    Ok(InitialState {
+        config,
+        profiles,
+        current_profile,
+    })
 }

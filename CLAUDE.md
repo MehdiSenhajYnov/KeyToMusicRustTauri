@@ -13,14 +13,15 @@ KeyToMusic is a Tauri 2.x desktop soundboard for manga reading. Global keyboard 
 src/                              # React/TypeScript frontend
 ├── components/                   # UI (Layout, Tracks, Sounds, Keys, Discovery/, Errors/, common/)
 │   ├── ConfirmDialog.tsx         # Custom confirm modal (macOS WKWebView compat)
-│   └── Sounds/SearchResultPreview.tsx  # Inline HTML5 audio player for YouTube search preview
+│   ├── Sounds/SearchResultPreview.tsx  # Inline HTML5 audio player for YouTube search preview
+│   └── common/SearchFilterBar.tsx  # Spotlight-style filter bar for KeyGrid (text + prefix chips)
 ├── stores/                       # Zustand: profileStore, audioStore, settingsStore, discoveryStore,
 │                                 #   historyStore, errorStore, exportStore, toastStore, confirmStore,
 │                                 #   waveformStore
 ├── hooks/                        # useAudioEvents, useKeyDetection, useDiscovery,
 │                                 #   useDiscoveryPredownload, useUndoRedo, useTextInputFocus,
 │                                 #   useTrackPosition, useWheelSlider
-├── types/index.ts                # All types (Sound, Profile, AppConfig, WaveformData, etc.)
+├── types/index.ts                # All types (Sound, Profile, AppConfig, KeyGridFilter, WaveformData, etc.)
 └── utils/                        # tauriCommands, keyMapping, profileAnalysis, errorMessages,
                                   #   fileHelpers, soundHelpers, inputHelpers
 src-tauri/src/
@@ -67,21 +68,22 @@ cargo test --manifest-path src-tauri/Cargo.toml          # Test Rust
 - **Playback:** Custom `SymphoniaSource` (implements `rodio::Source`). Async decode thread with bounded channel (4 buffers ahead) — never blocks the audio callback. Source pre-created off the audio thread (`PlaySoundPrepared` command). Formats: MP3, M4A/AAC, OGG, FLAC, WAV. Instant seeking (O(1) CBR, O(log n) VBR). Requires `isomp4` symphonia feature for M4A.
 - **Volume Ramping:** Gradual volume transitions (0.1 step per tick, ~160ms full sweep) to eliminate clicks/pops from instant volume changes.
 - **Device:** User-selectable output device via `cpal`. Persisted as `audioDevice` in config. Seamless switching: captures track states, rebuilds OutputStream, resumes at captured positions (<50ms gap, no SoundEnded events). Polls for default device changes every 5s when `audioDevice = None`.
-- **CPU Pool:** Shared Rayon thread pool (4 threads) in `AppState::cpu_pool` for all CPU-bound audio operations (waveform computation, duration reading). Limits concurrent CPU work via work-stealing queue instead of spawning unbounded threads.
+- **CPU Pool:** Shared Rayon thread pool (4 threads) in `AppState::cpu_pool` for all CPU-bound audio operations (waveform computation, duration reading). Limits concurrent CPU work via work-stealing queue instead of spawning unbounded threads. Batch operations (`preload_profile_sounds`, `get_waveforms_batch`) use chunked `par_iter` (chunks of 4) to avoid monopolizing the pool — yields between chunks so interactive requests (user waveforms, single duration) get serviced promptly.
 
 ### Waveform Analysis
 
 - **Backend (`audio/analysis.rs`):** `WaveformData` = `Vec<f32>` RMS samples (0.0-1.0) + duration + suggested_momentum
   - `compute_waveform_sampled()` - ~40x faster, seeks to N positions. Falls back to full decode.
-  - `detect_momentum_point()` - Finds first significant amplitude rise after quiet section.
+  - `detect_momentum_point()` - Multi-pass momentum detection: adaptive percentile thresholds (P25/P50/P75) → windowed gradient candidates → quality scoring (amplitude rise + sustained energy + position) → best candidate above MIN_QUALITY_SCORE.
 - **Cache:** In-memory LRU (50 entries) + disk (`data/cache/waveforms.json`). Dirty-flag batched writes (flush every 5s). File-mtime validation on profile load only (not per-access). Atomic writes (tmp+remove+rename for Windows compat).
-- **Frontend (`WaveformDisplay.tsx`):** Triple-canvas (static waveform + momentum markers + playback cursor). Draggable momentum marker. Suggested momentum indicator. Momentum drag only redraws markers layer.
+- **Frontend (`WaveformDisplay.tsx`):** Triple-canvas (static waveform + momentum markers + playback cursor). Draggable momentum marker. Suggested momentum indicator (cyan dashed line with label, pulse glow on new suggestion). Momentum drag only redraws markers layer.
+- **Frontend (`MomentumSuggestionBadge.tsx`):** Reusable badge component for applying suggested momentum. Cyan pill with sparkle icon, value, chevron. Sizes: sm/md. Used in SoundDetails, AddSoundModal, DiscoveryPanel.
 - **Frontend (`waveformStore.ts`):** LRU eviction (max 50 entries) with access order tracking. Bounded memory growth.
 
 ### Discovery System
 
 ```
-Seeds (YouTube + local sounds) → YouTube Mix per seed → Cross-seed aggregation → Score by occurrence → Top 30 → Pre-download + waveform → One-click add
+Seeds (YouTube + local sounds) → YouTube Mix per seed → Cross-seed aggregation → Score by occurrence → Top 30 → Pre-download (audio + duration) → Lazy waveform on visible → One-click add
 ```
 
 - **Local Sound Seeds:** Local sounds auto-resolve to YouTube video IDs via metadata tags (title/artist) or cleaned filename search. Resolved IDs cached in `Sound.resolved_video_id` (persisted with profile). Resolution uses query cascade: tags > title > filename. Max 5 concurrent yt-dlp searches. Cross-seed aggregation naturally filters bad matches.
@@ -91,7 +93,7 @@ Seeds (YouTube + local sounds) → YouTube Mix per seed → Cross-seed aggregati
   - `cache.rs` - Per-profile (`data/discovery/{profile_id}.json`). Stores seed_hash + dismissed_ids.
 - **Frontend:**
   - `discoveryStore.ts` - `EnrichedSuggestion` with predownload status, waveform, auto-assignment, preview state. Pagination (10 initial, +5 scroll). Carousel navigation.
-  - `useDiscoveryPredownload.ts` - Asymmetric window [current-2, current+3], max 3 concurrent.
+  - `useDiscoveryPredownload.ts` - Asymmetric window [current-2, current+3], max 3 concurrent. Waveforms are lazy: computed only for visible suggestions [current-1, current+1] after predownload completes, via `getWaveform()`. In-flight guard prevents duplicate requests.
   - `DiscoveryPanel.tsx` - Carousel, auto-triggers on profile load, streaming display, preview, dismiss, one-click add.
 - **Smart Auto-Assignment (`profileAnalysis.ts`):**
   - `analyzeProfile()` - "single-sound" (avg ≤ 2/binding) vs "multi-sound" mode
@@ -176,20 +178,30 @@ Binding = key + track ID + sound IDs list + loop mode + optional custom name.
 ```rust
 pub struct AppState {
     pub config: Mutex<AppConfig>,
-    pub audio_engine: AudioEngineHandle,
+    pub audio_engine: Arc<tokio::sync::OnceCell<AudioEngineHandle>>,  // Deferred init
     pub key_detector: KeyDetector,
-    pub youtube_cache: Arc<Mutex<YouTubeCache>>,
-    pub waveform_cache: Arc<Mutex<WaveformCache>>,
+    pub youtube_cache: Arc<Mutex<YouTubeCache>>,    // Lazy-loaded on first access
+    pub waveform_cache: Arc<Mutex<WaveformCache>>,  // Lazy-loaded on first access
     pub discovery_cancel: Arc<AtomicBool>,
     pub cpu_pool: Arc<rayon::ThreadPool>,
     pub profile_load_gen: Arc<AtomicU64>,
     pub config_dirty: Arc<AtomicBool>,
-    pub profile_load_gen: Arc<AtomicU64>,
 }
 ```
 
+### Startup Optimization
+
+- **Window:** Starts hidden (`visible: false`), shown after React render via double `requestAnimationFrame` + `getCurrentWindow().show()`.
+- **Skeleton:** CSS-only skeleton in `index.html` (no JS), replaced when React hydrates `#root`. Fade-in transition (0.25s).
+- **Audio engine:** Deferred via `Arc<tokio::sync::OnceCell<AudioEngineHandle>>`. Init runs in `tokio::spawn` after window creation. Commands use `state.get_audio_engine()?` (error if not ready) or graceful `if let Ok(engine)` for volume sync.
+- **Caches:** Both `YouTubeCache` and `WaveformCache` use lazy loading (`ensure_loaded()` on first access). Saves ~40-150ms at startup.
+- **Unified IPC:** Single `get_initial_state` command replaces 3 sequential calls (config + profiles + current profile).
+- **Parallelization:** `load_config()` and `cleanup_interrupted_export()` run in parallel via `std::thread::scope`.
+- **Code splitting:** `SettingsModal`, `FileNotFoundModal`, `AddSoundModal`, `DiscoveryPanel` lazy-loaded with `React.lazy` + `Suspense`.
+
 ## Tauri Commands (`commands.rs`)
 
+**Startup:** `get_initial_state`
 **Config:** `get_config`, `update_config`, `set_profile_bindings`
 **Profiles:** `list_profiles`, `create_profile`, `load_profile`, `save_profile`, `delete_profile`, `duplicate_profile`
 **Audio:** `play_sound(track_id, sound_id, file_path, start_position, sound_volume)`, `stop_sound`, `stop_all_sounds`, `set_master_volume`, `set_track_volume`, `set_sound_volume`, `get_audio_duration`, `preload_profile_sounds`
@@ -243,3 +255,4 @@ pub struct AppState {
 - Layout: Header (logo, master volume, settings) + Sidebar (profiles, controls, now playing, discovery) + Main (tracks, keys, sound details)
 - AddSoundModal: file picker or drag & drop, per-file momentum editors, key cycling for bulk assignment, inline YouTube search preview (HTML5 audio streaming)
 - Resizable SoundDetails panel (min 120px, default 256px)
+- KeyGrid filter bar: Spotlight-style search with inline prefix filters (`t:`, `l:`, `s:`), chips, counter. `Ctrl+F` focuses, `Escape` clears. Non-matching bindings grayed out (opacity-30). Resets on profile switch.

@@ -5,6 +5,7 @@ import { useToastStore } from "./toastStore";
 
 interface SettingsState {
   config: AppConfig;
+  isInitialized: boolean;
   setConfig: (config: AppConfig) => void;
   updateConfig: (updates: Partial<AppConfig>) => Promise<void>;
   setMasterVolume: (volume: number) => Promise<void>;
@@ -40,13 +41,14 @@ const defaultConfig: AppConfig = {
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   config: defaultConfig,
+  isInitialized: false,
 
-  setConfig: (config) => set({ config }),
+  setConfig: (config) => set({ config, isInitialized: true }),
 
   loadConfig: async () => {
     try {
       const config = await commands.getConfig();
-      set({ config });
+      set({ config, isInitialized: true });
     } catch (e) {
       console.error("Failed to load config:", e);
     }

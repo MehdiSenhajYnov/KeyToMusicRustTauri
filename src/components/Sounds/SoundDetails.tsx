@@ -13,6 +13,7 @@ import { useAudioStore } from "../../stores/audioStore";
 import { useWaveformStore } from "../../stores/waveformStore";
 import { useTrackPosition } from "../../hooks/useTrackPosition";
 import { WaveformDisplay } from "../common/WaveformDisplay";
+import { MomentumSuggestionBadge } from "../common/MomentumSuggestionBadge";
 
 function WheelInput(props: React.InputHTMLAttributes<HTMLInputElement> & { wheelStep: number; wheelMin: number; wheelMax: number; onWheelChange: (v: number) => void }) {
   const { wheelStep, wheelMin, wheelMax, onWheelChange, ...inputProps } = props;
@@ -90,11 +91,11 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProfile?.id, selectedKey, bindingSoundIds, soundsDepsRef.current]);
 
-  // Fetch waveforms for sounds not already in global or local store
+  // Fetch waveforms for sounds not already in global or local store — single batch IPC
   useEffect(() => {
     const globalMap = useWaveformStore.getState().waveforms;
+    const toFetch: { path: string; numPoints: number }[] = [];
     for (const { path } of waveformPaths) {
-      // Check global store (non-reactive) — populate local if found
       const cached = globalMap.get(path);
       if (cached) {
         setLocalWaveforms((prev) => {
@@ -104,12 +105,19 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
         continue;
       }
       if (localWaveforms.has(path)) continue;
-      commands.getWaveform(path, 200).then((data) => {
-        setLocalWaveforms((prev) => new Map(prev).set(path, data));
-        // Also add to global store so other components benefit
-        useWaveformStore.getState().setOne(path, data);
-      }).catch(() => {});
+      toFetch.push({ path, numPoints: 100 });
     }
+    if (toFetch.length === 0) return;
+    commands.getWaveformsBatch(toFetch).then((results) => {
+      setLocalWaveforms((prev) => {
+        const next = new Map(prev);
+        for (const [path, data] of Object.entries(results)) {
+          next.set(path, data);
+          useWaveformStore.getState().setOne(path, data);
+        }
+        return next;
+      });
+    }).catch(() => {});
   }, [waveformPaths]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCapturedKey = useCallback(async (newKeyCode: string) => {
@@ -389,9 +397,28 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
             className="bg-bg-secondary rounded p-2 space-y-1"
           >
             <div className="flex items-center justify-between">
-              <span className="text-text-primary text-sm font-medium truncate">
-                {sound.name}
-              </span>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className="text-text-primary text-sm font-medium truncate">
+                  {sound.name}
+                </span>
+                {(() => {
+                  const wf = localWaveforms.get(getSoundFilePath(sound));
+                  return wf?.suggestedMomentum != null &&
+                    Math.abs(wf.suggestedMomentum - sound.momentum) > 0.3 ? (
+                    <span
+                      className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-medium
+                                 bg-cyan-500/15 text-cyan-400 border border-cyan-500/30
+                                 flex items-center gap-1"
+                      title={`Momentum suggested: ${wf.suggestedMomentum.toFixed(1)}s`}
+                    >
+                      <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                      Auto
+                    </span>
+                  ) : null;
+                })()}
+              </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => setCapturingKeyFor(capturingKeyFor === sound.id ? null : sound.id)}
@@ -445,18 +472,38 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
                   onMomentumChange={(m) => handleMomentumChange(sound.id, m)}
                   playbackPosition={playbackPos}
                   suggestedMomentum={waveform?.suggestedMomentum}
-                  onAcceptSuggestion={() => {
-                    if (waveform?.suggestedMomentum != null) {
-                      handleMomentumChange(sound.id, Math.round(waveform.suggestedMomentum * 10) / 10);
-                    }
-                  }}
                   height={40}
                 />
               );
             })()}
             {/* Momentum mini-player */}
             <div className="flex items-center gap-2 text-xs text-text-muted">
-              <span className="text-text-secondary whitespace-nowrap">Mom:</span>
+              <button
+                onClick={() => handlePreviewToggle(sound)}
+                className={`w-6 h-6 flex items-center justify-center rounded shrink-0 ${
+                  previewingSoundId === sound.id
+                    ? "bg-accent-error/20 text-accent-error"
+                    : "bg-bg-hover text-text-secondary hover:text-text-primary"
+                }`}
+                title={previewingSoundId === sound.id ? "Stop" : "Play from momentum"}
+              >
+                {previewingSoundId === sound.id ? "\u25A0" : "\u25B6"}
+              </button>
+              <span className="text-text-secondary whitespace-nowrap">Momentum:</span>
+              {(() => {
+                const wf = localWaveforms.get(getSoundFilePath(sound));
+                return wf?.suggestedMomentum != null ? (
+                  <MomentumSuggestionBadge
+                    suggestedMomentum={wf.suggestedMomentum}
+                    currentMomentum={sound.momentum}
+                    onApply={() => {
+                      const rounded = Math.round(wf.suggestedMomentum! * 10) / 10;
+                      handleMomentumChange(sound.id, rounded);
+                      addToast(`Momentum applied: ${wf.suggestedMomentum!.toFixed(1)}s`, "success");
+                    }}
+                  />
+                ) : null;
+              })()}
               <input
                 type="number"
                 min="0"
@@ -488,17 +535,6 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
               <span className="text-text-muted whitespace-nowrap">
                 {formatDuration(sound.duration || 0)}
               </span>
-              <button
-                onClick={() => handlePreviewToggle(sound)}
-                className={`w-6 h-6 flex items-center justify-center rounded ${
-                  previewingSoundId === sound.id
-                    ? "bg-accent-error/20 text-accent-error"
-                    : "bg-bg-hover text-text-secondary hover:text-text-primary"
-                }`}
-                title={previewingSoundId === sound.id ? "Stop" : "Play from momentum"}
-              >
-                {previewingSoundId === sound.id ? "\u25A0" : "\u25B6"}
-              </button>
             </div>
           </div>
         ))}

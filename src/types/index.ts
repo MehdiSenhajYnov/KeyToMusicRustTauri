@@ -41,9 +41,6 @@ export interface Track {
   id: TrackId;
   name: string;
   volume: number;             // 0.0 à 1.0 (volume de la piste)
-  currentlyPlaying: SoundId | null;
-  playbackPosition: number;   // Position actuelle de lecture en secondes
-  isPlaying: boolean;
 }
 
 // Profil utilisateur (une "playlist" / configuration complète)
@@ -72,6 +69,13 @@ export interface AppConfig {
   chordWindowMs: number;          // Multi-key chord detection window in ms (default: 30, range: 20-100)
   momentumModifier: MomentumModifier; // Modifier key to trigger momentum (default: "Shift")
   playlistImportEnabled: boolean;     // Remember "download entire playlist" checkbox state
+}
+
+// Initial state returned by get_initial_state (unified startup command)
+export interface InitialState {
+  config: AppConfig;
+  profiles: { id: string; name: string; createdAt: string; updatedAt: string }[];
+  currentProfile: Profile | null;
 }
 
 // Waveform data
@@ -115,6 +119,14 @@ export interface NowPlayingState {
   currentTime: number;
   duration: number;
   isPlaying: boolean;
+}
+
+// Filtre pour le KeyGrid (recherche/filtre Spotlight-style)
+export interface KeyGridFilter {
+  searchText: string;
+  trackName: string | null;    // partial match, case-insensitive
+  loopMode: LoopMode | null;
+  status: "playing" | "stopped" | null;
 }
 
 // Événements émis par le backend vers le frontend
