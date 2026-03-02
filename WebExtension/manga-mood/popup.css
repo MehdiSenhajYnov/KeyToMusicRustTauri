@@ -1,0 +1,257 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 280px;
+  font: 13px/1.5 system-ui, -apple-system, sans-serif;
+  background: #1a1a2e;
+  color: #e2e8f0;
+  padding: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  color: #c7d2fe;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #6b7280;
+  transition: background 0.3s;
+}
+
+.status-dot.connected { background: #22c55e; }
+.status-dot.disconnected { background: #ef4444; }
+
+.section {
+  margin-bottom: 10px;
+}
+
+/* Toggle */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-row input { display: none; }
+
+.toggle-slider {
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: #374151;
+  position: relative;
+  transition: background 0.2s;
+}
+
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #9ca3af;
+  transition: transform 0.2s, background 0.2s;
+}
+
+.toggle-row input:checked + .toggle-slider {
+  background: #6366f1;
+}
+
+.toggle-row input:checked + .toggle-slider::after {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+/* Port */
+.field-label {
+  display: block;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.port-row {
+  display: flex;
+  gap: 6px;
+}
+
+.port-row input {
+  flex: 1;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 13px;
+  outline: none;
+}
+
+.port-row input:focus {
+  border-color: #6366f1;
+}
+
+.btn-sm {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: none;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-sm:hover { background: #6366f1; }
+
+.divider {
+  height: 1px;
+  background: #1e293b;
+  margin: 10px 0;
+}
+
+/* Stats */
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.stat-label {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.stat-value {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.mood-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mood-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+/* Preview */
+.preview-area {
+  position: relative;
+  width: 100%;
+  min-height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-empty {
+  padding: 20px;
+  text-align: center;
+  color: #475569;
+  font-size: 11px;
+}
+
+.preview-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  max-height: 200px;
+  object-fit: contain;
+}
+
+.preview-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.8));
+}
+
+.preview-page {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.preview-mood .mood-pill {
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Inject button */
+.btn-full {
+  width: 100%;
+  padding: 7px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: transparent;
+  color: #c7d2fe;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.btn-full:hover {
+  background: #1e293b;
+  border-color: #6366f1;
+}
+
+.btn-full:active {
+  background: #4f46e5;
+}
+
+.hint {
+  text-align: center;
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 6px;
+}

@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "KeyToMusic - Manga Mood",
+  "version": "1.0.0",
+  "description": "Detects manga page mood via KeyToMusic AI and auto-triggers matching sounds.",
+  "permissions": ["storage", "scripting", "activeTab"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://sushiscan.net/*",
+        "*://*.sushiscan.net/*",
+        "*://sushiscan.com/*",
+        "*://*.sushiscan.com/*",
+        "*://lelmanga.com/*",
+        "*://*.lelmanga.com/*",
+        "*://mangascan.cc/*",
+        "*://*.mangascan.cc/*",
+        "*://scantrad.net/*",
+        "*://*.scantrad.net/*",
+        "*://mangakakalot.com/*",
+        "*://*.mangakakalot.com/*",
+        "*://manganato.com/*",
+        "*://*.manganato.com/*",
+        "*://chapmanganato.to/*",
+        "*://*.chapmanganato.to/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "KeyToMusic Mood",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  }
+}
