@@ -9,6 +9,8 @@ import {
   type MomentumModifierType,
 } from "../../utils/keyMapping";
 import { WarningTooltip } from "../common/WarningTooltip";
+import { MOOD_DISPLAY, MOOD_COLORS } from "../../utils/moodHelpers";
+import type { MoodCategory } from "../../types";
 
 interface KeyGridProps {
   selectedKeys: Set<string>;
@@ -51,19 +53,21 @@ export function KeyGrid({ selectedKeys, onKeySelect, onSelectAll, matchingKeys }
 
   // Group bindings by keyCode to avoid duplicate React keys (multi-track support)
   const groupedKeys = useMemo(() => {
-    const map = new Map<string, { keyCode: string; allSoundIds: string[]; trackCount: number; name?: string }>();
+    const map = new Map<string, { keyCode: string; allSoundIds: string[]; trackCount: number; name?: string; mood?: MoodCategory }>();
     for (const kb of keyBindings) {
       const existing = map.get(kb.keyCode);
       if (existing) {
         existing.allSoundIds.push(...kb.soundIds);
         existing.trackCount++;
         if (!existing.name && kb.name) existing.name = kb.name;
+        if (!existing.mood && kb.mood) existing.mood = kb.mood;
       } else {
         map.set(kb.keyCode, {
           keyCode: kb.keyCode,
           allSoundIds: [...kb.soundIds],
           trackCount: 1,
           name: kb.name,
+          mood: kb.mood,
         });
       }
     }
@@ -147,13 +151,18 @@ export function KeyGrid({ selectedKeys, onKeySelect, onSelectAll, matchingKeys }
                 <p className="text-text-primary text-xs mt-1 truncate">
                   {displayName}
                 </p>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 flex-wrap">
                   <span className="text-text-muted text-xs">
                     {soundCount} {soundCount > 1 ? "sons" : "son"}
                   </span>
                   {group.trackCount > 1 && (
                     <span className="text-text-muted text-[10px] bg-bg-tertiary px-1 rounded">
                       {group.trackCount}T
+                    </span>
+                  )}
+                  {group.mood && (
+                    <span className={`text-[9px] px-1 py-px rounded-full ${MOOD_COLORS[group.mood].bg} ${MOOD_COLORS[group.mood].text}`}>
+                      {MOOD_DISPLAY[group.mood]}
                     </span>
                   )}
                 </div>

@@ -1,9 +1,10 @@
 use crate::audio::{self, analysis, buffer::BufferManager};
 use crate::discovery;
 use crate::import_export;
+use crate::mood;
 use crate::state::AppState;
 use crate::storage;
-use crate::types::{AppConfig, MomentumModifier, Profile, Sound, SoundSource};
+use crate::types::{AppConfig, MoodCategory, MomentumModifier, Profile, Sound, SoundSource};
 use crate::youtube;
 use tauri::{Emitter, State};
 
@@ -83,6 +84,12 @@ pub fn update_config(
         }
         if let Some(v) = updates.get("playlistImportEnabled").and_then(|v| v.as_bool()) {
             config.playlist_import_enabled = v;
+        }
+        if let Some(v) = updates.get("moodAiEnabled").and_then(|v| v.as_bool()) {
+            config.mood_ai_enabled = v;
+        }
+        if let Some(v) = updates.get("moodApiPort").and_then(|v| v.as_u64()) {
+            config.mood_api_port = v as u16;
         }
     });
 
@@ -220,8 +227,14 @@ pub fn stop_sound(state: State<'_, AppState>, track_id: String) -> Result<(), St
 }
 
 #[tauri::command]
-pub fn stop_all_sounds(state: State<'_, AppState>) -> Result<(), String> {
-    state.get_audio_engine()?.stop_all()
+pub fn stop_all_sounds(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state.get_audio_engine()?.stop_all()?;
+    // Emit stop_all_triggered so mood playback resets activeMoodRef
+    let _ = app_handle.emit("stop_all_triggered", serde_json::json!({}));
+    Ok(())
 }
 
 #[tauri::command]
@@ -916,6 +929,7 @@ pub async fn import_legacy_save(path: String) -> Result<Profile, String> {
                 loop_mode: crate::types::LoopMode::Off,
                 current_index: 0,
                 name: None,
+                mood: None,
             });
         }
     }
@@ -963,7 +977,7 @@ pub async fn start_discovery(
     state.discovery_cancel.store(false, Ordering::Relaxed);
 
     // Load the profile to extract seeds (YouTube + local)
-    let mut profile = storage::load_profile(profile_id.clone())?;
+    let profile = storage::load_profile(profile_id.clone())?;
 
     let mut seeds = Vec::new();
     let mut existing_ids = Vec::new();
@@ -1013,20 +1027,21 @@ pub async fn start_discovery(
             youtube_cache,
         ).await;
 
-        // Store resolved video IDs in the profile and add as seeds
+        // Add resolved seeds and collect updates for targeted persist
+        let mut resolved_updates: Vec<(String, String)> = Vec::new();
         for r in &resolved {
-            if let Some(sound) = profile.sounds.iter_mut().find(|s| s.id == r.sound_id) {
-                sound.resolved_video_id = Some(r.video_id.clone());
+            if let Some(sound) = profile.sounds.iter().find(|s| s.id == r.sound_id) {
                 seeds.push(discovery::engine::SeedInfo {
                     video_id: r.video_id.clone(),
                     sound_name: sound.name.clone(),
                 });
+                resolved_updates.push((r.sound_id.clone(), r.video_id.clone()));
             }
         }
 
-        // Persist resolved video IDs to profile
-        if !resolved.is_empty() {
-            if let Err(e) = storage::save_profile(&profile) {
+        // Persist resolved video IDs with targeted update (avoids overwriting concurrent profile changes)
+        if !resolved_updates.is_empty() {
+            if let Err(e) = storage::update_resolved_video_ids(&profile_id, &resolved_updates) {
                 tracing::warn!("Failed to save resolved video IDs: {}", e);
             }
         }
@@ -1049,7 +1064,10 @@ pub async fn start_discovery(
     }
     all_excluded.extend(exclude_ids.into_iter());
 
-    let yt_dlp_bin = youtube::downloader::get_yt_dlp_bin()?;
+    let yt_dlp_bin = match youtube::downloader::get_yt_dlp_bin() {
+        Ok(path) => path,
+        Err(_) => youtube::download_yt_dlp().await?,
+    };
     let cancel_flag = state.discovery_cancel.clone();
 
     if !is_background {
@@ -1195,13 +1213,7 @@ pub fn dislike_discovery(
     profile_id: String,
     video_id: String,
 ) -> Result<(), String> {
-    let mut profile = storage::load_profile(profile_id.clone())?;
-
-    if !profile.disliked_videos.contains(&video_id) {
-        profile.disliked_videos.push(video_id.clone());
-    }
-
-    storage::save_profile(&profile)?;
+    storage::update_disliked_videos(&profile_id, &video_id, true)?;
 
     // Also dismiss from current discovery cache
     let _ = discovery::cache::DiscoveryCache::dismiss(&profile_id, &video_id);
@@ -1224,11 +1236,7 @@ pub fn undislike_discovery(
     profile_id: String,
     video_id: String,
 ) -> Result<(), String> {
-    let mut profile = storage::load_profile(profile_id)?;
-
-    profile.disliked_videos.retain(|id| id != &video_id);
-
-    storage::save_profile(&profile)?;
+    storage::update_disliked_videos(&profile_id, &video_id, false)?;
 
     Ok(())
 }
@@ -1255,7 +1263,10 @@ pub async fn list_disliked_videos(
         return Ok(Vec::new());
     }
 
-    let yt_dlp_bin = youtube::downloader::get_yt_dlp_bin()?;
+    let yt_dlp_bin = match youtube::downloader::get_yt_dlp_bin() {
+        Ok(path) => path,
+        Err(_) => youtube::download_yt_dlp().await?,
+    };
 
     let results: Vec<DislikedVideoInfo> = stream::iter(profile.disliked_videos.iter().cloned())
         .map(|video_id| {
@@ -1532,4 +1543,158 @@ pub fn get_initial_state(state: State<'_, AppState>) -> Result<InitialState, Str
         profiles,
         current_profile,
     })
+}
+
+// ─── Mood AI Commands ────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn check_llama_server_installed() -> bool {
+    mood::llama_manager::is_llama_server_installed()
+}
+
+#[tauri::command]
+pub async fn install_llama_server() -> Result<String, String> {
+    let path = mood::llama_manager::download_llama_server().await?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn check_mood_model_installed() -> bool {
+    mood::llama_manager::is_model_downloaded()
+}
+
+#[tauri::command]
+pub async fn install_mood_model(app_handle: tauri::AppHandle) -> Result<String, String> {
+    let path = mood::llama_manager::download_model(move |downloaded, total| {
+        let _ = app_handle.emit(
+            "mood_model_download_progress",
+            serde_json::json!({ "downloaded": downloaded, "total": total }),
+        );
+    })
+    .await?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn start_mood_server(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let model_path = mood::llama_manager::get_model_path();
+    let mmproj_path = mood::llama_manager::get_mmproj_path();
+    if !model_path.exists() {
+        return Err("LLM model not downloaded".to_string());
+    }
+    if !mmproj_path.exists() {
+        return Err("Vision encoder (mmproj) not downloaded".to_string());
+    }
+
+    let _ = app_handle.emit(
+        "mood_server_status",
+        serde_json::json!({ "status": "starting" }),
+    );
+
+    let model_str = model_path.to_string_lossy().to_string();
+    let mmproj_str = mmproj_path.to_string_lossy().to_string();
+    let server = mood::inference::LlamaServer::start(&model_str, &mmproj_str).await?;
+
+    let _ = app_handle.emit(
+        "mood_server_status",
+        serde_json::json!({ "status": "running" }),
+    );
+
+    let mut guard = state.llama_server.lock().await;
+    *guard = Some(server);
+
+    // Start the HTTP API server if mood AI is enabled
+    let config = state.get_config();
+    if config.mood_ai_enabled {
+        let llama_ref = state.llama_server.clone();
+        let port = config.mood_api_port;
+        let handle = app_handle.clone();
+        let cache_ref = state.mood_cache.clone();
+        let api_handle = tokio::spawn(async move {
+            if let Err(e) = mood::server::start_api_server(port, llama_ref, handle, cache_ref).await {
+                tracing::error!("Mood API server error: {}", e);
+            }
+        });
+        let mut api_guard = state.mood_api_server.lock().unwrap_or_else(|e| e.into_inner());
+        *api_guard = Some(api_handle);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_mood_server(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    // Stop API server
+    {
+        let mut api_guard = state.mood_api_server.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(handle) = api_guard.take() {
+            handle.abort();
+        }
+    }
+
+    // Stop llama-server
+    {
+        let mut guard = state.llama_server.lock().await;
+        if let Some(mut server) = guard.take() {
+            server.stop();
+        }
+    }
+
+    let _ = app_handle.emit(
+        "mood_server_status",
+        serde_json::json!({ "status": "stopped" }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_mood_server_status(state: State<'_, AppState>) -> Result<String, String> {
+    let mut guard = state.llama_server.lock().await;
+    let is_running = guard.as_mut().map(|s| s.is_running()).unwrap_or(false);
+    if guard.is_some() && !is_running {
+        *guard = None;
+        Ok("stopped".to_string())
+    } else if is_running {
+        Ok("running".to_string())
+    } else {
+        Ok("stopped".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn analyze_mood(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+    image_path: String,
+) -> Result<MoodCategory, String> {
+    let image_data = std::fs::read(&image_path)
+        .map_err(|e| format!("Failed to read image: {}", e))?;
+
+    let image_b64 = mood::inference::prepare_image(&image_data)?;
+
+    let mut guard = state.llama_server.lock().await;
+    let server = guard
+        .as_mut()
+        .ok_or_else(|| "Mood server not running".to_string())?;
+
+    let mood_result = server.analyze_mood(&image_b64).await?;
+
+    let mood_str = serde_json::to_value(&mood_result)
+        .ok()
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_default();
+
+    let _ = app_handle.emit(
+        "mood_detected",
+        serde_json::json!({ "mood": mood_str, "source": "local" }),
+    );
+
+    Ok(mood_result)
 }

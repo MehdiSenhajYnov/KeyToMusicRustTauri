@@ -8,7 +8,8 @@ import { formatDuration } from "../../utils/fileHelpers";
 import { AddSoundModal } from "./AddSoundModal";
 import * as commands from "../../utils/tauriCommands";
 import { getSoundFilePath } from "../../utils/soundHelpers";
-import type { LoopMode, Sound, WaveformData } from "../../types";
+import type { LoopMode, MoodCategory, Sound, WaveformData } from "../../types";
+import { MOOD_CATEGORIES, MOOD_DISPLAY, MOOD_COLORS } from "../../utils/moodHelpers";
 import { useAudioStore } from "../../stores/audioStore";
 import { useWaveformStore } from "../../stores/waveformStore";
 import { useTrackPosition } from "../../hooks/useTrackPosition";
@@ -566,6 +567,29 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
             <option value="random">Random</option>
             <option value="sequential">Sequential</option>
           </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-text-muted text-xs">Mood:</span>
+          <select
+            value={binding.mood ?? ""}
+            onChange={(e) => {
+              const mood = e.target.value === "" ? undefined : (e.target.value as MoodCategory);
+              updateKeyBinding(selectedKey, binding.trackId, { mood });
+              setTimeout(() => saveCurrentProfile(), 100);
+            }}
+            className="bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary"
+          >
+            <option value="">None</option>
+            {MOOD_CATEGORIES.map((m) => (
+              <option key={m} value={m}>{MOOD_DISPLAY[m]}</option>
+            ))}
+          </select>
+          {binding.mood && (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${MOOD_COLORS[binding.mood].bg} ${MOOD_COLORS[binding.mood].text}`}>
+              {MOOD_DISPLAY[binding.mood]}
+            </span>
+          )}
         </div>
 
         <button

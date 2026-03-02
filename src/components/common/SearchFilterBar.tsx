@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
-import type { KeyGridFilter, Track, LoopMode } from "../../types";
+import type { KeyGridFilter, Track, LoopMode, MoodCategory } from "../../types";
+import { MOOD_CATEGORIES } from "../../utils/moodHelpers";
 
 interface FilterChip {
-  type: "track" | "loop" | "status";
+  type: "track" | "loop" | "status" | "mood";
   value: string;
   label: string;
 }
@@ -40,6 +41,7 @@ export const SearchFilterBar = forwardRef<SearchFilterBarHandle, SearchFilterBar
         const trackChip = currentChips.find((c) => c.type === "track");
         const loopChip = currentChips.find((c) => c.type === "loop");
         const statusChip = currentChips.find((c) => c.type === "status");
+        const moodChip = currentChips.find((c) => c.type === "mood");
 
         if (!text && currentChips.length === 0) return null;
 
@@ -48,6 +50,7 @@ export const SearchFilterBar = forwardRef<SearchFilterBarHandle, SearchFilterBar
           trackName: trackChip?.value ?? null,
           loopMode: (loopChip?.value as LoopMode) ?? null,
           status: (statusChip?.value as "playing" | "stopped") ?? null,
+          mood: (moodChip?.value as MoodCategory) ?? null,
         };
       },
       []
@@ -85,6 +88,15 @@ export const SearchFilterBar = forwardRef<SearchFilterBarHandle, SearchFilterBar
             const idx = newChips.findIndex((c) => c.type === "status");
             if (idx !== -1) newChips.splice(idx, 1);
             newChips.push({ type: "status", value: val, label: `s:${val}` });
+          } else {
+            remaining.push(token);
+          }
+        } else if (lower.startsWith("m:") && token.length > 2) {
+          const val = token.slice(2).toLowerCase();
+          if ((MOOD_CATEGORIES as readonly string[]).includes(val)) {
+            const idx = newChips.findIndex((c) => c.type === "mood");
+            if (idx !== -1) newChips.splice(idx, 1);
+            newChips.push({ type: "mood", value: val, label: `m:${val}` });
           } else {
             remaining.push(token);
           }

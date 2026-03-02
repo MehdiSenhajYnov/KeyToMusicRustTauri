@@ -6,6 +6,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 use super::cache::YouTubeCache;
 use super::downloader::{canonical_url, extract_video_id, get_yt_dlp_bin, yt_dlp_command};
+use super::yt_dlp_manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,7 +26,10 @@ pub async fn search_youtube(
     max_results: u32,
     cache: Arc<Mutex<YouTubeCache>>,
 ) -> Result<Vec<YoutubeSearchResult>, String> {
-    let yt_dlp_bin = get_yt_dlp_bin()?;
+    let yt_dlp_bin = match get_yt_dlp_bin() {
+        Ok(path) => path,
+        Err(_) => yt_dlp_manager::download_yt_dlp().await?,
+    };
     let max = max_results.min(20).max(1);
 
     let search_query = format!("ytsearch{}:{}", max, query);
@@ -140,7 +144,10 @@ pub async fn fetch_playlist(
     url: &str,
     cache: Arc<Mutex<YouTubeCache>>,
 ) -> Result<YoutubePlaylist, String> {
-    let yt_dlp_bin = get_yt_dlp_bin()?;
+    let yt_dlp_bin = match get_yt_dlp_bin() {
+        Ok(path) => path,
+        Err(_) => yt_dlp_manager::download_yt_dlp().await?,
+    };
 
     let mut cmd = yt_dlp_command(&yt_dlp_bin);
     cmd.arg(url)
@@ -294,7 +301,10 @@ pub async fn get_stream_url(video_id: &str) -> Result<StreamUrlResult, String> {
         }
     }
 
-    let yt_dlp_bin = get_yt_dlp_bin()?;
+    let yt_dlp_bin = match get_yt_dlp_bin() {
+        Ok(path) => path,
+        Err(_) => yt_dlp_manager::download_yt_dlp().await?,
+    };
 
     let video_url = canonical_url(video_id);
 

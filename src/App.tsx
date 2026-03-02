@@ -17,6 +17,7 @@ import { useTextInputFocus } from "./hooks/useTextInputFocus";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { useDiscovery } from "./hooks/useDiscovery";
 import { useDiscoveryPredownload } from "./hooks/useDiscoveryPredownload";
+import { useMoodPlayback } from "./hooks/useMoodPlayback";
 import { isTextInput } from "./utils/inputHelpers";
 import { getSoundFilePath } from "./utils/soundHelpers";
 import { useWaveformStore } from "./stores/waveformStore";
@@ -57,6 +58,7 @@ function App() {
   useUndoRedo();
   useDiscovery();
   useDiscoveryPredownload();
+  useMoodPlayback();
 
   // Global shortcut: ? or F1 to toggle help modal
   useEffect(() => {

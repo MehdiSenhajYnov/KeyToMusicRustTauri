@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppConfig, Profile, Sound, YoutubeSearchResult, YoutubePlaylist, WaveformData, StreamUrlResult, InitialState } from "../types";
+import type { AppConfig, MoodCategory, Profile, Sound, YoutubeSearchResult, YoutubePlaylist, WaveformData, StreamUrlResult, InitialState } from "../types";
 
 interface ProfileSummary {
   id: string;
@@ -361,6 +361,40 @@ export async function predownloadSuggestion(
     videoId,
     downloadId,
   });
+}
+
+// ─── Mood AI ─────────────────────────────────────────────────────────────
+
+export async function checkLlamaServerInstalled(): Promise<boolean> {
+  return invoke<boolean>("check_llama_server_installed");
+}
+
+export async function installLlamaServer(): Promise<string> {
+  return invoke<string>("install_llama_server");
+}
+
+export async function checkMoodModelInstalled(): Promise<boolean> {
+  return invoke<boolean>("check_mood_model_installed");
+}
+
+export async function installMoodModel(): Promise<string> {
+  return invoke<string>("install_mood_model");
+}
+
+export async function startMoodServer(): Promise<void> {
+  return invoke("start_mood_server");
+}
+
+export async function stopMoodServer(): Promise<void> {
+  return invoke("stop_mood_server");
+}
+
+export async function getMoodServerStatus(): Promise<string> {
+  return invoke<string>("get_mood_server_status");
+}
+
+export async function analyzeMood(imagePath: string): Promise<MoodCategory> {
+  return invoke<MoodCategory>("analyze_mood", { imagePath });
 }
 
 export { type ProfileSummary };

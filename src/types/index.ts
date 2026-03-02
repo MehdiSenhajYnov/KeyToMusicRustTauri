@@ -12,6 +12,19 @@ export type SoundSource =
 // Mode de boucle
 export type LoopMode = "off" | "random" | "single" | "sequential";
 
+// Mood category for AI-triggered playback
+export type MoodCategory =
+  | "epic_battle"
+  | "tension"
+  | "sadness"
+  | "comedy"
+  | "romance"
+  | "horror"
+  | "peaceful"
+  | "emotional_climax"
+  | "mystery"
+  | "chase_action";
+
 // Modificateur pour déclencher le momentum
 export type MomentumModifier = "Shift" | "Ctrl" | "Alt" | "None";
 
@@ -34,6 +47,7 @@ export interface KeyBinding {
   loopMode: LoopMode;
   currentIndex: number;       // Index actuel pour le mode sequential
   name?: string;              // Nom personnalisé (défaut: nom du premier son)
+  mood?: MoodCategory;        // Mood tag for AI-triggered playback
 }
 
 // Configuration d'une piste
@@ -69,6 +83,8 @@ export interface AppConfig {
   chordWindowMs: number;          // Multi-key chord detection window in ms (default: 30, range: 20-100)
   momentumModifier: MomentumModifier; // Modifier key to trigger momentum (default: "Shift")
   playlistImportEnabled: boolean;     // Remember "download entire playlist" checkbox state
+  moodAiEnabled: boolean;             // Enable Manga Mood AI integration
+  moodApiPort: number;                // HTTP API port for external tools (default: 8765)
 }
 
 // Initial state returned by get_initial_state (unified startup command)
@@ -127,6 +143,7 @@ export interface KeyGridFilter {
   trackName: string | null;    // partial match, case-insensitive
   loopMode: LoopMode | null;
   status: "playing" | "stopped" | null;
+  mood: MoodCategory | null;   // filter by mood tag
 }
 
 // Événements émis par le backend vers le frontend

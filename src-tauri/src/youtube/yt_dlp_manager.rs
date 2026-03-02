@@ -1,7 +1,11 @@
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::time::{Duration, SystemTime};
 
 use crate::storage::config::get_app_data_dir;
+
+/// Maximum age before re-downloading yt-dlp (7 days).
+const UPDATE_INTERVAL: Duration = Duration::from_secs(7 * 24 * 3600);
 
 /// Get the platform-specific yt-dlp binary name.
 fn yt_dlp_binary_name() -> &'static str {
@@ -28,8 +32,10 @@ pub fn get_yt_dlp_path() -> PathBuf {
     get_app_data_dir().join("bin").join(yt_dlp_binary_name())
 }
 
-/// Check if yt-dlp is available (either in app data or in PATH).
-/// Returns the path to use for executing yt-dlp.
+/// Check if the managed yt-dlp binary exists in `data/bin/`.
+/// Does NOT fall back to system PATH — the system version (e.g. pip) may be
+/// outdated and cause extraction errors. All callers use the auto-install
+/// fallback pattern (`download_yt_dlp()`) when this returns `None`.
 pub fn find_yt_dlp() -> Option<PathBuf> {
     let local_path = get_yt_dlp_path();
     if local_path.exists() {
@@ -43,35 +49,10 @@ pub fn find_yt_dlp() -> Option<PathBuf> {
         }
     }
 
-    // Check if it's in PATH
-    if which_yt_dlp().is_some() {
-        return Some(PathBuf::from("yt-dlp"));
-    }
-
     None
 }
 
-/// Check if yt-dlp exists in system PATH.
-fn which_yt_dlp() -> Option<PathBuf> {
-    let name = if cfg!(target_os = "windows") {
-        "yt-dlp.exe"
-    } else {
-        "yt-dlp"
-    };
-
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths).find_map(|dir| {
-            let full_path = dir.join(name);
-            if full_path.is_file() {
-                Some(full_path)
-            } else {
-                None
-            }
-        })
-    })
-}
-
-/// Check if yt-dlp is installed (locally or in PATH).
+/// Check if the managed yt-dlp binary is installed locally.
 pub async fn is_installed() -> bool {
     find_yt_dlp().is_some()
 }
@@ -139,4 +120,42 @@ pub async fn download_yt_dlp() -> Result<PathBuf, String> {
     }
 
     Ok(target_path)
+}
+
+/// Ensure the local yt-dlp binary is present and up to date.
+/// Downloads if missing; re-downloads if older than 7 days.
+/// Silently ignores network errors (best-effort background update).
+pub async fn ensure_yt_dlp_up_to_date() {
+    let local_path = get_yt_dlp_path();
+
+    let needs_download = if local_path.exists() {
+        // Check file age via mtime
+        match std::fs::metadata(&local_path).and_then(|m| m.modified()) {
+            Ok(mtime) => {
+                let age = SystemTime::now()
+                    .duration_since(mtime)
+                    .unwrap_or(Duration::ZERO);
+                if age > UPDATE_INTERVAL {
+                    tracing::info!(
+                        "yt-dlp binary is {} days old, updating",
+                        age.as_secs() / 86400
+                    );
+                    true
+                } else {
+                    false
+                }
+            }
+            Err(_) => false, // Can't read mtime, skip update
+        }
+    } else {
+        tracing::info!("yt-dlp binary not found, downloading");
+        true
+    };
+
+    if needs_download {
+        match download_yt_dlp().await {
+            Ok(path) => tracing::info!("yt-dlp updated successfully: {:?}", path),
+            Err(e) => tracing::warn!("Failed to update yt-dlp (will retry next launch): {}", e),
+        }
+    }
 }

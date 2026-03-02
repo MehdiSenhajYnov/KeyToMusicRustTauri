@@ -325,7 +325,10 @@ export function MainContent() {
         return filter.status === "playing" ? isPlaying : !isPlaying;
       })();
 
-      if (matchesText && matchesTrack && matchesLoop && matchesStatus) {
+      // Mood filter
+      const matchesMood = !filter.mood || kb.mood === filter.mood;
+
+      if (matchesText && matchesTrack && matchesLoop && matchesStatus && matchesMood) {
         matched.add(kb.keyCode);
       }
     }

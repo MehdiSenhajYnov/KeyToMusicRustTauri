@@ -99,6 +99,45 @@ pub fn save_profile(profile: &Profile) -> Result<(), String> {
     Ok(())
 }
 
+/// Atomic read→modify→write: merges resolved_video_id fields on matching sounds
+/// without touching any other profile data (name, bindings, tracks, etc.).
+pub fn update_resolved_video_ids(
+    profile_id: &str,
+    updates: &[(String, String)], // Vec of (sound_id, video_id)
+) -> Result<(), String> {
+    let mut profile = load_profile(profile_id.to_string())?;
+
+    for (sound_id, video_id) in updates {
+        if let Some(sound) = profile.sounds.iter_mut().find(|s| s.id == *sound_id) {
+            sound.resolved_video_id = Some(video_id.clone());
+        }
+    }
+
+    profile.updated_at = chrono::Utc::now().to_rfc3339();
+    save_profile(&profile)
+}
+
+/// Atomic read→modify→write: adds or removes a single disliked video ID
+/// without touching any other profile data.
+pub fn update_disliked_videos(
+    profile_id: &str,
+    video_id: &str,
+    add: bool,
+) -> Result<(), String> {
+    let mut profile = load_profile(profile_id.to_string())?;
+
+    if add {
+        if !profile.disliked_videos.contains(&video_id.to_string()) {
+            profile.disliked_videos.push(video_id.to_string());
+        }
+    } else {
+        profile.disliked_videos.retain(|id| id != video_id);
+    }
+
+    profile.updated_at = chrono::Utc::now().to_rfc3339();
+    save_profile(&profile)
+}
+
 pub fn delete_profile(id: String) -> Result<(), String> {
     let profile_path = get_app_data_dir().join("profiles").join(format!("{}.json", id));
 

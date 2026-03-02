@@ -2,10 +2,10 @@
 
 ## Project Overview
 
-KeyToMusic is a Tauri 2.x desktop soundboard for manga reading. Global keyboard detection triggers sounds without interrupting reading. Features: multi-track audio with crossfading, YouTube downloads, momentum (start position), loop modes, waveform visualization, and discovery system.
+KeyToMusic is a Tauri 2.x desktop soundboard for manga reading. Global keyboard detection triggers sounds without interrupting reading. Features: multi-track audio with crossfading, YouTube downloads, momentum (start position), loop modes, waveform visualization, discovery system, and Manga Mood AI (local VLM detects page mood and auto-triggers tagged sounds).
 
 **Platforms:** Windows 10/11, macOS 10.15+, Linux (Ubuntu, Fedora, Arch)
-**Tech:** Tauri 2.x (Rust backend + React 18/TypeScript/Tailwind/Zustand frontend), rodio/cpal/symphonia (audio), yt-dlp (YouTube)
+**Tech:** Tauri 2.x (Rust backend + React 18/TypeScript/Tailwind/Zustand frontend), rodio/cpal/symphonia (audio), yt-dlp (YouTube), llama.cpp/Qwen3-VL (mood AI)
 
 ## Project Structure
 
@@ -21,13 +21,13 @@ src/                              # React/TypeScript frontend
 │   └── common/KeyboardShortcutsModal.tsx # Help modal listing all shortcuts (dynamic config, platform-aware)
 ├── stores/                       # Zustand: profileStore, audioStore, settingsStore, discoveryStore,
 │                                 #   historyStore, errorStore, exportStore, toastStore, confirmStore,
-│                                 #   waveformStore
+│                                 #   waveformStore, moodStore
 ├── hooks/                        # useAudioEvents, useKeyDetection, useDiscovery,
 │                                 #   useDiscoveryPredownload, useUndoRedo, useTextInputFocus,
-│                                 #   useTrackPosition, useWheelSlider
-├── types/index.ts                # All types (Sound, Profile, AppConfig, KeyGridFilter, WaveformData, etc.)
+│                                 #   useTrackPosition, useWheelSlider, useMoodPlayback
+├── types/index.ts                # All types (Sound, Profile, AppConfig, MoodCategory, KeyGridFilter, WaveformData, etc.)
 └── utils/                        # tauriCommands, keyMapping, profileAnalysis, errorMessages,
-                                  #   fileHelpers, soundHelpers, inputHelpers
+                                  #   fileHelpers, soundHelpers, inputHelpers, moodHelpers
 src-tauri/src/
 ├── main.rs                       # Entry point, logging, event forwarding
 ├── commands.rs                   # All Tauri commands
@@ -38,10 +38,13 @@ src-tauri/src/
 ├── keys/                         # detector.rs, mapping.rs, chord.rs,
 │                                 #   macos_listener.rs, windows_listener.rs
 ├── discovery/                    # engine.rs, mix_fetcher.rs, cache.rs
+├── mood/                         # llama_manager.rs (download llama-server + model),
+│                                 #   inference.rs (LlamaServer lifecycle, image resize, analyze),
+│                                 #   server.rs (axum HTTP API for external tools)
 ├── youtube/                      # downloader.rs, cache.rs, search.rs, yt_dlp_manager.rs, ffmpeg_manager.rs
 ├── import_export/                # .ktm file handling
 └── storage/                      # Profile & config persistence
-data/                             # Runtime: profiles/, cache/, discovery/, bin/, imported_sounds/, logs/
+data/                             # Runtime: profiles/, cache/, discovery/, bin/, imported_sounds/, logs/, models/
 resources/                        # Static: icons, error.mp3
 ```
 
@@ -103,6 +106,30 @@ Seeds (YouTube + local sounds) → YouTube Mix per seed → Cross-seed aggregati
   - `analyzeProfile()` - "single-sound" (avg ≤ 2/binding) vs "multi-sound" mode
   - Single-sound: next available key, least-used track. Multi-sound: cluster to bindings with matching seeds.
 
+### Manga Mood AI
+
+Detects manga page mood via local VLM and auto-triggers sounds tagged with that mood. Architecture uses 2 local servers:
+1. **KeyToMusic HTTP API** (axum, port configurable, default 8765) — receives images from external tools
+2. **llama-server** (llama.cpp, auto port) — runs Qwen3-VL 2B inference
+
+```
+External tool → POST /api/analyze (base64 image) → KeyToMusic API → resize 672px → llama-server → parse mood → trigger playback
+```
+
+- **MoodCategory:** 10 values — `epic_battle`, `tension`, `sadness`, `comedy`, `romance`, `horror`, `peaceful`, `emotional_climax`, `mystery`, `chase_action`
+- **Mood Tagging:** Manual per-binding via dropdown in SoundDetails. `KeyBinding.mood: Option<MoodCategory>`. Mood badge (colored pill) in KeyGrid. Filter with `m:` prefix in SearchFilterBar.
+- **Backend (`mood/`):**
+  - `llama_manager.rs` — Download + manage llama-server binary (ZIP/tar.gz from GitHub releases) + GGUF model (streaming download from HuggingFace, ~1.9GB, with progress events). Stored in `data/bin/` and `data/models/`.
+  - `inference.rs` — `LlamaServer` struct wraps subprocess. Start with optimized flags (`-c 2048 --flash-attn --cache-type-k q8_0 --cache-type-v q8_0 -ngl 99`). Windows: `CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS`. `prepare_image()` resizes to 672px max via `image` crate, encodes base64 JPEG. `analyze_mood()` POSTs to `/v1/chat/completions`, parses response (handles `</think>` tags). `impl Drop` auto-kills process.
+  - `server.rs` — Axum HTTP server. `POST /api/analyze` (base64 image → mood + Tauri event), `GET /api/status`, `GET /api/moods`. Starts in `tokio::spawn` when mood server starts with `moodAiEnabled=true`.
+- **Frontend:**
+  - `moodStore.ts` — Server status, install state, download progress, last detected mood. Actions: checkInstallation, installServer, installModel, startServer, stopServer.
+  - `useMoodPlayback.ts` — Listens to `mood_detected` event. Finds all bindings with matching mood tag. Selects sound per loop mode. Triggers all via `Promise.allSettled` (multi-track). Toast notification.
+  - `MoodAiSection` in SettingsModal — Toggle, install status (green/red dots), download progress bar, start/stop server, API port config.
+  - Sidebar `MoodIndicator` — Shows last detected mood as colored pill.
+- **AppConfig:** `moodAiEnabled: bool`, `moodApiPort: u16` (default 8765)
+- **AppState:** `llama_server: Arc<tokio::sync::Mutex<Option<LlamaServer>>>`, `mood_api_server: Arc<Mutex<Option<JoinHandle>>>`
+
 ### Key Detection
 
 Platform-specific global capture (foreground AND background):
@@ -138,11 +165,12 @@ Configurable key (Shift/Ctrl/Alt/None) that triggers momentum playback. Exact bi
 
 ### Sound Assignment & Loop Modes
 
-Binding uniqueness = `(keyCode, trackId)`. One key can have multiple bindings on different tracks — pressing a key triggers all its bindings simultaneously (`Promise.allSettled` for concurrent playback). Each binding has its own sound IDs list, loop mode, and currentIndex.
+Binding uniqueness = `(keyCode, trackId)`. One key can have multiple bindings on different tracks — pressing a key triggers all its bindings simultaneously (`Promise.allSettled` for concurrent playback). Each binding has its own sound IDs list, loop mode, currentIndex, and mood tag.
 - Key reassignment: move all bindings to new key (merges by track) or move individual sound.
 - Loop modes: `off` (random, stop), `single` (loop same), `random` (avoid repeat, auto-next), `sequential` (cycle, auto-next)
-- KeyGrid groups bindings by keyCode (one cell per key, shows track count indicator when >1 track).
-- SoundDetails renders each binding separately with per-binding track selector, loop mode, and delete.
+- **Mood tagging:** Each binding can be tagged with a `MoodCategory` (10 values). Tagged bindings auto-trigger when Mood AI detects matching mood. Mood changes are undoable.
+- KeyGrid groups bindings by keyCode (one cell per key, shows track count indicator when >1 track, colored mood badge pill).
+- SoundDetails renders each binding separately with per-binding track selector, loop mode, mood dropdown, and delete.
 
 ### YouTube Integration
 
@@ -156,7 +184,7 @@ Binding uniqueness = `(keyCode, trackId)`. One key can have multiple bindings on
 ### Profiles & Config
 
 - Profiles: `data/profiles/{uuid}.json` with sounds, tracks, bindings, disliked_videos. All sounds stopped on switch.
-- Config (`data/config.json`): masterVolume, autoMomentum, keyDetectionEnabled, shortcuts, crossfadeDuration (500ms), keyCooldown (200ms), currentProfileId, audioDevice, chordWindowMs (30ms), momentumModifier, playlistImportEnabled
+- Config (`data/config.json`): masterVolume, autoMomentum, keyDetectionEnabled, shortcuts, crossfadeDuration (500ms), keyCooldown (200ms), currentProfileId, audioDevice, chordWindowMs (30ms), momentumModifier, playlistImportEnabled, moodAiEnabled, moodApiPort (8765)
 - Atomic writes (`.tmp` → remove dest → rename, for Windows compat). Config: debounced saves via `AtomicBool` dirty flag, flushed every 2s by background thread. Profile list: partial JSON parsing (`serde_json::Value`) for O(1) field extraction instead of full deserialization.
 
 ### Import/Export
@@ -193,6 +221,8 @@ pub struct AppState {
     pub cpu_pool: Arc<rayon::ThreadPool>,
     pub profile_load_gen: Arc<AtomicU64>,
     pub config_dirty: Arc<AtomicBool>,
+    pub llama_server: Arc<tokio::sync::Mutex<Option<LlamaServer>>>,  // Mood AI inference server
+    pub mood_api_server: Arc<Mutex<Option<JoinHandle<()>>>>,          // HTTP API for external tools
 }
 ```
 
@@ -218,6 +248,7 @@ pub struct AppState {
 **YouTube:** `add_sound_from_youtube(url, download_id)`, `search_youtube`, `fetch_playlist`, `get_youtube_stream_url(video_id)`, `check_yt_dlp_installed`, `install_yt_dlp`, `check_ffmpeg_installed`, `install_ffmpeg`
 **Discovery:** `start_discovery(profile_id, exclude_ids, background)`, `get_discovery_suggestions`, `save_discovery_cursor`, `update_discovery_pool`, `dismiss_discovery`, `dislike_discovery`, `undislike_discovery`, `list_disliked_videos`, `cancel_discovery`, `predownload_suggestion`
 **Import/Export:** `export_profile`, `import_profile`, `pick_save_location`, `cleanup_export_temp`, `cancel_export`, `pick_ktm_file`, `pick_legacy_file`, `import_legacy_save`
+**Mood AI:** `check_llama_server_installed`, `install_llama_server`, `check_mood_model_installed`, `install_mood_model`, `start_mood_server`, `stop_mood_server`, `get_mood_server_status`, `analyze_mood(image_path)`
 **Utility:** `verify_profile_sounds`, `pick_audio_file`, `pick_audio_files`, `get_logs_folder`, `get_data_folder`, `open_folder`
 
 ## Backend → Frontend Events
@@ -237,13 +268,16 @@ pub struct AppState {
 | `discovery_progress` | `{ current, total, seedName }` |
 | `discovery_partial` | `Vec<DiscoverySuggestion>` |
 | `waveform_progress` | `{ path, points, duration, sampleRate }` (streaming waveform, every 5 iterations) |
+| `mood_model_download_progress` | `{ downloaded, total }` (bytes) |
+| `mood_server_status` | `{ status: "starting" \| "running" \| "stopped" \| "error" }` |
+| `mood_detected` | `{ mood, source }` (source: "api" or "local") |
 
 ## Technical Notes
 
 - **Thread safety:** Audio engine in separate thread. Use Tokio channels or `Arc<Mutex<>>`. CPU-bound work uses shared `Arc<rayon::ThreadPool>` (4 threads, `Send + Sync` natively, no Mutex needed). Each `SymphoniaSource` spawns its own decode thread (bounded channel, stopped on Drop).
 - **Logging:** `tracing` + `tracing-appender`. Daily rolling logs in `data/logs/`. `RUST_LOG` env var (default: info).
 - **Data paths:** Windows `AppData/Roaming/KeyToMusic/`, macOS `Library/Application Support/KeyToMusic/`, Linux `.local/share/keytomusic/`
-- **External tools:** yt-dlp and ffmpeg auto-downloaded to `data/bin/`. No user install needed.
+- **External tools:** yt-dlp and ffmpeg auto-downloaded to `data/bin/`. llama-server auto-downloaded from llama.cpp GitHub releases. Qwen3-VL 2B GGUF model auto-downloaded from HuggingFace to `data/models/`. No user install needed.
 
 ## Technical Limits
 
@@ -251,11 +285,13 @@ pub struct AppState {
 - Cooldown: 0-5000ms. Crossfade: 100-2000ms. Waveform cache: 50 entries (LRU).
 - Discovery: max 15 seeds, top 30 suggestions, 10 concurrent mix fetches.
 - Audio thread: dynamic timeout (200ms idle, 16ms playing).
+- Mood AI: 10 mood categories. Image resize 672px max. llama-server context 2048 tokens. Model ~1.9GB (Q4_K_M).
 
 ## Known Limitations
 
 - **Numpad+Shift:** OS sends alternate key (ArrowLeft, End) instead of "Shift+Numpad4". Workaround: use Ctrl/Alt as momentum modifier.
 - **Discovery:** Some videos have no Mix. Momentum detection imprecise for spoken word.
+- **Mood AI:** Requires GPU for reasonable speed (~1.1s per image with VRAM). Mood tagging is manual. Model download is ~1.9GB.
 
 ## UI Notes
 
@@ -263,4 +299,6 @@ pub struct AppState {
 - Layout: Header (logo, master volume, settings) + Sidebar (profiles, controls, now playing, discovery) + Main (tracks, keys, sound details)
 - AddSoundModal: file picker or drag & drop, per-file momentum editors, key cycling for bulk assignment, inline YouTube search preview (HTML5 audio streaming)
 - Resizable SoundDetails panel (min 120px, default 256px)
-- KeyGrid filter bar: Spotlight-style search with inline prefix filters (`t:`, `l:`, `s:`), chips, counter. `Ctrl+F` focuses, `Escape` clears. Non-matching bindings grayed out (opacity-30). Resets on profile switch.
+- KeyGrid filter bar: Spotlight-style search with inline prefix filters (`t:`, `l:`, `s:`, `m:`), chips, counter. `Ctrl+F` focuses, `Escape` clears. Non-matching bindings grayed out (opacity-30). Resets on profile switch.
+- Sidebar: MoodIndicator shows last detected mood as colored pill (visible when moodAiEnabled).
+- Settings: "Manga Mood AI" section between Audio and Data — toggle, install status (green/red dots for llama-server + model), download progress bar, start/stop server button, API port config.

@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex};
 use crate::audio::AudioEngineHandle;
 use crate::audio::analysis::WaveformCache;
 use crate::keys::KeyDetector;
+use crate::mood::cache::MoodCache;
+use crate::mood::inference::LlamaServer;
 use crate::storage;
 use crate::types::AppConfig;
 use crate::youtube::YouTubeCache;
@@ -28,6 +30,12 @@ pub struct AppState {
     pub profile_load_gen: Arc<AtomicU64>,
     /// Dirty flag for debounced config writes (flushed every 2s by background thread).
     pub config_dirty: Arc<AtomicBool>,
+    /// Running llama-server instance for mood inference.
+    pub llama_server: Arc<tokio::sync::Mutex<Option<LlamaServer>>>,
+    /// Running mood API HTTP server handle.
+    pub mood_api_server: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
+    /// Ephemeral mood cache for pre-calculated page moods.
+    pub mood_cache: Arc<Mutex<MoodCache>>,
 }
 
 impl AppState {
@@ -51,6 +59,9 @@ impl AppState {
             cpu_pool,
             profile_load_gen: Arc::new(AtomicU64::new(0)),
             config_dirty: Arc::new(AtomicBool::new(false)),
+            llama_server: Arc::new(tokio::sync::Mutex::new(None)),
+            mood_api_server: Arc::new(Mutex::new(None)),
+            mood_cache: Arc::new(Mutex::new(MoodCache::new())),
         }
     }
 

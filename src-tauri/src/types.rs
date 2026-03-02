@@ -5,6 +5,21 @@ pub type TrackId = String;
 pub type ProfileId = String;
 pub type KeyCode = String;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum MoodCategory {
+    EpicBattle,
+    Tension,
+    Sadness,
+    Comedy,
+    Romance,
+    Horror,
+    Peaceful,
+    EmotionalClimax,
+    Mystery,
+    ChaseAction,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SoundSource {
@@ -64,6 +79,8 @@ pub struct KeyBinding {
     pub current_index: usize,
     #[serde(default)]
     pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mood: Option<MoodCategory>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,10 +132,18 @@ pub struct AppConfig {
     pub momentum_modifier: MomentumModifier,
     #[serde(default)]
     pub playlist_import_enabled: bool,
+    #[serde(default)]
+    pub mood_ai_enabled: bool,
+    #[serde(default = "default_mood_api_port")]
+    pub mood_api_port: u16,
 }
 
 fn default_chord_window_ms() -> u32 {
     30
+}
+
+fn default_mood_api_port() -> u16 {
+    8765
 }
 
 impl Default for AppConfig {
@@ -141,6 +166,8 @@ impl Default for AppConfig {
             chord_window_ms: 30,
             momentum_modifier: MomentumModifier::default(),
             playlist_import_enabled: false,
+            mood_ai_enabled: false,
+            mood_api_port: 8765,
         }
     }
 }

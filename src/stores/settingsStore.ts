@@ -20,6 +20,8 @@ interface SettingsState {
   setChordWindowMs: (ms: number) => Promise<void>;
   setMomentumModifier: (modifier: MomentumModifier) => Promise<void>;
   setPlaylistImportEnabled: (enabled: boolean) => Promise<void>;
+  setMoodAiEnabled: (enabled: boolean) => Promise<void>;
+  setMoodApiPort: (port: number) => Promise<void>;
   loadConfig: () => Promise<void>;
 }
 
@@ -37,6 +39,8 @@ const defaultConfig: AppConfig = {
   chordWindowMs: 30,
   momentumModifier: "Shift",
   playlistImportEnabled: false,
+  moodAiEnabled: false,
+  moodApiPort: 8765,
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -217,6 +221,32 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await commands.updateConfig({ playlistImportEnabled: enabled });
     } catch (e) {
       set((state) => ({ config: { ...state.config, playlistImportEnabled: prev } }));
+    }
+  },
+
+  setMoodAiEnabled: async (enabled) => {
+    const prev = get().config.moodAiEnabled;
+    set((state) => ({
+      config: { ...state.config, moodAiEnabled: enabled },
+    }));
+    try {
+      await commands.updateConfig({ moodAiEnabled: enabled });
+    } catch (e) {
+      set((state) => ({ config: { ...state.config, moodAiEnabled: prev } }));
+      useToastStore.getState().addToast("Failed to toggle Mood AI", "error");
+    }
+  },
+
+  setMoodApiPort: async (port) => {
+    const prev = get().config.moodApiPort;
+    set((state) => ({
+      config: { ...state.config, moodApiPort: port },
+    }));
+    try {
+      await commands.updateConfig({ moodApiPort: port });
+    } catch (e) {
+      set((state) => ({ config: { ...state.config, moodApiPort: prev } }));
+      useToastStore.getState().addToast("Failed to set API port", "error");
     }
   },
 }));

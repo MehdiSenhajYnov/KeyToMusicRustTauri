@@ -6,6 +6,7 @@ mod commands;
 mod discovery;
 mod import_export;
 mod keys;
+mod mood;
 mod state;
 mod storage;
 mod types;
@@ -26,10 +27,14 @@ fn init_logging() -> tracing_appender::non_blocking::WorkerGuard {
     let _ = std::fs::create_dir_all(&logs_dir);
 
     let file_appender = tracing_appender::rolling::daily(&logs_dir, "keytomusic.log");
-    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+    let (non_blocking_file, guard) = tracing_appender::non_blocking(file_appender);
+
+    // Write to both file and stderr (visible in `npm run tauri dev` terminal)
+    use tracing_subscriber::fmt::writer::MakeWriterExt;
+    let combined_writer = std::io::stderr.and(non_blocking_file);
 
     tracing_subscriber::fmt()
-        .with_writer(non_blocking)
+        .with_writer(combined_writer)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
@@ -84,11 +89,20 @@ fn main() {
     // Create app state (audio engine NOT yet initialized — deferred to setup hook)
     let app_state = AppState::new(config, key_detector.clone(), youtube_cache);
 
-    // Defer YouTube cache cleanup to a background thread (saves ~500ms startup)
+    // Defer YouTube cache cleanup + yt-dlp auto-update to a background thread (saves ~500ms startup)
     {
         let yt_cache = app_state.youtube_cache.clone();
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(5));
+
+            // Auto-update yt-dlp (download if missing, re-download if > 7 days old)
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            if let Ok(rt) = rt {
+                rt.block_on(youtube::ensure_yt_dlp_up_to_date());
+            }
+
             if let Ok(mut cache) = yt_cache.lock() {
                 cache.ensure_loaded();
                 cache.verify_integrity();
@@ -305,6 +319,15 @@ fn main() {
             open_folder,
             // Startup command
             get_initial_state,
+            // Mood AI commands
+            check_llama_server_installed,
+            install_llama_server,
+            check_mood_model_installed,
+            install_mood_model,
+            start_mood_server,
+            stop_mood_server,
+            get_mood_server_status,
+            analyze_mood,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

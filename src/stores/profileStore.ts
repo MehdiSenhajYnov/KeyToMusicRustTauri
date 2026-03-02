@@ -454,7 +454,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     if (!currentProfile) return;
 
     // Only track meaningful changes (not currentIndex updates from playback)
-    const trackableUpdates = ["loopMode", "name", "soundIds", "trackId"];
+    const trackableUpdates = ["loopMode", "name", "soundIds", "trackId", "mood"];
     const hasTrackableChange = Object.keys(updates).some((k) =>
       trackableUpdates.includes(k)
     );

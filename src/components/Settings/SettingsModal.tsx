@@ -17,6 +17,7 @@ import * as commands from "../../utils/tauriCommands";
 import { useToastStore } from "../../stores/toastStore";
 import { WarningTooltip } from "../common/WarningTooltip";
 import { DislikedVideosPanel } from "./DislikedVideosPanel";
+import { useMoodStore } from "../../stores/moodStore";
 import type { MomentumModifier } from "../../types";
 
 interface SettingsModalProps {
@@ -30,6 +31,139 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
     <h3 className="text-text-secondary text-xs font-semibold uppercase tracking-wide border-b border-border-color pb-1 mb-3">
       {children}
     </h3>
+  );
+}
+
+function MoodAiSection({ config }: { config: import("../../types").AppConfig }) {
+  const {
+    serverStatus, serverInstalled, modelInstalled,
+    modelDownloadProgress, checkInstallation,
+    installServer, installModel, startServer, stopServer,
+    setModelDownloadProgress, setServerStatus,
+  } = useMoodStore();
+
+  useEffect(() => { checkInstallation(); }, []);
+
+  // Listen for backend events
+  useEffect(() => {
+    let cleanups: (() => void)[] = [];
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      listen<{ downloaded: number; total: number }>("mood_model_download_progress", (e) => {
+        setModelDownloadProgress(e.payload);
+      }).then((u) => cleanups.push(u));
+      listen<{ status: string }>("mood_server_status", (e) => {
+        setServerStatus(e.payload.status as any);
+      }).then((u) => cleanups.push(u));
+    });
+    return () => { cleanups.forEach((u) => u()); };
+  }, []);
+
+  return (
+    <section>
+      <SectionHeader>Manga Mood AI</SectionHeader>
+      <div className="space-y-3">
+        {/* Toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <label className="text-text-secondary text-sm font-medium">Enable Mood AI</label>
+            <p className="text-text-muted text-xs">Detect manga page mood and auto-trigger tagged sounds.</p>
+          </div>
+          <button
+            onClick={() => useSettingsStore.getState().setMoodAiEnabled(!config.moodAiEnabled)}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+              config.moodAiEnabled ? "bg-accent-primary" : "bg-bg-tertiary"
+            }`}
+          >
+            <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+              config.moodAiEnabled ? "translate-x-[18px]" : "translate-x-[2px]"
+            }`} />
+          </button>
+        </div>
+
+        {/* Installation status */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${serverInstalled ? "bg-accent-success" : "bg-accent-error"}`} />
+            <span className="text-text-secondary text-sm">llama-server</span>
+            {!serverInstalled && (
+              <button onClick={installServer} className="text-xs text-accent-primary hover:underline">
+                Install
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${modelInstalled ? "bg-accent-success" : "bg-accent-error"}`} />
+            <span className="text-text-secondary text-sm">Qwen3-VL 2B model</span>
+            {!modelInstalled && (
+              <button onClick={installModel} className="text-xs text-accent-primary hover:underline">
+                Download (~1.9 GB)
+              </button>
+            )}
+          </div>
+          {modelDownloadProgress && modelDownloadProgress.total > 0 && (
+            <div className="space-y-1">
+              <div className="w-full bg-bg-tertiary rounded-full h-1.5">
+                <div
+                  className="bg-accent-primary h-1.5 rounded-full transition-all"
+                  style={{ width: `${(modelDownloadProgress.downloaded / modelDownloadProgress.total) * 100}%` }}
+                />
+              </div>
+              <p className="text-text-muted text-xs">
+                {(modelDownloadProgress.downloaded / 1024 / 1024).toFixed(0)} / {(modelDownloadProgress.total / 1024 / 1024).toFixed(0)} MB
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Server controls */}
+        {serverInstalled && modelInstalled && (
+          <div className="flex items-center gap-3">
+            <span className={`w-2 h-2 rounded-full ${
+              serverStatus === "running" ? "bg-accent-success" :
+              serverStatus === "starting" ? "bg-yellow-400 animate-pulse" :
+              "bg-text-muted"
+            }`} />
+            <span className="text-text-secondary text-sm capitalize">{serverStatus}</span>
+            {serverStatus === "stopped" || serverStatus === "error" ? (
+              <button
+                onClick={startServer}
+                className="px-2 py-1 text-xs bg-accent-primary/20 text-accent-primary rounded hover:bg-accent-primary/30"
+              >
+                Start Server
+              </button>
+            ) : serverStatus === "running" ? (
+              <button
+                onClick={stopServer}
+                className="px-2 py-1 text-xs bg-accent-error/20 text-accent-error rounded hover:bg-accent-error/30"
+              >
+                Stop Server
+              </button>
+            ) : null}
+          </div>
+        )}
+
+        {/* API Port */}
+        <div className="space-y-1">
+          <label className="text-text-secondary text-sm font-medium">API Port</label>
+          <input
+            type="number"
+            min="1024"
+            max="65535"
+            value={config.moodApiPort}
+            onChange={(e) => {
+              const port = Number(e.target.value);
+              if (port >= 1024 && port <= 65535) {
+                useSettingsStore.getState().setMoodApiPort(port);
+              }
+            }}
+            className="w-24 bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary focus:border-border-focus outline-none"
+          />
+          <p className="text-text-muted text-xs">
+            HTTP port for external tools (browser extensions, scripts).
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -506,6 +640,9 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
               </p>
             </div>
           </section>
+
+          {/* ===== MANGA MOOD AI SECTION ===== */}
+          <MoodAiSection config={config} />
 
           {/* ===== DATA SECTION ===== */}
           <section>
