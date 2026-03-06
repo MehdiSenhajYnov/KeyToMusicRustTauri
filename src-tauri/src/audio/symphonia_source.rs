@@ -1,6 +1,6 @@
 use std::fs::File;
-use std::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -42,19 +42,26 @@ impl SymphoniaSource {
     /// Decoding is done in a background thread; the returned source reads
     /// from a bounded channel of pre-decoded sample buffers.
     pub fn new(file_path: &str, seek_to_secs: f64) -> Result<Self, String> {
-        let file = File::open(file_path)
-            .map_err(|e| format!("Failed to open file: {}", e))?;
+        let file = File::open(file_path).map_err(|e| format!("Failed to open file: {}", e))?;
 
         let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
         // Probe the file format
         let mut hint = Hint::new();
-        if let Some(ext) = std::path::Path::new(file_path).extension().and_then(|e| e.to_str()) {
+        if let Some(ext) = std::path::Path::new(file_path)
+            .extension()
+            .and_then(|e| e.to_str())
+        {
             hint.with_extension(ext);
         }
 
         let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
             .map_err(|e| format!("Failed to probe audio format: {}", e))?;
 
         let mut reader = probed.format;
@@ -69,11 +76,10 @@ impl SymphoniaSource {
         let track_id = track.id;
         let codec_params = track.codec_params.clone();
 
-        let sample_rate = codec_params.sample_rate
+        let sample_rate = codec_params
+            .sample_rate
             .ok_or_else(|| "Unknown sample rate".to_string())?;
-        let channels = codec_params.channels
-            .map(|c| c.count() as u16)
-            .unwrap_or(2);
+        let channels = codec_params.channels.map(|c| c.count() as u16).unwrap_or(2);
 
         // Create decoder
         let mut decoder = symphonia::default::get_codecs()
@@ -87,7 +93,9 @@ impl SymphoniaSource {
                 track_id: Some(track_id),
             };
             match reader.seek(SeekMode::Coarse, seek_to) {
-                Ok(_) => { decoder.reset(); }
+                Ok(_) => {
+                    decoder.reset();
+                }
                 Err(_) => {
                     return Err("Seek failed".to_string());
                 }
@@ -103,7 +111,14 @@ impl SymphoniaSource {
         thread::Builder::new()
             .name("symphonia-decode".into())
             .spawn(move || {
-                decode_thread(reader, decoder, track_id, sample_rate, buf_tx, stop_flag_clone);
+                decode_thread(
+                    reader,
+                    decoder,
+                    track_id,
+                    sample_rate,
+                    buf_tx,
+                    stop_flag_clone,
+                );
             })
             .map_err(|e| format!("Failed to spawn decode thread: {}", e))?;
 
@@ -171,7 +186,8 @@ fn decode_thread(
                     let buf = match &mut decode_buf {
                         Some(buf) if buf.capacity() >= duration => buf,
                         _ => {
-                            decode_buf = Some(SampleBuffer::<f32>::new(duration as u64, signal_spec));
+                            decode_buf =
+                                Some(SampleBuffer::<f32>::new(duration as u64, signal_spec));
                             decode_buf.as_mut().unwrap()
                         }
                     };

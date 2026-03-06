@@ -10,6 +10,8 @@ import { useConfirmStore } from "./stores/confirmStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useProfileStore } from "./stores/profileStore";
 import { useExportStore } from "./stores/exportStore";
+import { useRuntimeStore } from "./stores/runtimeStore";
+import { useToastStore } from "./stores/toastStore";
 import * as commands from "./utils/tauriCommands";
 import { useAudioEvents } from "./hooks/useAudioEvents";
 import { useKeyDetection } from "./hooks/useKeyDetection";
@@ -50,6 +52,9 @@ function App() {
   const [showHelp, setShowHelp] = useState(false);
   const currentProfileId = useSettingsStore((s) => s.config.currentProfileId);
   const { loadProfile, currentProfile } = useProfileStore();
+  const inputRuntime = useRuntimeStore((s) => s.inputRuntime);
+  const addToast = useToastStore((s) => s.addToast);
+  const backgroundSetupPromptedRef = useRef(false);
 
   // Initialize hooks
   useAudioEvents();
@@ -77,6 +82,7 @@ function App() {
   useEffect(() => {
     commands.getInitialState().then((state) => {
       useSettingsStore.getState().setConfig(state.config);
+      useRuntimeStore.getState().setInputRuntime(state.inputRuntime);
       useProfileStore.setState({
         profiles: state.profiles,
         currentProfile: state.currentProfile,
@@ -87,6 +93,49 @@ function App() {
       useProfileStore.setState({ isLoading: false });
     });
   }, []);
+
+  useEffect(() => {
+    if (!inputRuntime.isLinux || !inputRuntime.isWayland) return;
+    if (backgroundSetupPromptedRef.current) return;
+
+    let cancelled = false;
+
+    const checkAndEnableBackgroundDetection = async () => {
+      try {
+        const status = await commands.getLinuxInputAccessStatus();
+        if (cancelled || status.backgroundDetectionAvailable || !status.canAutoFix) {
+          return;
+        }
+
+        backgroundSetupPromptedRef.current = true;
+        const confirmed = await useConfirmStore.getState().confirm(
+          "Background key detection needs a one-time Linux permission on Wayland. KeyToMusic can enable it automatically now and will show the usual system admin password prompt. Enable it?"
+        );
+
+        if (!confirmed || cancelled) {
+          return;
+        }
+
+        const result = await commands.enableLinuxBackgroundDetection();
+        if (cancelled) return;
+
+        addToast(
+          result.message,
+          result.status.backgroundDetectionAvailable ? "success" : "info"
+        );
+      } catch (error) {
+        if (!cancelled) {
+          addToast(String(error), "error");
+        }
+      }
+    };
+
+    void checkAndEnableBackgroundDetection();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [inputRuntime.isLinux, inputRuntime.isWayland, addToast]);
 
   // Load current profile when ID changes (after initial load, e.g. user switches profile)
   const initialLoadDone = useRef(false);

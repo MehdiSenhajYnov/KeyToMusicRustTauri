@@ -23,7 +23,9 @@ pub fn list_profiles() -> Result<Vec<ProfileSummary>, String> {
 
     let mut summaries = Vec::new();
 
-    for entry in fs::read_dir(&profiles_dir).map_err(|e| format!("Failed to read profiles dir: {}", e))? {
+    for entry in
+        fs::read_dir(&profiles_dir).map_err(|e| format!("Failed to read profiles dir: {}", e))?
+    {
         let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
         let path = entry.path();
 
@@ -32,8 +34,14 @@ pub fn list_profiles() -> Result<Vec<ProfileSummary>, String> {
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(&contents) {
                     let id = val.get("id").and_then(|v| v.as_str()).unwrap_or_default();
                     let name = val.get("name").and_then(|v| v.as_str()).unwrap_or_default();
-                    let created_at = val.get("createdAt").and_then(|v| v.as_str()).unwrap_or_default();
-                    let updated_at = val.get("updatedAt").and_then(|v| v.as_str()).unwrap_or_default();
+                    let created_at = val
+                        .get("createdAt")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default();
+                    let updated_at = val
+                        .get("updatedAt")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default();
 
                     // Skip entries that lack an id (not a valid profile)
                     if !id.is_empty() {
@@ -72,14 +80,16 @@ pub fn create_profile(name: String) -> Result<Profile, String> {
 }
 
 pub fn load_profile(id: String) -> Result<Profile, String> {
-    let profile_path = get_app_data_dir().join("profiles").join(format!("{}.json", id));
+    let profile_path = get_app_data_dir()
+        .join("profiles")
+        .join(format!("{}.json", id));
 
     if !profile_path.exists() {
         return Err(format!("Profile not found: {}", id));
     }
 
-    let contents = fs::read_to_string(&profile_path)
-        .map_err(|e| format!("Failed to read profile: {}", e))?;
+    let contents =
+        fs::read_to_string(&profile_path).map_err(|e| format!("Failed to read profile: {}", e))?;
 
     serde_json::from_str(&contents).map_err(|e| format!("Failed to parse profile: {}", e))
 }
@@ -94,7 +104,8 @@ pub fn save_profile(profile: &Profile) -> Result<(), String> {
         .map_err(|e| format!("Failed to serialize profile: {}", e))?;
 
     fs::write(&tmp_path, json).map_err(|e| format!("Failed to write profile temp file: {}", e))?;
-    fs::rename(&tmp_path, &profile_path).map_err(|e| format!("Failed to rename profile file: {}", e))?;
+    fs::rename(&tmp_path, &profile_path)
+        .map_err(|e| format!("Failed to rename profile file: {}", e))?;
 
     Ok(())
 }
@@ -119,11 +130,7 @@ pub fn update_resolved_video_ids(
 
 /// Atomic read→modify→write: adds or removes a single disliked video ID
 /// without touching any other profile data.
-pub fn update_disliked_videos(
-    profile_id: &str,
-    video_id: &str,
-    add: bool,
-) -> Result<(), String> {
+pub fn update_disliked_videos(profile_id: &str, video_id: &str, add: bool) -> Result<(), String> {
     let mut profile = load_profile(profile_id.to_string())?;
 
     if add {
@@ -139,7 +146,9 @@ pub fn update_disliked_videos(
 }
 
 pub fn delete_profile(id: String) -> Result<(), String> {
-    let profile_path = get_app_data_dir().join("profiles").join(format!("{}.json", id));
+    let profile_path = get_app_data_dir()
+        .join("profiles")
+        .join(format!("{}.json", id));
 
     if !profile_path.exists() {
         return Err(format!("Profile not found: {}", id));

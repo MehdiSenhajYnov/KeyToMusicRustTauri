@@ -43,6 +43,9 @@ tauri-plugin-shell = "2"
 # Use RustDesk's fork of rdev for Linux
 rdev = { git = "https://github.com/fufesou/rdev", branch = "master" }
 
+[target."cfg(target_os = \"linux\")".dependencies]
+evdev = "0.13.2"
+
 [target."cfg(target_os = \"windows\")".dependencies]
 # Use Windows API directly for keyboard input (Raw Input API for global key capture)
 windows = { version = "0.58", features = [
@@ -54,6 +57,9 @@ windows = { version = "0.58", features = [
     "Win32_Devices_HumanInterfaceDevice",
     "Win32_Graphics_Gdi"
 ] }
+
+[dev-dependencies]
+rand = "0.8"
 
 [profile.release]
 lto = "thin"

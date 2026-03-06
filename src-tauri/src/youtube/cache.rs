@@ -217,7 +217,11 @@ impl YouTubeCache {
 
     /// Remove audio files in the cache directory that are not tracked by the index
     /// and not referenced by any profile or discovery suggestion.
-    fn cleanup_untracked_files(&self, used_paths: &HashSet<String>, discovery_vids: &HashSet<String>) {
+    fn cleanup_untracked_files(
+        &self,
+        used_paths: &HashSet<String>,
+        discovery_vids: &HashSet<String>,
+    ) {
         let dir_entries = match fs::read_dir(&self.cache_dir) {
             Ok(e) => e,
             Err(_) => return,
@@ -232,10 +236,7 @@ impl YouTubeCache {
 
         for entry in dir_entries.flatten() {
             let path = entry.path();
-            let ext = path
-                .extension()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
             if !audio_extensions.contains(&ext) {
                 continue;
             }
@@ -297,7 +298,8 @@ fn collect_used_cached_paths() -> HashSet<String> {
             for sound in sounds {
                 if let Some(source) = sound.get("source") {
                     if source.get("type").and_then(|t| t.as_str()) == Some("youtube") {
-                        if let Some(cached_path) = source.get("cachedPath").and_then(|p| p.as_str()) {
+                        if let Some(cached_path) = source.get("cachedPath").and_then(|p| p.as_str())
+                        {
                             used.insert(cached_path.to_string());
                         }
                     }

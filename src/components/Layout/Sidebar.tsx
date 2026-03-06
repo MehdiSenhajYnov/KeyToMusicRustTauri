@@ -11,6 +11,9 @@ const DiscoveryPanel = lazy(() => import("../Discovery/DiscoveryPanel").then(m =
 
 function MoodIndicator() {
   const lastMood = useMoodStore((s) => s.lastDetectedMood);
+  const lastIntensity = useMoodStore((s) => s.lastDetectedIntensity);
+  const committedMood = useMoodStore((s) => s.committedMood);
+  const committedIntensity = useMoodStore((s) => s.committedIntensity);
   const serverStatus = useMoodStore((s) => s.serverStatus);
   const serverInstalled = useMoodStore((s) => s.serverInstalled);
   const modelInstalled = useMoodStore((s) => s.modelInstalled);
@@ -67,14 +70,35 @@ function MoodIndicator() {
           <span className="text-text-muted text-xs italic">Not installed</span>
         )}
       </div>
-      {lastMood && (() => {
+      {committedMood && (() => {
+        const colors = MOOD_COLORS[committedMood];
+        return (
+          <div className="flex items-center gap-1.5">
+            <span className="text-text-muted text-xs">Playing:</span>
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${colors.bg} ${colors.text}`}>
+              {MOOD_DISPLAY[committedMood]}
+            </span>
+            {committedIntensity && (
+              <span className="text-text-muted text-xs">
+                lv.{committedIntensity}
+              </span>
+            )}
+          </div>
+        );
+      })()}
+      {lastMood && lastMood !== committedMood && (() => {
         const colors = MOOD_COLORS[lastMood];
         return (
           <div className="flex items-center gap-1.5">
-            <span className="text-text-muted text-xs">Last:</span>
-            <span className={`text-xs px-1.5 py-0.5 rounded-full ${colors.bg} ${colors.text}`}>
+            <span className="text-text-muted text-xs">Raw:</span>
+            <span className={`text-xs px-1.5 py-0.5 rounded-full opacity-60 ${colors.bg} ${colors.text}`}>
               {MOOD_DISPLAY[lastMood]}
             </span>
+            {lastIntensity && (
+              <span className="text-text-muted text-xs opacity-60">
+                lv.{lastIntensity}
+              </span>
+            )}
           </div>
         );
       })()}

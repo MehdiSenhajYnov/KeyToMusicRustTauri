@@ -6,8 +6,8 @@ import { useToastStore } from "../stores/toastStore";
 import { useMoodStore } from "../stores/moodStore";
 import * as commands from "../utils/tauriCommands";
 import { getSoundFilePath } from "../utils/soundHelpers";
-import { MOOD_DISPLAY } from "../utils/moodHelpers";
-import type { MoodCategory, LoopMode, Sound } from "../types";
+import { MOOD_DISPLAY, INTENSITY_DISPLAY } from "../utils/moodHelpers";
+import type { BaseMood, MoodIntensity, LoopMode, Sound } from "../types";
 
 function selectSoundForMood(
   soundIds: string[],
@@ -45,38 +45,55 @@ function selectSoundForMood(
 
 interface MoodDetectedPayload {
   mood: string;
+  intensity?: number;
   source: string;
 }
 
-export function useMoodPlayback() {
-  // Track the currently active mood to avoid re-triggering on same mood
-  const activeMoodRef = useRef<MoodCategory | null>(null);
+interface MoodCommittedPayload {
+  mood: string;
+  intensity?: number;
+  source: string;
+  previous_mood?: string;
+  previous_intensity?: number;
+  dwell_count?: number;
+  mood_changed?: boolean;
+  intensity_changed?: boolean;
+}
 
-  const handleMoodDetected = useCallback(async (payload: MoodDetectedPayload) => {
+export function useMoodPlayback() {
+  // Track the currently active committed mood+intensity to avoid re-triggering
+  const activeMoodRef = useRef<BaseMood | null>(null);
+  const activeIntensityRef = useRef<MoodIntensity | null>(null);
+
+  const handleMoodCommitted = useCallback(async (payload: MoodCommittedPayload) => {
     const config = useSettingsStore.getState().config;
     if (!config.moodAiEnabled) return;
 
-    const mood = payload.mood as MoodCategory;
-    useMoodStore.getState().setLastDetectedMood(mood);
+    const mood = payload.mood as BaseMood;
+    const intensity = (payload.intensity ?? 2) as MoodIntensity;
+    useMoodStore.getState().setCommittedMood(mood, intensity);
 
-    // Skip if same mood is already active — don't restart sounds
-    if (activeMoodRef.current === mood) {
+    // Skip if same mood AND same intensity already active
+    if (activeMoodRef.current === mood && activeIntensityRef.current === intensity) {
       return;
     }
 
     const currentProfile = useProfileStore.getState().currentProfile;
     if (!currentProfile) return;
 
-    // Find all bindings tagged with this mood
-    const matchingBindings = currentProfile.keyBindings.filter(
-      (kb) => kb.mood === mood
-    );
+    // Find all bindings tagged with this mood, respecting intensity threshold
+    const matchingBindings = currentProfile.keyBindings.filter((kb) => {
+      if (kb.mood !== mood) return false;
+      // If binding has a minimum intensity, check threshold
+      if (kb.moodIntensity && intensity < kb.moodIntensity) return false;
+      return true;
+    });
 
     if (matchingBindings.length === 0) {
-      // Update active mood even with no bindings (prevents spamming toast on every page)
       activeMoodRef.current = mood;
+      activeIntensityRef.current = intensity;
       useToastStore.getState().addToast(
-        `Mood detected: ${MOOD_DISPLAY[mood] ?? mood} (no tagged keys)`,
+        `Mood committed: ${MOOD_DISPLAY[mood] ?? mood} ${INTENSITY_DISPLAY[intensity]} (no tagged keys)`,
         "info"
       );
       return;
@@ -85,6 +102,7 @@ export function useMoodPlayback() {
     // Mood changed — update active mood and trigger new sounds
     const previousMood = activeMoodRef.current;
     activeMoodRef.current = mood;
+    activeIntensityRef.current = intensity;
 
     // Build sound lookup map
     const soundMap = new Map(currentProfile.sounds.map((s) => [s.id, s]));
@@ -92,13 +110,12 @@ export function useMoodPlayback() {
     // Toast notification
     useToastStore.getState().addToast(
       previousMood
-        ? `Mood: ${MOOD_DISPLAY[previousMood] ?? previousMood} → ${MOOD_DISPLAY[mood] ?? mood}`
-        : `Mood: ${MOOD_DISPLAY[mood] ?? mood} — triggering ${matchingBindings.length} key(s)`,
+        ? `Mood: ${MOOD_DISPLAY[previousMood] ?? previousMood} → ${MOOD_DISPLAY[mood] ?? mood} (${INTENSITY_DISPLAY[intensity]})`
+        : `Mood: ${MOOD_DISPLAY[mood] ?? mood} (${INTENSITY_DISPLAY[intensity]}) — triggering ${matchingBindings.length} key(s)`,
       "success"
     );
 
-    // Trigger all matching bindings in parallel (multi-track, same as key detection)
-    // The audio engine handles crossfade automatically when a new sound plays on an occupied track
+    // Trigger all matching bindings in parallel
     const playPromises = matchingBindings.map(async (binding) => {
       const { sound, nextIndex } = selectSoundForMood(
         binding.soundIds,
@@ -109,7 +126,6 @@ export function useMoodPlayback() {
 
       if (!sound) return;
 
-      // Update currentIndex for next trigger
       useProfileStore.getState().updateKeyBinding(
         binding.keyCode,
         binding.trackId,
@@ -137,20 +153,31 @@ export function useMoodPlayback() {
   }, []);
 
   useEffect(() => {
-    const unlistenMood = listen<MoodDetectedPayload>("mood_detected", (event) => {
-      handleMoodDetected(event.payload);
+    // mood_detected → UI only (raw mood display in Sidebar)
+    const unlistenDetected = listen<MoodDetectedPayload>("mood_detected", (event) => {
+      useMoodStore.getState().setLastDetectedMood(
+        event.payload.mood as BaseMood,
+        (event.payload.intensity ?? 2) as MoodIntensity
+      );
     });
 
-    // Reset active mood when all sounds are stopped (so next detection re-triggers)
+    // mood_committed → PLAYBACK (filtered by MoodDirector)
+    const unlistenCommitted = listen<MoodCommittedPayload>("mood_committed", (event) => {
+      handleMoodCommitted(event.payload);
+    });
+
+    // Reset active mood when all sounds are stopped
     const unlistenStopAll = listen("stop_all_triggered", () => {
       activeMoodRef.current = null;
+      activeIntensityRef.current = null;
     });
 
     return () => {
-      unlistenMood.then((u) => u());
+      unlistenDetected.then((u) => u());
+      unlistenCommitted.then((u) => u());
       unlistenStopAll.then((u) => u());
     };
-  }, [handleMoodDetected]);
+  }, [handleMoodCommitted]);
 
   // Reset active mood on profile switch
   useEffect(() => {
@@ -159,6 +186,8 @@ export function useMoodPlayback() {
       const newId = state.currentProfile?.id;
       if (newId !== prevProfileId) {
         activeMoodRef.current = null;
+        activeIntensityRef.current = null;
+        useMoodStore.getState().setCommittedMood(null);
         prevProfileId = newId;
       }
     });

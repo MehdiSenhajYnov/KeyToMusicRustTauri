@@ -193,8 +193,17 @@ impl ChordDetector {
 
     /// Check if a key is a modifier
     fn is_modifier(key: &str) -> bool {
-        matches!(key, "ControlLeft" | "ControlRight" | "ShiftLeft" | "ShiftRight"
-                    | "AltLeft" | "AltRight" | "MetaLeft" | "MetaRight")
+        matches!(
+            key,
+            "ControlLeft"
+                | "ControlRight"
+                | "ShiftLeft"
+                | "ShiftRight"
+                | "AltLeft"
+                | "AltRight"
+                | "MetaLeft"
+                | "MetaRight"
+        )
     }
 
     /// Build the current combo string from pressed keys
@@ -202,16 +211,28 @@ impl ChordDetector {
         let mut parts = Vec::new();
 
         // Add modifiers in canonical order
-        let has_ctrl = self.pressed_modifiers.iter()
+        let has_ctrl = self
+            .pressed_modifiers
+            .iter()
             .any(|m| m == "ControlLeft" || m == "ControlRight");
-        let has_shift = self.pressed_modifiers.iter()
+        let has_shift = self
+            .pressed_modifiers
+            .iter()
             .any(|m| m == "ShiftLeft" || m == "ShiftRight");
-        let has_alt = self.pressed_modifiers.iter()
+        let has_alt = self
+            .pressed_modifiers
+            .iter()
             .any(|m| m == "AltLeft" || m == "AltRight");
 
-        if has_ctrl { parts.push("Ctrl".to_string()); }
-        if has_shift { parts.push("Shift".to_string()); }
-        if has_alt { parts.push("Alt".to_string()); }
+        if has_ctrl {
+            parts.push("Ctrl".to_string());
+        }
+        if has_shift {
+            parts.push("Shift".to_string());
+        }
+        if has_alt {
+            parts.push("Alt".to_string());
+        }
 
         // Add base keys sorted alphabetically
         let mut base_keys: Vec<String> = self.pressed_base_keys.iter().cloned().collect();
@@ -392,7 +413,11 @@ mod tests {
         assert!(!trie.is_leaf(&vec!["KeyA".to_string(), "KeyB".to_string()]));
 
         // KeyA+KeyB+KeyC has no extensions, so it's a leaf
-        assert!(trie.is_leaf(&vec!["KeyA".to_string(), "KeyB".to_string(), "KeyC".to_string()]));
+        assert!(trie.is_leaf(&vec![
+            "KeyA".to_string(),
+            "KeyB".to_string(),
+            "KeyC".to_string()
+        ]));
     }
 
     #[test]
@@ -425,16 +450,13 @@ mod tests {
 
     #[test]
     fn test_chord_detector_pending() {
-        let bindings = vec![
-            "KeyA".to_string(),
-            "KeyA+KeyZ".to_string(),
-        ];
+        let bindings = vec!["KeyA".to_string(), "KeyA+KeyZ".to_string()];
         let mut detector = ChordDetector::new(30);
         detector.set_bindings(&bindings);
 
         // Pressing A should be pending (extensions exist)
         match detector.on_key_press("KeyA") {
-            ChordResult::Pending => {},
+            ChordResult::Pending => {}
             _ => panic!("Expected pending"),
         }
 
@@ -443,10 +465,7 @@ mod tests {
 
     #[test]
     fn test_chord_detector_multi_key_leaf() {
-        let bindings = vec![
-            "KeyA".to_string(),
-            "KeyA+KeyZ".to_string(),
-        ];
+        let bindings = vec!["KeyA".to_string(), "KeyA+KeyZ".to_string()];
         let mut detector = ChordDetector::new(30);
         detector.set_bindings(&bindings);
 

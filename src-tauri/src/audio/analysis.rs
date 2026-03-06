@@ -55,7 +55,9 @@ pub fn read_audio_metadata_tags(path: &str) -> Option<AudioTags> {
     let mut artist = None;
 
     // Check metadata from the probe result (container-level tags)
-    let extract_tags = |tags: &[symphonia::core::meta::Tag], title: &mut Option<String>, artist: &mut Option<String>| {
+    let extract_tags = |tags: &[symphonia::core::meta::Tag],
+                        title: &mut Option<String>,
+                        artist: &mut Option<String>| {
         for tag in tags {
             match tag.std_key {
                 Some(StandardTagKey::TrackTitle) => {
@@ -104,8 +106,7 @@ pub fn read_audio_metadata_tags(path: &str) -> Option<AudioTags> {
 pub fn compute_waveform(file_path: &str, num_points: usize) -> Result<WaveformData, String> {
     let num_points = num_points.clamp(10, 2000);
 
-    let file =
-        File::open(file_path).map_err(|e| format!("Failed to open audio file: {}", e))?;
+    let file = File::open(file_path).map_err(|e| format!("Failed to open audio file: {}", e))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
     let mut hint = Hint::new();
@@ -136,10 +137,7 @@ pub fn compute_waveform(file_path: &str, num_points: usize) -> Result<WaveformDa
     let track_id = track.id;
     let codec_params = track.codec_params.clone();
     let sample_rate = codec_params.sample_rate.unwrap_or(44100);
-    let channels = codec_params
-        .channels
-        .map(|c| c.count())
-        .unwrap_or(2);
+    let channels = codec_params.channels.map(|c| c.count()).unwrap_or(2);
 
     // Get duration
     let duration = codec_params
@@ -305,8 +303,7 @@ pub fn compute_waveform_sampled(
 ) -> Result<WaveformData, String> {
     let num_points = num_points.clamp(10, 2000);
 
-    let file =
-        File::open(file_path).map_err(|e| format!("Failed to open audio file: {}", e))?;
+    let file = File::open(file_path).map_err(|e| format!("Failed to open audio file: {}", e))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
     let mut hint = Hint::new();
@@ -337,10 +334,7 @@ pub fn compute_waveform_sampled(
     let track_id = track.id;
     let codec_params = track.codec_params.clone();
     let sample_rate = codec_params.sample_rate.unwrap_or(44100);
-    let channels = codec_params
-        .channels
-        .map(|c| c.count())
-        .unwrap_or(2);
+    let channels = codec_params.channels.map(|c| c.count()).unwrap_or(2);
 
     let duration = codec_params
         .n_frames
@@ -373,7 +367,16 @@ pub fn compute_waveform_sampled(
         };
 
         // Seek to the target position
-        if reader.seek(SeekMode::Coarse, SeekTo::Time { time, track_id: Some(track_id) }).is_err() {
+        if reader
+            .seek(
+                SeekMode::Coarse,
+                SeekTo::Time {
+                    time,
+                    track_id: Some(track_id),
+                },
+            )
+            .is_err()
+        {
             // Seeking not supported — fall back to full decode
             return compute_waveform(file_path, num_points);
         }
@@ -525,15 +528,13 @@ fn find_momentum_candidates(
 
     for i in (skip + window)..points.len().saturating_sub(lookahead + 1) {
         // Average of preceding window (should be quiet)
-        let pre_avg: f32 =
-            points[i.saturating_sub(window)..i].iter().sum::<f32>() / window as f32;
+        let pre_avg: f32 = points[i.saturating_sub(window)..i].iter().sum::<f32>() / window as f32;
         if pre_avg >= thresholds.quiet {
             continue;
         }
 
         // Average of following window (should be active)
-        let post_avg: f32 =
-            points[i..i + lookahead].iter().sum::<f32>() / lookahead as f32;
+        let post_avg: f32 = points[i..i + lookahead].iter().sum::<f32>() / lookahead as f32;
 
         // Windowed gradient: difference between post and pre averages
         let windowed_gradient = post_avg - pre_avg;
@@ -563,8 +564,7 @@ fn score_candidate(
     let lookahead = (total_len / 10).max(5).min(remaining);
 
     // 1) Amplitude rise: how much the signal increases at this point
-    let pre_avg: f32 =
-        points[idx.saturating_sub(window)..idx].iter().sum::<f32>() / window as f32;
+    let pre_avg: f32 = points[idx.saturating_sub(window)..idx].iter().sum::<f32>() / window as f32;
     let post_slice = &points[idx..idx + lookahead];
     let post_avg: f32 = post_slice.iter().sum::<f32>() / post_slice.len() as f32;
     let rise = (post_avg - pre_avg).max(0.0) as f64;
@@ -709,7 +709,13 @@ impl WaveformCache {
             self.access_order.remove(pos);
         }
         self.access_order.push(key.clone());
-        self.entries.insert(key, CacheEntry { data, file_modified });
+        self.entries.insert(
+            key,
+            CacheEntry {
+                data,
+                file_modified,
+            },
+        );
         self.dirty = true;
     }
 
@@ -736,7 +742,10 @@ impl WaveformCache {
             .collect();
 
         if !stale_keys.is_empty() {
-            tracing::info!("Waveform cache: removing {} stale entries", stale_keys.len());
+            tracing::info!(
+                "Waveform cache: removing {} stale entries",
+                stale_keys.len()
+            );
             for key in &stale_keys {
                 self.entries.remove(key);
                 if let Some(pos) = self.access_order.iter().position(|k| k == key) {
@@ -776,7 +785,10 @@ impl WaveformCache {
                     break;
                 }
             }
-            tracing::info!("Loaded {} waveform cache entries from disk", self.entries.len());
+            tracing::info!(
+                "Loaded {} waveform cache entries from disk",
+                self.entries.len()
+            );
         }
     }
 

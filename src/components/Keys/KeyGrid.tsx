@@ -10,7 +10,7 @@ import {
 } from "../../utils/keyMapping";
 import { WarningTooltip } from "../common/WarningTooltip";
 import { MOOD_DISPLAY, MOOD_COLORS } from "../../utils/moodHelpers";
-import type { MoodCategory } from "../../types";
+import type { BaseMood, MoodIntensity } from "../../types";
 
 interface KeyGridProps {
   selectedKeys: Set<string>;
@@ -53,7 +53,7 @@ export function KeyGrid({ selectedKeys, onKeySelect, onSelectAll, matchingKeys }
 
   // Group bindings by keyCode to avoid duplicate React keys (multi-track support)
   const groupedKeys = useMemo(() => {
-    const map = new Map<string, { keyCode: string; allSoundIds: string[]; trackCount: number; name?: string; mood?: MoodCategory }>();
+    const map = new Map<string, { keyCode: string; allSoundIds: string[]; trackCount: number; name?: string; mood?: BaseMood; moodIntensity?: MoodIntensity }>();
     for (const kb of keyBindings) {
       const existing = map.get(kb.keyCode);
       if (existing) {

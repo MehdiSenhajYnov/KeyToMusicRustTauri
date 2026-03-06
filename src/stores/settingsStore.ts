@@ -41,6 +41,10 @@ const defaultConfig: AppConfig = {
   playlistImportEnabled: false,
   moodAiEnabled: false,
   moodApiPort: 8765,
+  moodEntryThreshold: 0.55,
+  moodExitThreshold: 0.25,
+  moodDwellPages: 2,
+  moodWindowSize: 5,
 };
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({

@@ -49,7 +49,10 @@ pub fn find_llama_server() -> Option<PathBuf> {
     }
 
     // Check system PATH as fallback
-    if let Ok(output) = std::process::Command::new("llama-server").arg("--version").output() {
+    if let Ok(output) = std::process::Command::new("llama-server")
+        .arg("--version")
+        .output()
+    {
         if output.status.success() {
             return Some(PathBuf::from(llama_server_binary_name()));
         }
@@ -81,19 +84,40 @@ pub fn is_model_downloaded() -> bool {
 }
 
 /// Search pattern to match the right asset in llama.cpp GitHub releases.
-fn asset_search_pattern() -> &'static str {
+fn asset_search_patterns() -> Vec<&'static str> {
     if cfg!(target_os = "windows") {
-        "win-vulkan-x64"
+        vec!["win-vulkan-x64"]
     } else if cfg!(target_os = "macos") {
         if cfg!(target_arch = "aarch64") {
-            "macos-arm64"
+            vec!["macos-arm64"]
         } else {
-            "macos-x64"
+            vec!["macos-x64"]
         }
+    } else if prefers_linux_vulkan() {
+        vec!["ubuntu-vulkan-x64", "ubuntu-x64"]
     } else {
-        // Linux: plain CPU build (most compatible)
-        "ubuntu-x64"
+        vec!["ubuntu-x64"]
     }
+}
+
+#[cfg(target_os = "linux")]
+fn prefers_linux_vulkan() -> bool {
+    match std::env::var("KEYTOMUSIC_LLAMA_BACKEND").ok().as_deref() {
+        Some("cpu") => return false,
+        Some("vulkan") => return true,
+        _ => {}
+    }
+
+    std::process::Command::new("vulkaninfo")
+        .arg("--summary")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn prefers_linux_vulkan() -> bool {
+    false
 }
 
 /// Fetch the download URL for the latest llama-server release from GitHub API.
@@ -115,20 +139,23 @@ async fn fetch_llama_server_url() -> Result<String, String> {
         .await
         .map_err(|e| format!("Failed to parse release info: {}", e))?;
 
-    let pattern = asset_search_pattern();
-    tracing::info!("Looking for asset matching pattern: {}", pattern);
+    let patterns = asset_search_patterns();
+    tracing::info!("Looking for llama.cpp assets matching patterns: {:?}", patterns);
 
     let assets = response["assets"]
         .as_array()
         .ok_or_else(|| "No assets in release".to_string())?;
 
-    // For Linux, exclude rocm/vulkan/s390x variants to get plain CPU build
-    let is_linux = cfg!(not(any(target_os = "windows", target_os = "macos")));
+    for pattern in &patterns {
+        for asset in assets {
+            let name = asset["name"].as_str().unwrap_or_default();
+            if !name.contains(pattern) {
+                continue;
+            }
 
-    for asset in assets {
-        let name = asset["name"].as_str().unwrap_or_default();
-        if name.contains(pattern) {
+            let is_linux = cfg!(not(any(target_os = "windows", target_os = "macos")));
             if is_linux
+                && *pattern == "ubuntu-x64"
                 && (name.contains("rocm")
                     || name.contains("vulkan")
                     || name.contains("s390x")
@@ -136,6 +163,7 @@ async fn fetch_llama_server_url() -> Result<String, String> {
             {
                 continue;
             }
+
             let url = asset["browser_download_url"]
                 .as_str()
                 .ok_or_else(|| "No download URL for asset".to_string())?;
@@ -145,8 +173,8 @@ async fn fetch_llama_server_url() -> Result<String, String> {
     }
 
     Err(format!(
-        "No llama-server release found for platform pattern '{}'",
-        pattern
+        "No llama-server release found for platform patterns {:?}",
+        patterns
     ))
 }
 
@@ -194,6 +222,9 @@ pub async fn download_llama_server() -> Result<PathBuf, String> {
     } else {
         extract_tar_gz_all(&bytes, &target_dir)?;
     }
+
+    #[cfg(target_os = "linux")]
+    ensure_linux_runtime_links(&target_dir)?;
 
     if !target_path.exists() {
         return Err("llama-server binary not found after extraction".to_string());
@@ -302,6 +333,56 @@ fn extract_tar_gz_all(_data: &[u8], _target_dir: &PathBuf) -> Result<(), String>
     Err("tar.gz extraction not supported on Windows".to_string())
 }
 
+#[cfg(target_os = "linux")]
+fn ensure_linux_runtime_links(target_dir: &PathBuf) -> Result<(), String> {
+    use std::os::unix::fs::symlink;
+
+    let required_links = [
+        ("libmtmd.so.0", "libmtmd.so.0."),
+        ("libllama.so.0", "libllama.so.0."),
+        ("libggml.so.0", "libggml.so.0."),
+        ("libggml-base.so.0", "libggml-base.so.0."),
+    ];
+
+    for (link_name, versioned_prefix) in required_links {
+        let link_path = target_dir.join(link_name);
+
+        let existing_ok = std::fs::symlink_metadata(&link_path)
+            .map(|meta| meta.file_type().is_symlink() || meta.len() > 1_000_000)
+            .unwrap_or(false);
+        if existing_ok {
+            continue;
+        }
+
+        if link_path.exists() {
+            std::fs::remove_file(&link_path)
+                .map_err(|e| format!("Failed to remove invalid {}: {}", link_name, e))?;
+        }
+
+        let mut candidates: Vec<String> = std::fs::read_dir(target_dir)
+            .map_err(|e| format!("Failed to scan {:?}: {}", target_dir, e))?
+            .filter_map(|entry| entry.ok())
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter(|name| name.starts_with(versioned_prefix))
+            .collect();
+        candidates.sort();
+
+        let target_name = candidates
+            .last()
+            .cloned()
+            .ok_or_else(|| format!("Missing shared library matching {}", versioned_prefix))?;
+
+        symlink(&target_name, &link_path).map_err(|e| {
+            format!(
+                "Failed to create symlink {} -> {}: {}",
+                link_name, target_name, e
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
 /// Download a single file with streaming progress.
 async fn download_file_with_progress(
     url: &str,
@@ -344,14 +425,9 @@ async fn download_file_with_progress(
 
     // Atomic rename
     let _ = std::fs::remove_file(target_path);
-    std::fs::rename(&tmp_path, target_path)
-        .map_err(|e| format!("Failed to rename file: {}", e))?;
+    std::fs::rename(&tmp_path, target_path).map_err(|e| format!("Failed to rename file: {}", e))?;
 
-    tracing::info!(
-        "Downloaded {:?} ({} bytes)",
-        target_path,
-        file_downloaded
-    );
+    tracing::info!("Downloaded {:?} ({} bytes)", target_path, file_downloaded);
     Ok(file_downloaded)
 }
 
@@ -374,15 +450,10 @@ where
     // Download LLM model
     let llm_url = "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3VL-2B-Instruct-Q4_K_M.gguf";
     tracing::info!("Downloading LLM model from {}", llm_url);
-    let llm_size = download_file_with_progress(
-        llm_url,
-        &model_path,
-        0,
-        estimated_total,
-        &progress_cb,
-    )
-    .await
-    .map_err(|e| format!("Failed to download model: {}", e))?;
+    let llm_size =
+        download_file_with_progress(llm_url, &model_path, 0, estimated_total, &progress_cb)
+            .await
+            .map_err(|e| format!("Failed to download model: {}", e))?;
 
     // Download mmproj vision encoder
     let mmproj_url = "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-2B-Instruct-F16.gguf";

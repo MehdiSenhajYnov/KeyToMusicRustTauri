@@ -199,8 +199,17 @@ impl AudioEngineHandle {
     }
 
     /// Set sound volume (updates currently playing sound's volume).
-    pub fn set_sound_volume(&self, track_id: TrackId, sound_id: SoundId, volume: f32) -> Result<(), String> {
-        self.send_command(AudioCommand::SetSoundVolume { track_id, sound_id, volume })
+    pub fn set_sound_volume(
+        &self,
+        track_id: TrackId,
+        sound_id: SoundId,
+        volume: f32,
+    ) -> Result<(), String> {
+        self.send_command(AudioCommand::SetSoundVolume {
+            track_id,
+            sound_id,
+            volume,
+        })
     }
 
     /// Set the audio output device. None = follow system default.
@@ -217,7 +226,6 @@ impl AudioEngineHandle {
     pub fn play_error_sound(&self) -> Result<(), String> {
         self.send_command(AudioCommand::PlayErrorSound)
     }
-
 }
 
 /// List available audio output devices.
@@ -241,7 +249,9 @@ impl Drop for AudioEngineHandle {
 }
 
 /// Create an OutputStream for the given device name, or the system default if None.
-fn create_output_stream(device_name: &Option<String>) -> Result<(OutputStream, OutputStreamHandle), String> {
+fn create_output_stream(
+    device_name: &Option<String>,
+) -> Result<(OutputStream, OutputStreamHandle), String> {
     match device_name {
         Some(name) => {
             let host = cpal::default_host();
@@ -253,18 +263,15 @@ fn create_output_stream(device_name: &Option<String>) -> Result<(OutputStream, O
             OutputStream::try_from_device(&device)
                 .map_err(|e| format!("Failed to open device '{}': {}", name, e))
         }
-        None => {
-            OutputStream::try_default()
-                .map_err(|e| format!("Failed to open default audio device: {}", e))
-        }
+        None => OutputStream::try_default()
+            .map_err(|e| format!("Failed to open default audio device: {}", e)),
     }
 }
 
 /// Get the name of the current default output device.
 fn get_default_device_name() -> Option<String> {
     let host = cpal::default_host();
-    host.default_output_device()
-        .and_then(|d| d.name().ok())
+    host.default_output_device().and_then(|d| d.name().ok())
 }
 
 /// The main loop of the audio thread.
@@ -303,7 +310,9 @@ fn audio_thread_main(
     loop {
         // Use shorter timeout when actively playing (crossfade needs ~60fps),
         // longer timeout when idle to reduce CPU usage
-        let has_active_playback = tracks.values().any(|t| t.is_playing() || t.crossfade.is_some());
+        let has_active_playback = tracks
+            .values()
+            .any(|t| t.is_playing() || t.crossfade.is_some());
         let timeout = if has_active_playback {
             Duration::from_millis(16)
         } else {
@@ -330,10 +339,7 @@ fn audio_thread_main(
                         });
                         continue;
                     }
-                    tracks.insert(
-                        track_id.clone(),
-                        AudioTrack::new(stream_handle.clone()),
-                    );
+                    tracks.insert(track_id.clone(), AudioTrack::new(stream_handle.clone()));
                 }
 
                 if let Some(track) = tracks.get_mut(&track_id) {
@@ -378,10 +384,7 @@ fn audio_thread_main(
                         });
                         continue;
                     }
-                    tracks.insert(
-                        track_id.clone(),
-                        AudioTrack::new(stream_handle.clone()),
-                    );
+                    tracks.insert(track_id.clone(), AudioTrack::new(stream_handle.clone()));
                 }
 
                 if let Some(track) = tracks.get_mut(&track_id) {
@@ -455,7 +458,11 @@ fn audio_thread_main(
                     track.set_volume(volume, sv, mv);
                 }
             }
-            Ok(AudioCommand::SetSoundVolume { track_id, sound_id, volume }) => {
+            Ok(AudioCommand::SetSoundVolume {
+                track_id,
+                sound_id,
+                volume,
+            }) => {
                 // Update stored sound volume
                 sound_volumes.insert(sound_id, volume);
                 // Recalculate final volume on the track's sink
@@ -494,7 +501,15 @@ fn audio_thread_main(
                     }
                 }
 
-                resume_tracks(resume_list, &mut tracks, &mut sound_volumes, &mut track_sounds, &stream_handle, mv, &event_tx);
+                resume_tracks(
+                    resume_list,
+                    &mut tracks,
+                    &mut sound_volumes,
+                    &mut track_sounds,
+                    &stream_handle,
+                    mv,
+                    &event_tx,
+                );
             }
             Ok(AudioCommand::SetErrorSoundPath { path }) => {
                 error_sound_path = Some(path);
@@ -547,7 +562,15 @@ fn audio_thread_main(
                 if let Ok((new_stream, new_handle)) = create_output_stream(&None) {
                     _stream = new_stream;
                     stream_handle = new_handle;
-                    resume_tracks(resume_list, &mut tracks, &mut sound_volumes, &mut track_sounds, &stream_handle, mv, &event_tx);
+                    resume_tracks(
+                        resume_list,
+                        &mut tracks,
+                        &mut sound_volumes,
+                        &mut track_sounds,
+                        &stream_handle,
+                        mv,
+                        &event_tx,
+                    );
                 }
             }
         }

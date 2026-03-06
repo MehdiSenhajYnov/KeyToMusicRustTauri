@@ -8,8 +8,8 @@ import { formatDuration } from "../../utils/fileHelpers";
 import { AddSoundModal } from "./AddSoundModal";
 import * as commands from "../../utils/tauriCommands";
 import { getSoundFilePath } from "../../utils/soundHelpers";
-import type { LoopMode, MoodCategory, Sound, WaveformData } from "../../types";
-import { MOOD_CATEGORIES, MOOD_DISPLAY, MOOD_COLORS } from "../../utils/moodHelpers";
+import type { LoopMode, BaseMood, MoodIntensity, Sound, WaveformData } from "../../types";
+import { MOOD_CATEGORIES, MOOD_DISPLAY, MOOD_COLORS, INTENSITY_DISPLAY } from "../../utils/moodHelpers";
 import { useAudioStore } from "../../stores/audioStore";
 import { useWaveformStore } from "../../stores/waveformStore";
 import { useTrackPosition } from "../../hooks/useTrackPosition";
@@ -547,7 +547,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
           <select
             value={binding.trackId}
             onChange={(e) => handleTrackChange(e.target.value)}
-            className="bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary"
+            className="app-select app-select--compact text-sm"
           >
             {currentProfile.tracks.map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
@@ -560,7 +560,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
           <select
             value={binding.loopMode}
             onChange={(e) => handleLoopModeChange(e.target.value as LoopMode)}
-            className="bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary"
+            className="app-select app-select--compact text-sm"
           >
             <option value="off">Off</option>
             <option value="single">Single</option>
@@ -574,11 +574,11 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
           <select
             value={binding.mood ?? ""}
             onChange={(e) => {
-              const mood = e.target.value === "" ? undefined : (e.target.value as MoodCategory);
-              updateKeyBinding(selectedKey, binding.trackId, { mood });
+              const mood = e.target.value === "" ? undefined : (e.target.value as BaseMood);
+              updateKeyBinding(selectedKey, binding.trackId, { mood, moodIntensity: mood ? binding.moodIntensity : undefined });
               setTimeout(() => saveCurrentProfile(), 100);
             }}
-            className="bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary"
+            className="app-select app-select--compact text-sm"
           >
             <option value="">None</option>
             {MOOD_CATEGORIES.map((m) => (
@@ -586,8 +586,24 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
             ))}
           </select>
           {binding.mood && (
+            <select
+              value={binding.moodIntensity ?? ""}
+              onChange={(e) => {
+                const moodIntensity = e.target.value === "" ? undefined : (Number(e.target.value) as MoodIntensity);
+                updateKeyBinding(selectedKey, binding.trackId, { moodIntensity });
+                setTimeout(() => saveCurrentProfile(), 100);
+              }}
+              className="app-select app-select--compact text-sm"
+            >
+              <option value="">Any</option>
+              <option value="1">1 - {INTENSITY_DISPLAY[1]}</option>
+              <option value="2">2 - {INTENSITY_DISPLAY[2]}</option>
+              <option value="3">3 - {INTENSITY_DISPLAY[3]}</option>
+            </select>
+          )}
+          {binding.mood && (
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${MOOD_COLORS[binding.mood].bg} ${MOOD_COLORS[binding.mood].text}`}>
-              {MOOD_DISPLAY[binding.mood]}
+              {MOOD_DISPLAY[binding.mood]}{binding.moodIntensity ? ` ${binding.moodIntensity}` : ""}
             </span>
           )}
         </div>

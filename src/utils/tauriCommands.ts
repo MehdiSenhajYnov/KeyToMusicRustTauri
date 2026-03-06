@@ -1,5 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppConfig, MoodCategory, Profile, Sound, YoutubeSearchResult, YoutubePlaylist, WaveformData, StreamUrlResult, InitialState } from "../types";
+import type {
+  AppConfig,
+  BaseMood,
+  InitialState,
+  LinuxInputAccessFixResult,
+  LinuxInputAccessStatus,
+  Profile,
+  Sound,
+  StreamUrlResult,
+  WaveformData,
+  YoutubePlaylist,
+  YoutubeSearchResult,
+} from "../types";
 
 interface ProfileSummary {
   id: string;
@@ -134,6 +146,14 @@ export async function setKeyCooldown(cooldownMs: number): Promise<void> {
 
 export async function setProfileBindings(bindings: string[]): Promise<void> {
   return invoke("set_profile_bindings", { bindings });
+}
+
+export async function getLinuxInputAccessStatus(): Promise<LinuxInputAccessStatus> {
+  return invoke<LinuxInputAccessStatus>("get_linux_input_access_status");
+}
+
+export async function enableLinuxBackgroundDetection(): Promise<LinuxInputAccessFixResult> {
+  return invoke<LinuxInputAccessFixResult>("enable_linux_background_detection");
 }
 
 // ─── YouTube ──────────────────────────────────────────────────────────────
@@ -393,8 +413,8 @@ export async function getMoodServerStatus(): Promise<string> {
   return invoke<string>("get_mood_server_status");
 }
 
-export async function analyzeMood(imagePath: string): Promise<MoodCategory> {
-  return invoke<MoodCategory>("analyze_mood", { imagePath });
+export async function analyzeMood(imagePath: string): Promise<BaseMood> {
+  return invoke<BaseMood>("analyze_mood", { imagePath });
 }
 
 export { type ProfileSummary };

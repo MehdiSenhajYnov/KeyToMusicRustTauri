@@ -30,9 +30,7 @@ impl BufferManager {
             total_samples as f64 / (sample_rate as f64 * channels as f64)
         };
 
-        Ok(AudioMetadata {
-            duration_secs,
-        })
+        Ok(AudioMetadata { duration_secs })
     }
 
     /// Get audio duration in seconds for a file path.
@@ -43,17 +41,24 @@ impl BufferManager {
         use symphonia::core::meta::MetadataOptions;
         use symphonia::core::probe::Hint;
 
-        let file = File::open(path)
-            .map_err(|e| format!("Failed to open audio file: {}", e))?;
+        let file = File::open(path).map_err(|e| format!("Failed to open audio file: {}", e))?;
         let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
         let mut hint = Hint::new();
-        if let Some(ext) = std::path::Path::new(path).extension().and_then(|e| e.to_str()) {
+        if let Some(ext) = std::path::Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+        {
             hint.with_extension(ext);
         }
 
         let probed = symphonia::default::get_probe()
-            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+            .format(
+                &hint,
+                mss,
+                &FormatOptions::default(),
+                &MetadataOptions::default(),
+            )
             .map_err(|e| format!("Failed to probe audio format: {}", e))?;
 
         let reader = probed.format;
@@ -74,5 +79,4 @@ impl BufferManager {
             Ok(metadata.duration_secs)
         }
     }
-
 }

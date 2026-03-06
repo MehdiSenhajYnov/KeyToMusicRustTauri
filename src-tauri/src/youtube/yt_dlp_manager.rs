@@ -87,8 +87,7 @@ pub async fn download_yt_dlp() -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to read download: {}", e))?;
 
     // Write to file using std::fs to ensure handle is released synchronously
-    std::fs::write(&target_path, &bytes)
-        .map_err(|e| format!("Failed to write yt-dlp: {}", e))?;
+    std::fs::write(&target_path, &bytes).map_err(|e| format!("Failed to write yt-dlp: {}", e))?;
 
     // Make executable on Unix
     #[cfg(unix)]

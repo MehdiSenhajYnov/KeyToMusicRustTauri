@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { MoodCategory } from "../types";
+import type { BaseMood, MoodIntensity } from "../types";
 import * as commands from "../utils/tauriCommands";
 import { useToastStore } from "./toastStore";
 
@@ -8,7 +8,10 @@ interface MoodState {
   serverInstalled: boolean;
   modelInstalled: boolean;
   modelDownloadProgress: { downloaded: number; total: number } | null;
-  lastDetectedMood: MoodCategory | null;
+  lastDetectedMood: BaseMood | null;
+  lastDetectedIntensity: MoodIntensity | null;
+  committedMood: BaseMood | null;
+  committedIntensity: MoodIntensity | null;
   isAnalyzing: boolean;
 
   checkInstallation: () => Promise<void>;
@@ -18,7 +21,8 @@ interface MoodState {
   stopServer: () => Promise<void>;
   setServerStatus: (status: MoodState["serverStatus"]) => void;
   setModelDownloadProgress: (progress: { downloaded: number; total: number } | null) => void;
-  setLastDetectedMood: (mood: MoodCategory | null) => void;
+  setLastDetectedMood: (mood: BaseMood | null, intensity?: MoodIntensity | null) => void;
+  setCommittedMood: (mood: BaseMood | null, intensity?: MoodIntensity | null) => void;
 }
 
 export const useMoodStore = create<MoodState>((set) => ({
@@ -27,6 +31,9 @@ export const useMoodStore = create<MoodState>((set) => ({
   modelInstalled: false,
   modelDownloadProgress: null,
   lastDetectedMood: null,
+  lastDetectedIntensity: null,
+  committedMood: null,
+  committedIntensity: null,
   isAnalyzing: false,
 
   checkInstallation: async () => {
@@ -91,5 +98,6 @@ export const useMoodStore = create<MoodState>((set) => ({
 
   setServerStatus: (status) => set({ serverStatus: status }),
   setModelDownloadProgress: (progress) => set({ modelDownloadProgress: progress }),
-  setLastDetectedMood: (mood) => set({ lastDetectedMood: mood }),
+  setLastDetectedMood: (mood, intensity) => set({ lastDetectedMood: mood, lastDetectedIntensity: intensity ?? null }),
+  setCommittedMood: (mood, intensity) => set({ committedMood: mood, committedIntensity: intensity ?? null }),
 }));

@@ -100,7 +100,11 @@ impl DiscoveryCache {
             visited_index: -1,
         });
 
-        let existing_ids: HashSet<String> = data.suggestions.iter().map(|s| s.video_id.clone()).collect();
+        let existing_ids: HashSet<String> = data
+            .suggestions
+            .iter()
+            .map(|s| s.video_id.clone())
+            .collect();
         let dismissed: HashSet<&String> = data.dismissed_ids.iter().collect();
 
         for s in new_suggestions {
@@ -121,8 +125,8 @@ impl DiscoveryCache {
         revealed_count: usize,
         visited_index: i32,
     ) -> Result<(), String> {
-        let mut data = Self::load(profile_id)
-            .ok_or_else(|| "No discovery cache found".to_string())?;
+        let mut data =
+            Self::load(profile_id).ok_or_else(|| "No discovery cache found".to_string())?;
 
         data.cursor_index = cursor_index;
         data.revealed_count = revealed_count;
@@ -138,8 +142,8 @@ impl DiscoveryCache {
         revealed_count: usize,
         visited_index: i32,
     ) -> Result<(), String> {
-        let mut data = Self::load(profile_id)
-            .ok_or_else(|| "No discovery cache found".to_string())?;
+        let mut data =
+            Self::load(profile_id).ok_or_else(|| "No discovery cache found".to_string())?;
 
         data.suggestions = suggestions;
         data.cursor_index = cursor_index;
@@ -150,8 +154,8 @@ impl DiscoveryCache {
 
     /// Dismiss a suggestion by video ID.
     pub fn dismiss(profile_id: &str, video_id: &str) -> Result<(), String> {
-        let mut data = Self::load(profile_id)
-            .ok_or_else(|| "No discovery cache found".to_string())?;
+        let mut data =
+            Self::load(profile_id).ok_or_else(|| "No discovery cache found".to_string())?;
 
         let dismissed: HashSet<String> = data.dismissed_ids.iter().cloned().collect();
         if !dismissed.contains(video_id) {

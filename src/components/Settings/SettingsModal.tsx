@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-shell";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useWheelSlider } from "../../hooks/useWheelSlider";
 import { useProfileStore } from "../../stores/profileStore";
+import { useRuntimeStore } from "../../stores/runtimeStore";
 import { useExportStore } from "../../stores/exportStore";
 import {
   formatShortcut,
@@ -18,7 +19,7 @@ import { useToastStore } from "../../stores/toastStore";
 import { WarningTooltip } from "../common/WarningTooltip";
 import { DislikedVideosPanel } from "./DislikedVideosPanel";
 import { useMoodStore } from "../../stores/moodStore";
-import type { MomentumModifier } from "../../types";
+import type { LinuxInputAccessStatus, MomentumModifier } from "../../types";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -180,6 +181,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     setMomentumModifier,
   } = useSettingsStore();
   const { currentProfile, loadProfiles, loadProfile } = useProfileStore();
+  const inputRuntime = useRuntimeStore((s) => s.inputRuntime);
   const { isExporting, startExport } = useExportStore();
   const addToast = useToastStore((s) => s.addToast);
   const [capturingTarget, setCapturingTarget] = useState<ShortcutTarget>(null);
@@ -187,10 +189,38 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
   const pressedRef = useRef(new Set<string>());
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [audioDevices, setAudioDevices] = useState<string[]>([]);
+  const [linuxInputStatus, setLinuxInputStatus] = useState<LinuxInputAccessStatus | null>(null);
+  const [linuxInputBusy, setLinuxInputBusy] = useState(false);
 
   useEffect(() => {
     commands.listAudioDevices().then(setAudioDevices).catch(() => {});
   }, []);
+
+  const refreshLinuxInputStatus = useCallback(() => {
+    if (!inputRuntime.isLinux) return;
+    commands.getLinuxInputAccessStatus().then(setLinuxInputStatus).catch(() => {});
+  }, [inputRuntime.isLinux]);
+
+  useEffect(() => {
+    refreshLinuxInputStatus();
+  }, [refreshLinuxInputStatus]);
+
+  const enableLinuxBackgroundDetection = useCallback(async () => {
+    setLinuxInputBusy(true);
+    try {
+      const result = await commands.enableLinuxBackgroundDetection();
+      setLinuxInputStatus(result.status);
+      addToast(result.message, result.status.backgroundDetectionAvailable ? "success" : "info");
+
+      window.setTimeout(() => {
+        refreshLinuxInputStatus();
+      }, 3000);
+    } catch (error) {
+      addToast(String(error), "error");
+    } finally {
+      setLinuxInputBusy(false);
+    }
+  }, [addToast, refreshLinuxInputStatus]);
 
   // Build shortcuts array for conflict detection
   const shortcuts = useMemo(() => buildShortcutsList(config),
@@ -472,6 +502,77 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
           <section>
             <SectionHeader>Key Detection</SectionHeader>
 
+            {inputRuntime.isLinux && (
+              <div className="space-y-2 mb-4 p-3 rounded border border-border-color bg-bg-tertiary/40">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <label className="text-text-secondary text-sm font-medium">
+                      Background Detection
+                    </label>
+                    <p className="text-text-muted text-xs">
+                      {!linuxInputStatus
+                        ? "Checking current session..."
+                        : linuxInputStatus.sessionType === "x11"
+                        ? "Ready through the X11 backend."
+                        : linuxInputStatus.backgroundDetectionAvailable
+                          ? "Ready in the current session."
+                          : "Needs system access on Wayland to work while the app is in background."}
+                    </p>
+                  </div>
+                  <span
+                    className={`text-xs px-2 py-1 rounded ${
+                      !linuxInputStatus
+                        ? "bg-bg-hover text-text-muted"
+                        : linuxInputStatus.backgroundDetectionAvailable
+                        ? "bg-accent-success/15 text-accent-success"
+                        : "bg-accent-warning/15 text-accent-warning"
+                    }`}
+                  >
+                    {!linuxInputStatus
+                      ? "Checking"
+                      : linuxInputStatus.backgroundDetectionAvailable
+                        ? "Ready"
+                        : "Action Needed"}
+                  </span>
+                </div>
+
+                {linuxInputStatus?.message && (
+                  <p className="text-text-muted text-xs">
+                    {linuxInputStatus.message}
+                  </p>
+                )}
+
+                {linuxInputStatus?.reloginRecommended && !linuxInputStatus.backgroundDetectionAvailable && (
+                  <p className="text-text-muted text-xs">
+                    The app will retry automatically after the fix. On some distros, one sign-out/sign-in may still be needed.
+                  </p>
+                )}
+
+                <div className="flex items-center gap-2">
+                  {linuxInputStatus?.canAutoFix && !linuxInputStatus.backgroundDetectionAvailable && (
+                    <button
+                      onClick={() => { void enableLinuxBackgroundDetection(); }}
+                      disabled={linuxInputBusy}
+                      className={`text-xs px-3 py-1.5 rounded ${
+                        linuxInputBusy
+                          ? "bg-bg-hover text-text-muted cursor-wait"
+                          : "bg-accent-primary/20 text-accent-primary hover:bg-accent-primary/30"
+                      }`}
+                    >
+                      {linuxInputBusy ? "Applying..." : "Enable Automatically"}
+                    </button>
+                  )}
+                  <button
+                    onClick={refreshLinuxInputStatus}
+                    disabled={linuxInputBusy}
+                    className="text-xs px-3 py-1.5 rounded bg-bg-hover text-text-secondary hover:text-text-primary"
+                  >
+                    Recheck
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Key Cooldown */}
             <div className="space-y-1 mb-3">
               <div className="flex justify-between">
@@ -566,7 +667,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
                   setMomentumModifier(newModifier);
                 }}
-                className="w-full bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary focus:border-border-focus outline-none"
+                className="w-full app-select text-sm"
               >
                 <option value="Shift">Shift (default)</option>
                 <option value="Ctrl">Ctrl</option>
@@ -626,7 +727,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
                     "info"
                   );
                 }}
-                className="w-full bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary focus:border-border-focus outline-none"
+                className="w-full app-select text-sm"
               >
                 <option value="">System Default (follow changes)</option>
                 {audioDevices.map((device) => (

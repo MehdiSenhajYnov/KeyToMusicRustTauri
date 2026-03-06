@@ -7,10 +7,7 @@ use crate::youtube::search::YoutubeSearchResult;
 
 /// Fetch YouTube Mix (Radio) recommendations for a given video.
 /// Returns an empty Vec on failure (some videos have no mix).
-pub async fn fetch_mix(
-    video_id: &str,
-    yt_dlp_bin: &PathBuf,
-) -> Vec<YoutubeSearchResult> {
+pub async fn fetch_mix(video_id: &str, yt_dlp_bin: &PathBuf) -> Vec<YoutubeSearchResult> {
     let url = format!(
         "https://www.youtube.com/watch?v={}&list=RD{}",
         video_id, video_id
@@ -63,10 +60,7 @@ pub async fn fetch_mix(
                 .unwrap_or("Unknown")
                 .to_string();
 
-            let duration = json
-                .get("duration")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
+            let duration = json.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
             let channel = json
                 .get("channel")

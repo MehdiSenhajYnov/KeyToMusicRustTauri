@@ -88,11 +88,7 @@ impl AudioTrack {
             .map_err(|e| format!("Failed to create audio sink: {}", e))?;
 
         // Check if something is currently playing for crossfade
-        let is_playing = self
-            .sink
-            .as_ref()
-            .map(|s| !s.empty())
-            .unwrap_or(false);
+        let is_playing = self.sink.as_ref().map(|s| !s.empty()).unwrap_or(false);
 
         let final_volume = sound_volume * self.volume * master_volume;
 
@@ -150,11 +146,7 @@ impl AudioTrack {
         let new_sink = Sink::try_new(&self.stream_handle)
             .map_err(|e| format!("Failed to create audio sink: {}", e))?;
 
-        let is_playing = self
-            .sink
-            .as_ref()
-            .map(|s| !s.empty())
-            .unwrap_or(false);
+        let is_playing = self.sink.as_ref().map(|s| !s.empty()).unwrap_or(false);
 
         let final_volume = sound_volume * self.volume * master_volume;
 
@@ -225,19 +217,12 @@ impl AudioTrack {
 
     /// Check if this track is currently playing.
     pub fn is_playing(&self) -> bool {
-        self.sink
-            .as_ref()
-            .map(|s| !s.empty())
-            .unwrap_or(false)
+        self.sink.as_ref().map(|s| !s.empty()).unwrap_or(false)
     }
 
     /// Check if the current sound has finished playing.
     pub fn has_finished(&self) -> bool {
-        self.sink
-            .as_ref()
-            .map(|s| s.empty())
-            .unwrap_or(true)
-            && self.currently_playing.is_some()
+        self.sink.as_ref().map(|s| s.empty()).unwrap_or(true) && self.currently_playing.is_some()
     }
 
     /// Get the current playback position in seconds.

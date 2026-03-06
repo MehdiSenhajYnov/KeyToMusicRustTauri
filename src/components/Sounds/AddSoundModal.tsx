@@ -1250,7 +1250,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
                 setSelectedTrackId(e.target.value);
                 if (e.target.value) setNewTrackName("");
               }}
-              className="w-full bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary"
+              className="w-full app-select text-sm"
             >
               {tracks.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -1295,7 +1295,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
           <select
             value={loopMode}
             onChange={(e) => setLoopMode(e.target.value as LoopMode)}
-            className="w-full bg-bg-tertiary border border-border-color rounded px-2 py-1.5 text-sm text-text-primary"
+            className="w-full app-select text-sm"
           >
             <option value="off">Off - Play once</option>
             <option value="single">Single - Loop same sound</option>

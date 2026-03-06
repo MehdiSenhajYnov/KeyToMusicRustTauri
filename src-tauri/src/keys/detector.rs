@@ -6,12 +6,26 @@ use std::time::Duration;
 use crate::keys::chord::{ChordDetectorHandle, ChordResult};
 use crate::keys::mapping::KeyEvent;
 
+#[cfg(target_os = "linux")]
+fn is_wayland_session() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE")
+            .map(|value| value.eq_ignore_ascii_case("wayland"))
+            .unwrap_or(false)
+}
+
 /// Check if a key code string represents a modifier key.
 fn is_modifier_code(code: &str) -> bool {
     matches!(
         code,
-        "ShiftLeft" | "ShiftRight" | "ControlLeft" | "ControlRight"
-            | "AltLeft" | "AltRight" | "MetaLeft" | "MetaRight"
+        "ShiftLeft"
+            | "ShiftRight"
+            | "ControlLeft"
+            | "ControlRight"
+            | "AltLeft"
+            | "AltRight"
+            | "MetaLeft"
+            | "MetaRight"
     )
 }
 
@@ -76,7 +90,8 @@ impl KeyDetector {
 
         std::thread::spawn(move || {
             let cb = callback.clone();
-            let handle_key_event = move |code: String, is_press: bool| {
+            let cb_warning = callback.clone();
+            let handle_key_event = Arc::new(move |code: String, is_press: bool| {
                 if is_press {
                     let mut pressed = pressed_keys.lock().unwrap();
 
@@ -149,9 +164,12 @@ impl KeyDetector {
                             if !is_modifier_code(&code) {
                                 // Build old-style combo for backwards compatibility
                                 let pressed = pressed_keys.lock().unwrap();
-                                let has_ctrl = pressed.contains("ControlLeft") || pressed.contains("ControlRight");
-                                let has_alt = pressed.contains("AltLeft") || pressed.contains("AltRight");
-                                let has_shift_now = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
+                                let has_ctrl = pressed.contains("ControlLeft")
+                                    || pressed.contains("ControlRight");
+                                let has_alt =
+                                    pressed.contains("AltLeft") || pressed.contains("AltRight");
+                                let has_shift_now =
+                                    pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
                                 drop(pressed);
 
                                 let mut combo = String::new();
@@ -178,19 +196,17 @@ impl KeyDetector {
                     pressed_keys.lock().unwrap().remove(&code);
                     chord_detector.on_key_release(&code);
                 }
-            };
+            });
 
             timer_running.store(true, Ordering::SeqCst);
 
             #[cfg(target_os = "macos")]
             {
                 use crate::keys::macos_listener::{listen_macos, MacKeyEvent};
-                let handler = handle_key_event;
-                listen_macos(move |event| {
-                    match event {
-                        MacKeyEvent::Press(code) => handler(code, true),
-                        MacKeyEvent::Release(code) => handler(code, false),
-                    }
+                let handler = handle_key_event.clone();
+                listen_macos(move |event| match event {
+                    MacKeyEvent::Press(code) => handler(code, true),
+                    MacKeyEvent::Release(code) => handler(code, false),
                 });
             }
 
@@ -198,35 +214,65 @@ impl KeyDetector {
             {
                 use crate::keys::windows_listener::{listen_windows, WinKeyEvent};
 
-                let handler = handle_key_event;
-                listen_windows(move |event| {
-                    match event {
-                        WinKeyEvent::Press(code) => handler(code, true),
-                        WinKeyEvent::Release(code) => handler(code, false),
-                    }
+                let handler = handle_key_event.clone();
+                listen_windows(move |event| match event {
+                    WinKeyEvent::Press(code) => handler(code, true),
+                    WinKeyEvent::Release(code) => handler(code, false),
                 });
             }
 
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             {
-                use rdev::{listen, EventType};
-                use crate::keys::mapping::key_to_code;
+                let handler = handle_key_event.clone();
+                #[cfg(target_os = "linux")]
+                {
+                    if is_wayland_session() {
+                        use crate::keys::linux_listener::{listen_linux, LinuxKeyEvent};
+                        let mut warned_unavailable = false;
 
-                let handler = handle_key_event;
-                if let Err(e) = listen(move |event| {
-                    match event.event_type {
-                        EventType::KeyPress(key) => {
-                            let code = key_to_code(key);
-                            handler(code, true);
+                        loop {
+                            let handler = handler.clone();
+                            match listen_linux(move |event| match event {
+                                LinuxKeyEvent::Press(code) => handler(code, true),
+                                LinuxKeyEvent::Release(code) => handler(code, false),
+                            }) {
+                                Ok(()) => {
+                                    warned_unavailable = false;
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "Linux global keyboard listener unavailable: {}",
+                                        e
+                                    );
+                                    if !warned_unavailable {
+                                        cb_warning(KeyEvent::BackendWarning {
+                                            message: "Wayland background key detection needs one system permission. Open Settings > Key Detection > Background Detection to enable it automatically.".to_string(),
+                                        });
+                                        warned_unavailable = true;
+                                    }
+                                    std::thread::sleep(Duration::from_secs(5));
+                                }
+                            }
                         }
-                        EventType::KeyRelease(key) => {
-                            let code = key_to_code(key);
-                            handler(code, false);
+                    } else {
+                        use crate::keys::mapping::key_to_code;
+                        use rdev::{listen, EventType};
+
+                        let handler = handler.clone();
+                        if let Err(e) = listen(move |event| match event.event_type {
+                            EventType::KeyPress(key) => {
+                                let code = key_to_code(key);
+                                handler(code, true);
+                            }
+                            EventType::KeyRelease(key) => {
+                                let code = key_to_code(key);
+                                handler(code, false);
+                            }
+                            _ => {}
+                        }) {
+                            tracing::warn!("Global keyboard listener failed: {:?}", e);
                         }
-                        _ => {}
                     }
-                }) {
-                    tracing::warn!("Global keyboard listener failed: {:?}", e);
                 }
             }
         });

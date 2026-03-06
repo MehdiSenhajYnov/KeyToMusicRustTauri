@@ -9,6 +9,11 @@ src-tauri/target/
 # Runtime user data
 data/
 
+# Local AI benchmark assets
+manga-mood-ai/models/
+manga-mood-ai/results/
+manga-mood-ai/test-images/
+
 # Logs
 *.log
 npm-debug.log*

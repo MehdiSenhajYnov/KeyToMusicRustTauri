@@ -12,18 +12,28 @@ export type SoundSource =
 // Mode de boucle
 export type LoopMode = "off" | "random" | "single" | "sequential";
 
-// Mood category for AI-triggered playback
-export type MoodCategory =
-  | "epic_battle"
+// Base mood axis (8 values)
+export type BaseMood =
+  | "epic"
   | "tension"
   | "sadness"
   | "comedy"
   | "romance"
   | "horror"
   | "peaceful"
-  | "emotional_climax"
-  | "mystery"
-  | "chase_action";
+  | "mystery";
+
+// Intensity axis (3 levels)
+export type MoodIntensity = 1 | 2 | 3;
+
+// Combined mood tag
+export interface MoodTag {
+  mood: BaseMood;
+  intensity: MoodIntensity;
+}
+
+// Legacy alias
+export type MoodCategory = BaseMood;
 
 // Modificateur pour déclencher le momentum
 export type MomentumModifier = "Shift" | "Ctrl" | "Alt" | "None";
@@ -47,7 +57,8 @@ export interface KeyBinding {
   loopMode: LoopMode;
   currentIndex: number;       // Index actuel pour le mode sequential
   name?: string;              // Nom personnalisé (défaut: nom du premier son)
-  mood?: MoodCategory;        // Mood tag for AI-triggered playback
+  mood?: BaseMood;             // Mood tag for AI-triggered playback
+  moodIntensity?: MoodIntensity; // Minimum intensity to trigger (undefined = any)
 }
 
 // Configuration d'une piste
@@ -85,6 +96,33 @@ export interface AppConfig {
   playlistImportEnabled: boolean;     // Remember "download entire playlist" checkbox state
   moodAiEnabled: boolean;             // Enable Manga Mood AI integration
   moodApiPort: number;                // HTTP API port for external tools (default: 8765)
+  moodEntryThreshold: number;         // Score threshold to enter a new mood (default: 0.55)
+  moodExitThreshold: number;          // Score threshold to exit current mood (default: 0.25)
+  moodDwellPages: number;             // Min pages before mood can change (default: 2)
+  moodWindowSize: number;             // Sliding window size for mood averaging (default: 5)
+}
+
+export interface InputRuntime {
+  isLinux: boolean;
+  isWayland: boolean;
+  browserKeyFallback: boolean;
+}
+
+export interface LinuxInputAccessStatus {
+  supported: boolean;
+  sessionType: string;
+  backgroundDetectionAvailable: boolean;
+  canAutoFix: boolean;
+  reloginRecommended: boolean;
+  accessibleKeyboardDevices: string[];
+  keyboardCandidates: string[];
+  message: string | null;
+}
+
+export interface LinuxInputAccessFixResult {
+  success: boolean;
+  message: string;
+  status: LinuxInputAccessStatus;
 }
 
 // Initial state returned by get_initial_state (unified startup command)
@@ -92,6 +130,7 @@ export interface InitialState {
   config: AppConfig;
   profiles: { id: string; name: string; createdAt: string; updatedAt: string }[];
   currentProfile: Profile | null;
+  inputRuntime: InputRuntime;
 }
 
 // Waveform data
@@ -143,7 +182,8 @@ export interface KeyGridFilter {
   trackName: string | null;    // partial match, case-insensitive
   loopMode: LoopMode | null;
   status: "playing" | "stopped" | null;
-  mood: MoodCategory | null;   // filter by mood tag
+  mood: BaseMood | null;        // filter by mood tag
+  intensity: MoodIntensity | null; // filter by intensity
 }
 
 // Événements émis par le backend vers le frontend

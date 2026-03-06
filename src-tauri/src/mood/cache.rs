@@ -1,11 +1,21 @@
 use std::collections::HashMap;
 
-use crate::types::MoodCategory;
+use crate::mood::director::{MoodScores, NarrativeRole};
+use crate::types::{MoodCategory, MoodIntensity};
+
+/// A cached mood analysis result with full scores, intensity, and narrative role.
+#[derive(Debug, Clone)]
+pub struct CachedMoodEntry {
+    pub mood: MoodCategory,
+    pub intensity: MoodIntensity,
+    pub scores: MoodScores,
+    pub narrative_role: NarrativeRole,
+}
 
 /// Ephemeral in-memory cache for pre-calculated mood results.
 /// Keyed by (chapter_path, page_index). Auto-clears when chapter changes.
 pub struct MoodCache {
-    entries: HashMap<(String, u32), MoodCategory>,
+    entries: HashMap<(String, u32), CachedMoodEntry>,
     current_chapter: Option<String>,
 }
 
@@ -18,7 +28,15 @@ impl MoodCache {
     }
 
     /// Insert a mood result. Auto-clears cache if chapter changed.
-    pub fn insert(&mut self, chapter: &str, page: u32, mood: MoodCategory) {
+    pub fn insert(
+        &mut self,
+        chapter: &str,
+        page: u32,
+        mood: MoodCategory,
+        intensity: MoodIntensity,
+        scores: MoodScores,
+        narrative_role: NarrativeRole,
+    ) {
         if self.current_chapter.as_deref() != Some(chapter) {
             tracing::info!(
                 "MoodCache: chapter changed to '{}', clearing {} entries",
@@ -28,11 +46,19 @@ impl MoodCache {
             self.entries.clear();
             self.current_chapter = Some(chapter.to_string());
         }
-        self.entries.insert((chapter.to_string(), page), mood);
+        self.entries.insert(
+            (chapter.to_string(), page),
+            CachedMoodEntry {
+                mood,
+                intensity,
+                scores,
+                narrative_role,
+            },
+        );
     }
 
-    /// Look up a cached mood for (chapter, page).
-    pub fn get(&self, chapter: &str, page: u32) -> Option<&MoodCategory> {
+    /// Look up a cached entry for (chapter, page).
+    pub fn get(&self, chapter: &str, page: u32) -> Option<&CachedMoodEntry> {
         self.entries.get(&(chapter.to_string(), page))
     }
 

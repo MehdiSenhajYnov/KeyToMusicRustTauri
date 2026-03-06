@@ -12,12 +12,27 @@ mod storage;
 mod types;
 mod youtube;
 
-use audio::{AudioEngineHandle, engine::AudioEvent};
+use audio::{engine::AudioEvent, AudioEngineHandle};
 use commands::*;
 use keys::{KeyDetector, KeyEvent};
 use state::AppState;
-use tauri::{DeviceEventFilter, Emitter, Manager};
 use std::time::Duration;
+use tauri::{DeviceEventFilter, Emitter, Manager};
+
+#[cfg(target_os = "linux")]
+fn apply_linux_webkit_workarounds() {
+    let is_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE")
+            .map(|value| value.eq_ignore_ascii_case("wayland"))
+            .unwrap_or(false);
+
+    if is_wayland && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        // WebKitGTK can crash on Wayland, especially on NVIDIA, unless dmabuf rendering is disabled.
+        unsafe {
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+    }
+}
 
 /// Initialize the tracing/logging system.
 /// Logs are written to daily rolling files in `{app_data}/logs/`.
@@ -49,6 +64,9 @@ fn main() {
     // Initialize logging
     let _log_guard = init_logging();
     tracing::info!("KeyToMusic starting up");
+
+    #[cfg(target_os = "linux")]
+    apply_linux_webkit_workarounds();
 
     // Initialize app directories
     if let Err(e) = storage::init_app_directories() {
@@ -138,9 +156,8 @@ fn main() {
                                 resource_dir.join("error.mp3"),
                             ];
                             if let Some(path) = candidates.into_iter().find(|p| p.exists()) {
-                                let _ = engine.set_error_sound_path(
-                                    path.to_string_lossy().to_string(),
-                                );
+                                let _ =
+                                    engine.set_error_sound_path(path.to_string_lossy().to_string());
                                 tracing::info!("Error sound loaded: {:?}", path);
                             }
                         }
@@ -182,26 +199,36 @@ fn main() {
                 state.audio_engine.clone()
             };
 
-            key_detector.start(move |event| {
-                match event {
-                    KeyEvent::KeyPressed { key_code, with_shift } => {
-                        let _ = app_handle.emit("key_pressed", serde_json::json!({
+            key_detector.start(move |event| match event {
+                KeyEvent::KeyPressed {
+                    key_code,
+                    with_shift,
+                } => {
+                    let _ = app_handle.emit(
+                        "key_pressed",
+                        serde_json::json!({
                             "keyCode": key_code,
                             "withShift": with_shift,
-                        }));
+                        }),
+                    );
+                }
+                KeyEvent::StopAll => {
+                    if let Some(engine) = audio_cell_keys.get() {
+                        let _ = engine.stop_all();
                     }
-                    KeyEvent::StopAll => {
-                        if let Some(engine) = audio_cell_keys.get() {
-                            let _ = engine.stop_all();
-                        }
-                        let _ = app_handle.emit("stop_all_triggered", serde_json::json!({}));
-                    }
-                    KeyEvent::ToggleKeyDetection => {
-                        let _ = app_handle.emit("toggle_key_detection", serde_json::json!({}));
-                    }
-                    KeyEvent::ToggleAutoMomentum => {
-                        let _ = app_handle.emit("toggle_auto_momentum", serde_json::json!({}));
-                    }
+                    let _ = app_handle.emit("stop_all_triggered", serde_json::json!({}));
+                }
+                KeyEvent::ToggleKeyDetection => {
+                    let _ = app_handle.emit("toggle_key_detection", serde_json::json!({}));
+                }
+                KeyEvent::ToggleAutoMomentum => {
+                    let _ = app_handle.emit("toggle_auto_momentum", serde_json::json!({}));
+                }
+                KeyEvent::BackendWarning { message } => {
+                    let _ = app_handle.emit(
+                        "key_detection_backend_warning",
+                        serde_json::json!({ "message": message }),
+                    );
                 }
             });
 
@@ -220,13 +247,11 @@ fn main() {
             // Config debounce flush thread (saves every 2s if dirty)
             {
                 let app_handle_config = app.handle().clone();
-                std::thread::spawn(move || {
-                    loop {
-                        std::thread::sleep(Duration::from_secs(2));
-                        let state: tauri::State<'_, AppState> = app_handle_config.state();
-                        if let Err(e) = state.flush_config() {
-                            tracing::warn!("Failed to flush config: {}", e);
-                        }
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(Duration::from_secs(2));
+                    let state: tauri::State<'_, AppState> = app_handle_config.state();
+                    if let Err(e) = state.flush_config() {
+                        tracing::warn!("Failed to flush config: {}", e);
                     }
                 });
             }
@@ -237,12 +262,10 @@ fn main() {
                     let state: tauri::State<'_, AppState> = app.state();
                     state.waveform_cache.clone()
                 };
-                std::thread::spawn(move || {
-                    loop {
-                        std::thread::sleep(Duration::from_secs(5));
-                        if let Ok(mut cache) = waveform_cache.lock() {
-                            cache.flush_if_dirty();
-                        }
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(Duration::from_secs(5));
+                    if let Ok(mut cache) = waveform_cache.lock() {
+                        cache.flush_if_dirty();
                     }
                 });
             }
@@ -270,6 +293,8 @@ fn main() {
             get_audio_duration,
             preload_profile_sounds,
             // Key detection commands
+            get_linux_input_access_status,
+            enable_linux_background_detection,
             set_key_detection,
             set_stop_all_shortcut,
             set_key_cooldown,
@@ -337,28 +362,40 @@ fn main() {
 fn emit_audio_event(app_handle: &tauri::AppHandle, event: AudioEvent) {
     match event {
         AudioEvent::SoundStarted { track_id, sound_id } => {
-            let _ = app_handle.emit("sound_started", serde_json::json!({
-                "trackId": track_id,
-                "soundId": sound_id,
-            }));
+            let _ = app_handle.emit(
+                "sound_started",
+                serde_json::json!({
+                    "trackId": track_id,
+                    "soundId": sound_id,
+                }),
+            );
         }
         AudioEvent::SoundEnded { track_id, sound_id } => {
-            let _ = app_handle.emit("sound_ended", serde_json::json!({
-                "trackId": track_id,
-                "soundId": sound_id,
-            }));
+            let _ = app_handle.emit(
+                "sound_ended",
+                serde_json::json!({
+                    "trackId": track_id,
+                    "soundId": sound_id,
+                }),
+            );
         }
         AudioEvent::PlaybackProgress { track_id, position } => {
-            let _ = app_handle.emit("playback_progress", serde_json::json!({
-                "trackId": track_id,
-                "position": position,
-            }));
+            let _ = app_handle.emit(
+                "playback_progress",
+                serde_json::json!({
+                    "trackId": track_id,
+                    "position": position,
+                }),
+            );
         }
         AudioEvent::Error { message } => {
             tracing::error!("[audio] {}", message);
-            let _ = app_handle.emit("audio_error", serde_json::json!({
-                "message": message,
-            }));
+            let _ = app_handle.emit(
+                "audio_error",
+                serde_json::json!({
+                    "message": message,
+                }),
+            );
         }
     }
 }

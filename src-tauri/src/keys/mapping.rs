@@ -8,6 +8,7 @@ pub enum KeyEvent {
     StopAll,
     ToggleKeyDetection,
     ToggleAutoMomentum,
+    BackendWarning { message: String },
 }
 
 /// Convert an rdev::Key to a string key code matching Web KeyboardEvent.code format.
@@ -147,4 +148,3 @@ pub fn key_to_code(key: Key) -> String {
         },
     }
 }
-

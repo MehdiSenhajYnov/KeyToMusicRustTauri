@@ -159,7 +159,7 @@ export function MultiKeyDetails({ selectedKeys, onClose }: MultiKeyDetailsProps)
                 handleTrackChange(e.target.value);
               }
             }}
-            className="bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary"
+            className="app-select app-select--compact text-sm"
           >
             {!allSameTrack && (
               <option value="__mixed__" disabled>Mixed</option>
@@ -179,7 +179,7 @@ export function MultiKeyDetails({ selectedKeys, onClose }: MultiKeyDetailsProps)
                 handleLoopModeChange(e.target.value as LoopMode);
               }
             }}
-            className="bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary"
+            className="app-select app-select--compact text-sm"
           >
             {!allSameLoop && (
               <option value="__mixed__" disabled>Mixed</option>

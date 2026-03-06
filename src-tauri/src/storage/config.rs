@@ -63,7 +63,8 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
 
     fs::write(&tmp_path, json).map_err(|e| format!("Failed to write config temp file: {}", e))?;
-    fs::rename(&tmp_path, &config_path).map_err(|e| format!("Failed to rename config file: {}", e))?;
+    fs::rename(&tmp_path, &config_path)
+        .map_err(|e| format!("Failed to rename config file: {}", e))?;
 
     Ok(())
 }

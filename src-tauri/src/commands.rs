@@ -4,9 +4,12 @@ use crate::import_export;
 use crate::mood;
 use crate::state::AppState;
 use crate::storage;
-use crate::types::{AppConfig, MoodCategory, MomentumModifier, Profile, Sound, SoundSource};
+use crate::types::{AppConfig, MomentumModifier, MoodCategory, Profile, Sound, SoundSource};
 use crate::youtube;
 use tauri::{Emitter, State};
+
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::PermissionsExt;
 
 // ─── Configuration Commands ─────────────────────────────────────────────────
 
@@ -16,10 +19,7 @@ pub fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
 }
 
 #[tauri::command]
-pub fn update_config(
-    state: State<'_, AppState>,
-    updates: serde_json::Value,
-) -> Result<(), String> {
+pub fn update_config(state: State<'_, AppState>, updates: serde_json::Value) -> Result<(), String> {
     let config = state.update_config(|config| {
         if let Some(v) = updates.get("masterVolume").and_then(|v| v.as_f64()) {
             config.master_volume = v as f32;
@@ -45,13 +45,19 @@ pub fn update_config(
                 config.stop_all_shortcut = keys;
             }
         }
-        if let Some(v) = updates.get("autoMomentumShortcut").and_then(|v| v.as_array()) {
+        if let Some(v) = updates
+            .get("autoMomentumShortcut")
+            .and_then(|v| v.as_array())
+        {
             config.auto_momentum_shortcut = v
                 .iter()
                 .filter_map(|k| k.as_str().map(|s| s.to_string()))
                 .collect();
         }
-        if let Some(v) = updates.get("keyDetectionShortcut").and_then(|v| v.as_array()) {
+        if let Some(v) = updates
+            .get("keyDetectionShortcut")
+            .and_then(|v| v.as_array())
+        {
             config.key_detection_shortcut = v
                 .iter()
                 .filter_map(|k| k.as_str().map(|s| s.to_string()))
@@ -64,11 +70,13 @@ pub fn update_config(
                 .map(|s| s.to_string());
         }
         if updates.get("audioDevice").is_some() {
-            config.audio_device = updates
-                .get("audioDevice")
-                .and_then(|v| {
-                    if v.is_null() { None } else { v.as_str().map(|s| s.to_string()) }
-                });
+            config.audio_device = updates.get("audioDevice").and_then(|v| {
+                if v.is_null() {
+                    None
+                } else {
+                    v.as_str().map(|s| s.to_string())
+                }
+            });
         }
         if let Some(v) = updates.get("chordWindowMs").and_then(|v| v.as_u64()) {
             config.chord_window_ms = v as u32;
@@ -82,7 +90,10 @@ pub fn update_config(
                 _ => MomentumModifier::Shift, // default fallback
             };
         }
-        if let Some(v) = updates.get("playlistImportEnabled").and_then(|v| v.as_bool()) {
+        if let Some(v) = updates
+            .get("playlistImportEnabled")
+            .and_then(|v| v.as_bool())
+        {
             config.playlist_import_enabled = v;
         }
         if let Some(v) = updates.get("moodAiEnabled").and_then(|v| v.as_bool()) {
@@ -90,6 +101,18 @@ pub fn update_config(
         }
         if let Some(v) = updates.get("moodApiPort").and_then(|v| v.as_u64()) {
             config.mood_api_port = v as u16;
+        }
+        if let Some(v) = updates.get("moodEntryThreshold").and_then(|v| v.as_f64()) {
+            config.mood_entry_threshold = v as f32;
+        }
+        if let Some(v) = updates.get("moodExitThreshold").and_then(|v| v.as_f64()) {
+            config.mood_exit_threshold = v as f32;
+        }
+        if let Some(v) = updates.get("moodDwellPages").and_then(|v| v.as_u64()) {
+            config.mood_dwell_pages = v as u32;
+        }
+        if let Some(v) = updates.get("moodWindowSize").and_then(|v| v.as_u64()) {
+            config.mood_window_size = v as usize;
         }
     });
 
@@ -115,16 +138,49 @@ pub fn update_config(
         state.key_detector.set_cooldown(config.key_cooldown);
     }
     if updates.get("stopAllShortcut").is_some() {
-        state.key_detector.set_stop_all_shortcut(config.stop_all_shortcut.clone());
+        state
+            .key_detector
+            .set_stop_all_shortcut(config.stop_all_shortcut.clone());
     }
     if updates.get("autoMomentumShortcut").is_some() {
-        state.key_detector.set_auto_momentum_shortcut(config.auto_momentum_shortcut.clone());
+        state
+            .key_detector
+            .set_auto_momentum_shortcut(config.auto_momentum_shortcut.clone());
     }
     if updates.get("keyDetectionShortcut").is_some() {
-        state.key_detector.set_key_detection_shortcut(config.key_detection_shortcut.clone());
+        state
+            .key_detector
+            .set_key_detection_shortcut(config.key_detection_shortcut.clone());
     }
     if updates.get("chordWindowMs").is_some() {
         state.key_detector.set_chord_window(config.chord_window_ms);
+    }
+
+    // Reset mood director on profile switch (different narrative context)
+    if updates.get("currentProfileId").is_some() {
+        let mut director = state
+            .mood_director
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        director.reset();
+    }
+
+    // Sync mood director config if any mood field changed
+    if updates.get("moodEntryThreshold").is_some()
+        || updates.get("moodExitThreshold").is_some()
+        || updates.get("moodDwellPages").is_some()
+        || updates.get("moodWindowSize").is_some()
+    {
+        let mut director = state
+            .mood_director
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        director.update_config(mood::director::DirectorConfig {
+            entry_threshold: config.mood_entry_threshold,
+            exit_threshold: config.mood_exit_threshold,
+            min_dwell_pages: config.mood_dwell_pages,
+            window_size: config.mood_window_size,
+        });
     }
 
     storage::save_config(&config)
@@ -133,7 +189,10 @@ pub fn update_config(
 /// Set the profile bindings for chord detection.
 /// Called when profile changes or bindings are modified.
 #[tauri::command]
-pub fn set_profile_bindings(state: State<'_, AppState>, bindings: Vec<String>) -> Result<(), String> {
+pub fn set_profile_bindings(
+    state: State<'_, AppState>,
+    bindings: Vec<String>,
+) -> Result<(), String> {
     state.key_detector.set_profile_bindings(&bindings);
     Ok(())
 }
@@ -195,15 +254,23 @@ pub fn play_sound(
 
     // Check file exists
     if !std::path::Path::new(&file_path).exists() {
-        tracing::warn!("Sound file not found: {} (track: {}, sound: {})", file_path, track_id, sound_id);
+        tracing::warn!(
+            "Sound file not found: {} (track: {}, sound: {})",
+            file_path,
+            track_id,
+            sound_id
+        );
         // Play error sound
         let _ = engine.play_error_sound();
         // Emit sound_not_found event
-        let _ = app.emit("sound_not_found", serde_json::json!({
-            "soundId": sound_id,
-            "path": file_path,
-            "trackId": track_id,
-        }));
+        let _ = app.emit(
+            "sound_not_found",
+            serde_json::json!({
+                "soundId": sound_id,
+                "path": file_path,
+                "trackId": track_id,
+            }),
+        );
         return Err(format!("Sound file not found: {}", file_path));
     }
 
@@ -268,7 +335,9 @@ pub fn set_sound_volume(
     sound_id: String,
     volume: f32,
 ) -> Result<(), String> {
-    state.get_audio_engine()?.set_sound_volume(track_id, sound_id, volume)
+    state
+        .get_audio_engine()?
+        .set_sound_volume(track_id, sound_id, volume)
 }
 
 #[tauri::command]
@@ -301,16 +370,18 @@ pub async fn preload_profile_sounds(
     let gen = gen_counter.fetch_add(1, Ordering::SeqCst) + 1;
 
     let count = sounds.iter().filter(|e| e.needs_duration).count();
-    tracing::info!("[cpu-pool] preload_profile_sounds START: {} sounds need duration (gen={})", count, gen);
+    tracing::info!(
+        "[cpu-pool] preload_profile_sounds START: {} sounds need duration (gen={})",
+        count,
+        gen
+    );
     let result = tokio::task::spawn_blocking(move || {
         use rayon::prelude::*;
         use std::sync::Mutex;
 
         // Only process sounds that actually need duration
-        let needs_work: Vec<&SoundPreloadEntry> = sounds
-            .iter()
-            .filter(|e| e.needs_duration)
-            .collect();
+        let needs_work: Vec<&SoundPreloadEntry> =
+            sounds.iter().filter(|e| e.needs_duration).collect();
 
         if needs_work.is_empty() {
             return std::collections::HashMap::new();
@@ -338,7 +409,10 @@ pub async fn preload_profile_sounds(
 
                     if let Ok(dur) = BufferManager::get_audio_duration(&entry.file_path) {
                         if dur > 0.0 {
-                            durations.lock().unwrap().insert(entry.sound_id.clone(), dur);
+                            durations
+                                .lock()
+                                .unwrap()
+                                .insert(entry.sound_id.clone(), dur);
                         }
                     }
                 });
@@ -363,6 +437,176 @@ pub struct SoundPreloadEntry {
 
 // ─── Key Detection Commands ────────────────────────────────────────────────
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinuxInputAccessStatusPayload {
+    pub supported: bool,
+    pub session_type: String,
+    pub background_detection_available: bool,
+    pub can_auto_fix: bool,
+    pub relogin_recommended: bool,
+    pub accessible_keyboard_devices: Vec<String>,
+    pub keyboard_candidates: Vec<String>,
+    pub message: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinuxInputAccessFixResult {
+    pub success: bool,
+    pub message: String,
+    pub status: LinuxInputAccessStatusPayload,
+}
+
+#[cfg(target_os = "linux")]
+fn is_wayland_session_for_linux_input() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE")
+            .map(|value| value.eq_ignore_ascii_case("wayland"))
+            .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_input_status_payload() -> LinuxInputAccessStatusPayload {
+    if is_wayland_session_for_linux_input() {
+        let status = crate::keys::linux_listener::get_linux_input_access_status();
+        LinuxInputAccessStatusPayload {
+            supported: status.supported,
+            session_type: status.session_type,
+            background_detection_available: status.background_detection_available,
+            can_auto_fix: status.can_auto_fix,
+            relogin_recommended: status.relogin_recommended,
+            accessible_keyboard_devices: status.accessible_keyboard_devices,
+            keyboard_candidates: status.keyboard_candidates,
+            message: status.message,
+        }
+    } else {
+        LinuxInputAccessStatusPayload {
+            supported: true,
+            session_type: "x11".to_string(),
+            background_detection_available: true,
+            can_auto_fix: false,
+            relogin_recommended: false,
+            accessible_keyboard_devices: Vec::new(),
+            keyboard_candidates: Vec::new(),
+            message: Some("Background detection uses the X11 hook in this session.".to_string()),
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn linux_input_status_payload() -> LinuxInputAccessStatusPayload {
+    LinuxInputAccessStatusPayload {
+        supported: false,
+        session_type: "other".to_string(),
+        background_detection_available: false,
+        can_auto_fix: false,
+        relogin_recommended: false,
+        accessible_keyboard_devices: Vec::new(),
+        keyboard_candidates: Vec::new(),
+        message: Some(
+            "Automatic Linux background-input setup is only available on Linux.".to_string(),
+        ),
+    }
+}
+
+#[tauri::command]
+pub fn get_linux_input_access_status() -> Result<LinuxInputAccessStatusPayload, String> {
+    Ok(linux_input_status_payload())
+}
+
+#[tauri::command]
+pub fn enable_linux_background_detection() -> Result<LinuxInputAccessFixResult, String> {
+    #[cfg(not(target_os = "linux"))]
+    {
+        return Err("Automatic background-input setup is only available on Linux".to_string());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if !is_wayland_session_for_linux_input() {
+            let status = linux_input_status_payload();
+            return Ok(LinuxInputAccessFixResult {
+                success: true,
+                message: "No extra setup is needed on X11.".to_string(),
+                status,
+            });
+        }
+
+        let current_status = linux_input_status_payload();
+        if current_status.background_detection_available {
+            return Ok(LinuxInputAccessFixResult {
+                success: true,
+                message: "Background detection is already available.".to_string(),
+                status: current_status,
+            });
+        }
+
+        let temp_path = std::env::temp_dir().join(format!(
+            "keytomusic-enable-wayland-input-{}.sh",
+            std::process::id()
+        ));
+
+        let script = r#"#!/bin/sh
+set -eu
+RULE_PATH="/etc/udev/rules.d/70-keytomusic-background-input.rules"
+cat > "$RULE_PATH" <<'EOF'
+ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess"
+EOF
+chmod 0644 "$RULE_PATH"
+udevadm control --reload-rules
+udevadm trigger --subsystem-match=input --action=change
+"#;
+
+        std::fs::write(&temp_path, script)
+            .map_err(|e| format!("Failed to prepare setup helper: {}", e))?;
+        std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("Failed to mark setup helper executable: {}", e))?;
+
+        let output = std::process::Command::new("pkexec")
+            .arg("/bin/sh")
+            .arg(&temp_path)
+            .output();
+
+        let _ = std::fs::remove_file(&temp_path);
+
+        let output = match output {
+            Ok(output) => output,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Err(
+                    "Automatic setup requires pkexec, but it is not installed on this system."
+                        .to_string(),
+                )
+            }
+            Err(e) => return Err(format!("Failed to launch automatic setup: {}", e)),
+        };
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let detail = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                "The permission request was cancelled or denied.".to_string()
+            };
+            return Err(format!("Automatic setup failed: {}", detail));
+        }
+
+        let status = linux_input_status_payload();
+        Ok(LinuxInputAccessFixResult {
+            success: true,
+            message: if status.background_detection_available {
+                "Background detection access has been enabled.".to_string()
+            } else {
+                "System access rules were installed. The app will keep retrying automatically; if background detection still does not recover, sign out and back in once.".to_string()
+            },
+            status,
+        })
+    }
+}
+
 #[tauri::command]
 pub fn set_key_detection(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     state.key_detector.set_enabled(enabled);
@@ -376,10 +620,7 @@ pub fn set_key_detection(state: State<'_, AppState>, enabled: bool) -> Result<()
 }
 
 #[tauri::command]
-pub fn set_stop_all_shortcut(
-    state: State<'_, AppState>,
-    keys: Vec<String>,
-) -> Result<(), String> {
+pub fn set_stop_all_shortcut(state: State<'_, AppState>, keys: Vec<String>) -> Result<(), String> {
     if keys.len() < 2 {
         return Err("Stop all shortcut must have at least 2 keys".to_string());
     }
@@ -420,10 +661,7 @@ pub fn list_audio_devices() -> Vec<String> {
 }
 
 #[tauri::command]
-pub fn set_audio_device(
-    state: State<'_, AppState>,
-    device: Option<String>,
-) -> Result<(), String> {
+pub fn set_audio_device(state: State<'_, AppState>, device: Option<String>) -> Result<(), String> {
     // Update audio engine
     state.get_audio_engine()?.set_audio_device(device.clone())?;
 
@@ -538,7 +776,11 @@ pub async fn get_waveforms_batch(
 
     let gen = state.profile_load_gen.clone();
     let current_gen = gen.load(std::sync::atomic::Ordering::SeqCst);
-    tracing::info!("[cpu-pool] get_waveforms_batch START: {} to compute (gen={})", to_compute.len(), current_gen);
+    tracing::info!(
+        "[cpu-pool] get_waveforms_batch START: {} to compute (gen={})",
+        to_compute.len(),
+        current_gen
+    );
     let pool = state.cpu_pool.clone();
     let computed = tokio::task::spawn_blocking(move || {
         use rayon::prelude::*;
@@ -559,7 +801,9 @@ pub async fn get_waveforms_batch(
                     if gen.load(Ordering::SeqCst) != current_gen {
                         return;
                     }
-                    if let Ok(data) = analysis::compute_waveform_sampled(&entry.path, entry.num_points, None) {
+                    if let Ok(data) =
+                        analysis::compute_waveform_sampled(&entry.path, entry.num_points, None)
+                    {
                         new_results.lock().unwrap().insert(entry.path.clone(), data);
                     }
                 });
@@ -598,11 +842,14 @@ pub async fn add_sound_from_youtube(
     let app_handle = app.clone();
     let did = download_id.clone();
     let on_progress: youtube::downloader::ProgressCallback = Box::new(move |status, progress| {
-        let _ = app_handle.emit("youtube_download_progress", serde_json::json!({
-            "downloadId": did,
-            "status": status,
-            "progress": progress,
-        }));
+        let _ = app_handle.emit(
+            "youtube_download_progress",
+            serde_json::json!({
+                "downloadId": did,
+                "status": status,
+                "progress": progress,
+            }),
+        );
     });
 
     let entry = youtube::download_audio(&url, cache, Some(on_progress)).await?;
@@ -722,7 +969,11 @@ pub async fn export_profile(
                     }),
                 );
             });
-        let waveforms_opt = if waveforms.is_empty() { None } else { Some(waveforms) };
+        let waveforms_opt = if waveforms.is_empty() {
+            None
+        } else {
+            Some(waveforms)
+        };
         import_export::export_profile(&profile_id, &output_path, waveforms_opt, Some(progress_cb))
     })
     .await
@@ -734,11 +985,10 @@ pub async fn import_profile(
     state: State<'_, AppState>,
     ktm_path: String,
 ) -> Result<String, String> {
-    let import_result = tokio::task::spawn_blocking(move || {
-        import_export::import_profile(&ktm_path)
-    })
-    .await
-    .map_err(|e| format!("Import task failed: {}", e))??;
+    let import_result =
+        tokio::task::spawn_blocking(move || import_export::import_profile(&ktm_path))
+            .await
+            .map_err(|e| format!("Import task failed: {}", e))??;
 
     // Inject imported waveforms into cache
     if !import_result.waveforms.is_empty() {
@@ -874,8 +1124,8 @@ pub async fn pick_legacy_file() -> Result<Option<String>, String> {
 /// Import a legacy KeyToMusic save file and convert it to a new profile.
 #[tauri::command]
 pub async fn import_legacy_save(path: String) -> Result<Profile, String> {
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read legacy save: {}", e))?;
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read legacy save: {}", e))?;
 
     let legacy: LegacySave = serde_json::from_str(&content)
         .map_err(|e| format!("Failed to parse legacy save: {}", e))?;
@@ -930,6 +1180,7 @@ pub async fn import_legacy_save(path: String) -> Result<Profile, String> {
                 current_index: 0,
                 name: None,
                 mood: None,
+                mood_intensity: None,
             });
         }
     }
@@ -953,8 +1204,12 @@ pub async fn import_legacy_save(path: String) -> Result<Profile, String> {
 
     storage::save_profile(&profile)?;
 
-    tracing::info!("Imported legacy save as profile '{}' with {} sounds and {} key bindings",
-        profile.name, profile.sounds.len(), profile.key_bindings.len());
+    tracing::info!(
+        "Imported legacy save as profile '{}' with {} sounds and {} key bindings",
+        profile.name,
+        profile.sounds.len(),
+        profile.key_bindings.len()
+    );
 
     Ok(profile)
 }
@@ -1001,11 +1256,7 @@ pub async fn start_discovery(
                         sound_name: sound.name.clone(),
                     });
                 } else {
-                    unresolved_locals.push((
-                        sound.id.clone(),
-                        path.clone(),
-                        sound.name.clone(),
-                    ));
+                    unresolved_locals.push((sound.id.clone(), path.clone(), sound.name.clone()));
                 }
             }
         }
@@ -1015,17 +1266,18 @@ pub async fn start_discovery(
     if !unresolved_locals.is_empty() {
         let count = unresolved_locals.len();
         if !is_background {
-            let _ = app.emit("discovery_resolving", serde_json::json!({
-                "count": count,
-            }));
+            let _ = app.emit(
+                "discovery_resolving",
+                serde_json::json!({
+                    "count": count,
+                }),
+            );
         }
         tracing::info!("Resolving {} local sounds for discovery seeds", count);
 
         let youtube_cache = state.youtube_cache.clone();
-        let resolved = discovery::engine::resolve_local_seeds(
-            unresolved_locals,
-            youtube_cache,
-        ).await;
+        let resolved =
+            discovery::engine::resolve_local_seeds(unresolved_locals, youtube_cache).await;
 
         // Add resolved seeds and collect updates for targeted persist
         let mut resolved_updates: Vec<(String, String)> = Vec::new();
@@ -1048,7 +1300,10 @@ pub async fn start_discovery(
     }
 
     if seeds.is_empty() {
-        return Err("No seeds found in profile (no YouTube sounds and no resolvable local sounds)".to_string());
+        return Err(
+            "No seeds found in profile (no YouTube sounds and no resolvable local sounds)"
+                .to_string(),
+        );
     }
 
     // Preserve dismissed_ids from previous cache so dismissed suggestions don't reappear
@@ -1086,11 +1341,14 @@ pub async fn start_discovery(
             yt_dlp_bin,
             move |current, total, seed_name| {
                 if !bg {
-                    let _ = app_progress.emit("discovery_progress", serde_json::json!({
-                        "current": current,
-                        "total": total,
-                        "seedName": seed_name,
-                    }));
+                    let _ = app_progress.emit(
+                        "discovery_progress",
+                        serde_json::json!({
+                            "current": current,
+                            "total": total,
+                            "seedName": seed_name,
+                        }),
+                    );
                 }
             },
             move |partial_suggestions| {
@@ -1103,9 +1361,12 @@ pub async fn start_discovery(
 
     if cancel_flag.load(Ordering::Relaxed) {
         if !is_background {
-            let _ = app.emit("discovery_error", serde_json::json!({
-                "message": "Discovery cancelled",
-            }));
+            let _ = app.emit(
+                "discovery_error",
+                serde_json::json!({
+                    "message": "Discovery cancelled",
+                }),
+            );
         }
         return Err("Discovery cancelled".to_string());
     }
@@ -1120,7 +1381,8 @@ pub async fn start_discovery(
             &profile_id,
             suggestions.clone(),
             &seed_hash,
-        ).ok();
+        )
+        .ok();
     } else {
         let cache_data = discovery::cache::DiscoveryCacheData {
             profile_id: profile_id.clone(),
@@ -1134,9 +1396,12 @@ pub async fn start_discovery(
         };
         discovery::cache::DiscoveryCache::save(&cache_data).ok();
 
-        let _ = app.emit("discovery_complete", serde_json::json!({
-            "count": suggestions.len(),
-        }));
+        let _ = app.emit(
+            "discovery_complete",
+            serde_json::json!({
+                "count": suggestions.len(),
+            }),
+        );
     }
 
     Ok(suggestions)
@@ -1155,12 +1420,14 @@ pub struct DiscoveryCacheResponse {
 pub fn get_discovery_suggestions(
     profile_id: String,
 ) -> Result<Option<DiscoveryCacheResponse>, String> {
-    Ok(discovery::cache::DiscoveryCache::load(&profile_id).map(|d| DiscoveryCacheResponse {
-        suggestions: d.suggestions,
-        cursor_index: d.cursor_index,
-        revealed_count: d.revealed_count,
-        visited_index: d.visited_index,
-    }))
+    Ok(
+        discovery::cache::DiscoveryCache::load(&profile_id).map(|d| DiscoveryCacheResponse {
+            suggestions: d.suggestions,
+            cursor_index: d.cursor_index,
+            revealed_count: d.revealed_count,
+            visited_index: d.visited_index,
+        }),
+    )
 }
 
 #[tauri::command]
@@ -1170,7 +1437,12 @@ pub fn save_discovery_cursor(
     revealed_count: usize,
     visited_index: i32,
 ) -> Result<(), String> {
-    discovery::cache::DiscoveryCache::save_cursor(&profile_id, cursor_index, revealed_count, visited_index)
+    discovery::cache::DiscoveryCache::save_cursor(
+        &profile_id,
+        cursor_index,
+        revealed_count,
+        visited_index,
+    )
 }
 
 #[tauri::command]
@@ -1182,7 +1454,11 @@ pub fn update_discovery_pool(
     visited_index: i32,
 ) -> Result<(), String> {
     discovery::cache::DiscoveryCache::update_pool(
-        &profile_id, suggestions, cursor_index, revealed_count, visited_index,
+        &profile_id,
+        suggestions,
+        cursor_index,
+        revealed_count,
+        visited_index,
     )
 }
 
@@ -1232,10 +1508,7 @@ pub fn dislike_discovery(
 }
 
 #[tauri::command]
-pub fn undislike_discovery(
-    profile_id: String,
-    video_id: String,
-) -> Result<(), String> {
+pub fn undislike_discovery(profile_id: String, video_id: String) -> Result<(), String> {
     storage::update_disliked_videos(&profile_id, &video_id, false)?;
 
     Ok(())
@@ -1252,9 +1525,7 @@ pub struct DislikedVideoInfo {
 }
 
 #[tauri::command]
-pub async fn list_disliked_videos(
-    profile_id: String,
-) -> Result<Vec<DislikedVideoInfo>, String> {
+pub async fn list_disliked_videos(profile_id: String) -> Result<Vec<DislikedVideoInfo>, String> {
     use futures::stream::{self, StreamExt};
 
     let profile = storage::load_profile(profile_id)?;
@@ -1290,14 +1561,32 @@ pub async fn list_disliked_videos(
                     if let Ok(Ok(out)) = tokio::time::timeout(
                         std::time::Duration::from_secs(10),
                         child.wait_with_output(),
-                    ).await {
+                    )
+                    .await
+                    {
                         if out.status.success() {
                             let stdout = String::from_utf8_lossy(&out.stdout);
                             if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
-                                let title = json.get("title").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string();
-                                let channel = json.get("channel").or_else(|| json.get("uploader")).and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                let duration = json.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                return DislikedVideoInfo { video_id, title, channel, duration, url };
+                                let title = json
+                                    .get("title")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("Unknown")
+                                    .to_string();
+                                let channel = json
+                                    .get("channel")
+                                    .or_else(|| json.get("uploader"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let duration =
+                                    json.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                return DislikedVideoInfo {
+                                    video_id,
+                                    title,
+                                    channel,
+                                    duration,
+                                    url,
+                                };
                             }
                         }
                     }
@@ -1353,11 +1642,14 @@ pub async fn predownload_suggestion(
     let app_handle = app.clone();
     let did = download_id.clone();
     let on_progress: youtube::downloader::ProgressCallback = Box::new(move |status, progress| {
-        let _ = app_handle.emit("youtube_download_progress", serde_json::json!({
-            "downloadId": did,
-            "status": status,
-            "progress": progress,
-        }));
+        let _ = app_handle.emit(
+            "youtube_download_progress",
+            serde_json::json!({
+                "downloadId": did,
+                "status": status,
+                "progress": progress,
+            }),
+        );
     });
 
     let entry = youtube::download_audio(&url, cache, Some(on_progress)).await?;
@@ -1366,28 +1658,34 @@ pub async fn predownload_suggestion(
 
     // Compute waveform (includes duration + momentum detection) during predownload
     // so momentum is available immediately when the user navigates to this suggestion
-    tracing::info!("[cpu-pool] predownload_suggestion waveform START: {}", video_id);
+    tracing::info!(
+        "[cpu-pool] predownload_suggestion waveform START: {}",
+        video_id
+    );
     let waveform_path = cached_path.clone();
     let cache_path = cached_path.clone();
     let pool = state.cpu_pool.clone();
     let vid_log = video_id.clone();
 
     let (duration, waveform) = tokio::task::spawn_blocking(move || {
-        pool.install(|| {
-            match analysis::compute_waveform_sampled(&waveform_path, 80, None) {
+        pool.install(
+            || match analysis::compute_waveform_sampled(&waveform_path, 80, None) {
                 Ok(wf) => (wf.duration, Some(wf)),
                 Err(e) => {
                     tracing::warn!("Waveform computation failed for {}: {}", vid_log, e);
                     let dur = BufferManager::get_audio_duration(&waveform_path).unwrap_or(0.0);
                     (dur, None)
                 }
-            }
-        })
+            },
+        )
     })
     .await
     .map_err(|e| format!("Predownload task failed: {}", e))?;
 
-    tracing::info!("[cpu-pool] predownload_suggestion waveform END: {}", video_id);
+    tracing::info!(
+        "[cpu-pool] predownload_suggestion waveform END: {}",
+        video_id
+    );
 
     // Cache waveform for future get_waveform calls
     if let Some(ref wf) = waveform {
@@ -1424,7 +1722,9 @@ pub fn verify_profile_sounds(profile: Profile) -> Vec<MissingSoundInfo> {
     for sound in &profile.sounds {
         let (file_path, source_type) = match &sound.source {
             SoundSource::Local { path } => (path.clone(), "local".to_string()),
-            SoundSource::YouTube { cached_path, .. } => (cached_path.clone(), "youtube".to_string()),
+            SoundSource::YouTube { cached_path, .. } => {
+                (cached_path.clone(), "youtube".to_string())
+            }
         };
 
         if !std::path::Path::new(&file_path).exists() {
@@ -1522,10 +1822,26 @@ pub fn open_folder(path: String) -> Result<(), String> {
 /// Returns config + profile list + current profile (if any) in a single round-trip.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct InputRuntime {
+    pub is_linux: bool,
+    pub is_wayland: bool,
+    pub browser_key_fallback: bool,
+}
+
+fn is_wayland_session() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE")
+            .map(|value| value.eq_ignore_ascii_case("wayland"))
+            .unwrap_or(false)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InitialState {
     pub config: AppConfig,
     pub profiles: Vec<storage::ProfileSummary>,
     pub current_profile: Option<Profile>,
+    pub input_runtime: InputRuntime,
 }
 
 #[tauri::command]
@@ -1537,11 +1853,18 @@ pub fn get_initial_state(state: State<'_, AppState>) -> Result<InitialState, Str
     } else {
         None
     };
+    let is_linux = cfg!(target_os = "linux");
+    let is_wayland = is_linux && is_wayland_session();
 
     Ok(InitialState {
         config,
         profiles,
         current_profile,
+        input_runtime: InputRuntime {
+            is_linux,
+            is_wayland,
+            browser_key_fallback: is_wayland,
+        },
     })
 }
 
@@ -1613,12 +1936,19 @@ pub async fn start_mood_server(
         let port = config.mood_api_port;
         let handle = app_handle.clone();
         let cache_ref = state.mood_cache.clone();
+        let director_ref = state.mood_director.clone();
         let api_handle = tokio::spawn(async move {
-            if let Err(e) = mood::server::start_api_server(port, llama_ref, handle, cache_ref).await {
+            if let Err(e) =
+                mood::server::start_api_server(port, llama_ref, handle, cache_ref, director_ref)
+                    .await
+            {
                 tracing::error!("Mood API server error: {}", e);
             }
         });
-        let mut api_guard = state.mood_api_server.lock().unwrap_or_else(|e| e.into_inner());
+        let mut api_guard = state
+            .mood_api_server
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         *api_guard = Some(api_handle);
     }
 
@@ -1632,7 +1962,10 @@ pub async fn stop_mood_server(
 ) -> Result<(), String> {
     // Stop API server
     {
-        let mut api_guard = state.mood_api_server.lock().unwrap_or_else(|e| e.into_inner());
+        let mut api_guard = state
+            .mood_api_server
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(handle) = api_guard.take() {
             handle.abort();
         }
@@ -1644,6 +1977,15 @@ pub async fn stop_mood_server(
         if let Some(mut server) = guard.take() {
             server.stop();
         }
+    }
+
+    // Reset director state
+    {
+        let mut director = state
+            .mood_director
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        director.reset();
     }
 
     let _ = app_handle.emit(
@@ -1674,27 +2016,78 @@ pub async fn analyze_mood(
     app_handle: tauri::AppHandle,
     image_path: String,
 ) -> Result<MoodCategory, String> {
-    let image_data = std::fs::read(&image_path)
-        .map_err(|e| format!("Failed to read image: {}", e))?;
+    let image_data =
+        std::fs::read(&image_path).map_err(|e| format!("Failed to read image: {}", e))?;
 
     let image_b64 = mood::inference::prepare_image(&image_data)?;
+
+    // Build narrative context from director
+    let narrative_context = {
+        let director = state
+            .mood_director
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let previous_moods: Vec<String> = director
+            .window_moods()
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let current_soundtrack = director.committed_mood().map(|m| m.as_str().to_string());
+        let soundtrack_dwell = director.dwell_count();
+        mood::inference::NarrativeContext {
+            previous_moods,
+            current_soundtrack,
+            soundtrack_dwell,
+            next_moods: Vec::new(), // No cache look-ahead for local analysis
+        }
+    };
 
     let mut guard = state.llama_server.lock().await;
     let server = guard
         .as_mut()
         .ok_or_else(|| "Mood server not running".to_string())?;
 
-    let mood_result = server.analyze_mood(&image_b64).await?;
+    let (scores, narrative_role) = server
+        .analyze_mood_scored(&image_b64, Some(&narrative_context))
+        .await?;
 
-    let mood_str = serde_json::to_value(&mood_result)
-        .ok()
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_default();
+    let dominant_mood = scores.dominant();
+    let mood_str = dominant_mood.as_str().to_string();
 
+    // Feed into director
+    let decision = {
+        let analysis = mood::director::PageAnalysis {
+            scores,
+            intensity: crate::types::MoodIntensity::Medium, // TODO: use real intensity
+            narrative_role,
+            dominant_mood,
+        };
+        let mut director = state
+            .mood_director
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        director.process(analysis, None)
+    };
+
+    // Always emit raw mood for UI
     let _ = app_handle.emit(
         "mood_detected",
         serde_json::json!({ "mood": mood_str, "source": "local" }),
     );
 
-    Ok(mood_result)
+    // Emit committed mood only if changed
+    if decision.mood_changed {
+        let committed_str = decision.committed_mood.as_str().to_string();
+        let _ = app_handle.emit(
+            "mood_committed",
+            serde_json::json!({
+                "mood": committed_str,
+                "source": "local",
+                "previous_mood": mood_str,
+                "dwell_count": decision.dwell_count,
+            }),
+        );
+    }
+
+    Ok(decision.committed_mood)
 }

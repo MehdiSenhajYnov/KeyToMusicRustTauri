@@ -55,12 +55,14 @@ fn build_suggestions(
     let mut suggestions: Vec<DiscoverySuggestion> = occurrence_map
         .iter()
         .filter(|(video_id, (_, _, duration, _, _, _, _))| {
-            !existing_set.contains(*video_id)
-                && *duration >= 30.0
-                && *duration <= 900.0 // 15 minutes
+            !existing_set.contains(*video_id) && *duration >= 30.0 && *duration <= 900.0
+            // 15 minutes
         })
         .map(
-            |(video_id, (title, channel, duration, url, source_seed_names, source_seed_ids, count))| {
+            |(
+                video_id,
+                (title, channel, duration, url, source_seed_names, source_seed_ids, count),
+            )| {
                 DiscoverySuggestion {
                     video_id: video_id.clone(),
                     title: title.clone(),
@@ -177,20 +179,18 @@ impl DiscoveryEngine {
 
 // Pre-compiled regexes for filename cleaning (compiled once, reused across calls)
 static NOISE_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-    Regex::new(r"(?i)\b(copy|final|v\d+|edit|\d{2,3}kbps|track\s?\d+)\b").expect("invalid noise regex")
+    Regex::new(r"(?i)\b(copy|final|v\d+|edit|\d{2,3}kbps|track\s?\d+)\b")
+        .expect("invalid noise regex")
 });
-static BRACKET_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-    Regex::new(r"[\[\(](.*?)[\]\)]").expect("invalid bracket regex")
-});
+static BRACKET_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"[\[\(](.*?)[\]\)]").expect("invalid bracket regex"));
 static USEFUL_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"(?i)\b(OST|Soundtrack|Original)\b").expect("invalid useful regex")
 });
-static LEADING_NUM_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-    Regex::new(r"^\d+\s+").expect("invalid leading num regex")
-});
-static SPACES_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-    Regex::new(r"\s{2,}").expect("invalid spaces regex")
-});
+static LEADING_NUM_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"^\d+\s+").expect("invalid leading num regex"));
+static SPACES_RE: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(r"\s{2,}").expect("invalid spaces regex"));
 
 /// Clean a filename into a search query by removing extensions, noise, and formatting.
 pub fn clean_filename_for_search(filename: &str) -> String {
@@ -262,7 +262,11 @@ pub async fn resolve_local_seeds(
                     return None;
                 }
 
-                tracing::info!("Resolving local sound '{}' with query: '{}'", sound_name, query);
+                tracing::info!(
+                    "Resolving local sound '{}' with query: '{}'",
+                    sound_name,
+                    query
+                );
 
                 match search::search_youtube(&query, 1, cache).await {
                     Ok(results) if !results.is_empty() => {

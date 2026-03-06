@@ -85,7 +85,10 @@ pub async fn download_ffmpeg() -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to download ffmpeg: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Failed to download ffmpeg: HTTP {}", response.status()));
+        return Err(format!(
+            "Failed to download ffmpeg: HTTP {}",
+            response.status()
+        ));
     }
 
     let bytes = response
@@ -110,8 +113,8 @@ pub async fn download_ffmpeg() -> Result<PathBuf, String> {
     }
 
     // Verify the file exists and has reasonable size
-    let meta = std::fs::metadata(&target_path)
-        .map_err(|e| format!("ffmpeg extraction failed: {}", e))?;
+    let meta =
+        std::fs::metadata(&target_path).map_err(|e| format!("ffmpeg extraction failed: {}", e))?;
     if meta.len() < 1_000_000 {
         let _ = std::fs::remove_file(&target_path);
         return Err("ffmpeg extraction produced invalid file".to_string());
@@ -136,13 +139,15 @@ fn extract_from_zip(data: &[u8], target_path: &PathBuf) -> Result<(), String> {
     // 2. ffmpeg directly at root (evermeet.cx structure)
     let mut found = false;
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i)
+        let mut file = archive
+            .by_index(i)
             .map_err(|e| format!("Failed to read archive entry: {}", e))?;
 
         let name = file.name().to_string();
 
         // Match either: ends with bin/ffmpeg OR is exactly "ffmpeg" (or ffmpeg.exe on Windows)
-        let is_bin_path = name.ends_with(ffmpeg_name) && (name.contains("/bin/") || name.contains("\\bin\\"));
+        let is_bin_path =
+            name.ends_with(ffmpeg_name) && (name.contains("/bin/") || name.contains("\\bin\\"));
         let is_root_path = name == ffmpeg_name;
 
         if is_bin_path || is_root_path {

@@ -10,13 +10,13 @@ use windows::Win32::Devices::HumanInterfaceDevice::{
 };
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::{
-    GetRawInputData, RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE,
-    RAWINPUTHEADER, RIDEV_INPUTSINK, RID_INPUT, RIM_TYPEKEYBOARD,
+    GetRawInputData, RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER,
+    RIDEV_INPUTSINK, RID_INPUT, RIM_TYPEKEYBOARD,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassW,
-    TranslateMessage, CS_HREDRAW, CS_VREDRAW, HWND_MESSAGE, MSG, WINDOW_EX_STYLE,
-    WM_INPUT, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+    TranslateMessage, CS_HREDRAW, CS_VREDRAW, HWND_MESSAGE, MSG, WINDOW_EX_STYLE, WM_INPUT,
+    WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
 
 /// Key event sent from the hook to the main handler
@@ -108,8 +108,13 @@ where
             hwndTarget: hwnd,
         };
 
-        if let Err(e) = RegisterRawInputDevices(&[rid], std::mem::size_of::<RAWINPUTDEVICE>() as u32) {
-            warn!("[WinRawInput] Failed to register raw input devices: {:?}", e);
+        if let Err(e) =
+            RegisterRawInputDevices(&[rid], std::mem::size_of::<RAWINPUTDEVICE>() as u32)
+        {
+            warn!(
+                "[WinRawInput] Failed to register raw input devices: {:?}",
+                e
+            );
             return;
         }
 
@@ -207,24 +212,24 @@ unsafe fn process_raw_input(hrawinput: HRAWINPUT) {
 
 /// Pre-computed lookup tables for zero-allocation key code conversion.
 static LETTER_CODES: [&str; 26] = [
-    "KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyF", "KeyG", "KeyH", "KeyI",
-    "KeyJ", "KeyK", "KeyL", "KeyM", "KeyN", "KeyO", "KeyP", "KeyQ", "KeyR",
-    "KeyS", "KeyT", "KeyU", "KeyV", "KeyW", "KeyX", "KeyY", "KeyZ",
+    "KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyF", "KeyG", "KeyH", "KeyI", "KeyJ", "KeyK", "KeyL",
+    "KeyM", "KeyN", "KeyO", "KeyP", "KeyQ", "KeyR", "KeyS", "KeyT", "KeyU", "KeyV", "KeyW", "KeyX",
+    "KeyY", "KeyZ",
 ];
 
 static DIGIT_CODES: [&str; 10] = [
-    "Digit0", "Digit1", "Digit2", "Digit3", "Digit4",
-    "Digit5", "Digit6", "Digit7", "Digit8", "Digit9",
+    "Digit0", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8",
+    "Digit9",
 ];
 
 static NUMPAD_CODES: [&str; 10] = [
-    "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4",
-    "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9",
+    "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7",
+    "Numpad8", "Numpad9",
 ];
 
 static F_KEY_CODES: [&str; 24] = [
-    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
-    "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24",
+    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "F13", "F14", "F15",
+    "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24",
 ];
 
 /// Convert Windows virtual key code to Web KeyboardEvent.code format
@@ -261,9 +266,17 @@ fn vk_to_code(vk: u32, scan_code: u32, is_extended: bool) -> String {
         0x09 => Some("Tab"),
         0x0D => Some(if is_extended { "NumpadEnter" } else { "Enter" }),
         // Shift: scan code 0x36 is right shift, 0x2A is left shift
-        0x10 | 0xA0 | 0xA1 => Some(if scan_code == 0x36 { "ShiftRight" } else { "ShiftLeft" }),
+        0x10 | 0xA0 | 0xA1 => Some(if scan_code == 0x36 {
+            "ShiftRight"
+        } else {
+            "ShiftLeft"
+        }),
         // Control
-        0x11 | 0xA2 | 0xA3 => Some(if is_extended { "ControlRight" } else { "ControlLeft" }),
+        0x11 | 0xA2 | 0xA3 => Some(if is_extended {
+            "ControlRight"
+        } else {
+            "ControlLeft"
+        }),
         // Alt (Menu)
         0x12 | 0xA4 | 0xA5 => Some(if is_extended { "AltRight" } else { "AltLeft" }),
         0x13 => Some("Pause"),

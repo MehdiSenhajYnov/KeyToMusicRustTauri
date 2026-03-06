@@ -2,10 +2,17 @@ import { useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAudioStore } from "../stores/audioStore";
 import { useProfileStore } from "../stores/profileStore";
+import { useRuntimeStore } from "../stores/runtimeStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useToastStore } from "../stores/toastStore";
 import * as commands from "../utils/tauriCommands";
-import { getKeyCode, recordKeyLayout } from "../utils/keyMapping";
+import {
+  buildComboFromPressedKeys,
+  getBindingCodeCandidates,
+  getKeyCode,
+  normalizeCombo,
+  recordKeyLayout,
+} from "../utils/keyMapping";
 import { formatErrorMessage } from "../utils/errorMessages";
 import { getSoundFilePath } from "../utils/soundHelpers";
 import { isTextInput } from "../utils/inputHelpers";
@@ -25,6 +32,28 @@ function hasMomentumModifier(keyCode: string, modifier: MomentumModifier): boole
     default:
       return false;
   }
+}
+
+function isPrefix(prefix: string[], full: string[]): boolean {
+  return prefix.length <= full.length && prefix.every((part, index) => full[index] === part);
+}
+
+function findBestComboMatch(currentParts: string[], bindingParts: string[][], combos: string[]): string | null {
+  let bestMatch: string | null = null;
+  let bestLength = -1;
+
+  bindingParts.forEach((parts, index) => {
+    if (parts.length <= currentParts.length && isPrefix(parts, currentParts) && parts.length > bestLength) {
+      bestMatch = combos[index];
+      bestLength = parts.length;
+    }
+  });
+
+  return bestMatch;
+}
+
+function hasComboExtensions(currentParts: string[], bindingParts: string[][]): boolean {
+  return bindingParts.some((parts) => parts.length > currentParts.length && isPrefix(currentParts, parts));
 }
 
 interface KeyPressedPayload {
@@ -77,7 +106,53 @@ export function useKeyDetection() {
   const setLastKeyPressed = useAudioStore((s) => s.setLastKeyPressed);
   const toggleKeyDetection = useSettingsStore((s) => s.toggleKeyDetection);
   const toggleAutoMomentum = useSettingsStore((s) => s.toggleAutoMomentum);
+  const browserKeyFallback = useRuntimeStore((s) => s.inputRuntime.browserKeyFallback);
   const lastTriggerTime = useRef(0);
+  const pressedKeysRef = useRef<Set<string>>(new Set());
+  const browserPendingComboRef = useRef<string | null>(null);
+  const browserChordTimerRef = useRef<number | null>(null);
+  const bindingMetaRef = useRef<{
+    combos: string[];
+    comboParts: string[][];
+    parts: Set<string>[];
+  }>({
+    combos: [],
+    comboParts: [],
+    parts: [],
+  });
+
+  const clearBrowserChordTimer = useCallback(() => {
+    if (browserChordTimerRef.current !== null) {
+      window.clearTimeout(browserChordTimerRef.current);
+      browserChordTimerRef.current = null;
+    }
+    browserPendingComboRef.current = null;
+  }, []);
+
+  const syncBindingMeta = useCallback(() => {
+    const currentProfile = useProfileStore.getState().currentProfile;
+    const combos = [...new Set((currentProfile?.keyBindings ?? []).map((kb) => normalizeCombo(kb.keyCode)))];
+    bindingMetaRef.current = {
+      combos,
+      comboParts: combos.map((combo) => combo.split("+")),
+      parts: combos.map((combo) => new Set(combo.split("+"))),
+    };
+    clearBrowserChordTimer();
+  }, [clearBrowserChordTimer]);
+
+  const findBindingsForCandidates = useCallback((keyCodes: string[]) => {
+    const currentProfile = useProfileStore.getState().currentProfile;
+    if (!currentProfile) return [];
+
+    for (const candidate of keyCodes) {
+      const matches = currentProfile.keyBindings.filter((kb) => kb.keyCode === candidate);
+      if (matches.length > 0) {
+        return matches;
+      }
+    }
+
+    return [];
+  }, []);
 
   // Read currentProfile and config via getState() inside the handler
   // to avoid re-creating the callback when they change.
@@ -91,10 +166,8 @@ export function useKeyDetection() {
       const currentProfile = useProfileStore.getState().currentProfile;
       if (!currentProfile) return;
 
-      // Try to find all bindings with the exact combined key code first
-      let bindings = currentProfile.keyBindings.filter(
-        (kb) => kb.keyCode === payload.keyCode
-      );
+      // Try the canonical physical code first, then a legacy layout-aware fallback.
+      let bindings = findBindingsForCandidates(getBindingCodeCandidates(payload.keyCode));
 
       // If not found and keyCode has modifiers, try the base key
       // (this allows [Modifier]+A to trigger "KeyA" bindings with momentum)
@@ -102,8 +175,7 @@ export function useKeyDetection() {
       if (bindings.length === 0 && payload.keyCode.includes("+")) {
         const parts = payload.keyCode.split("+");
         const baseKey = parts[parts.length - 1];
-        bindings = currentProfile.keyBindings.filter((kb) => kb.keyCode === baseKey);
-        // If we found base key bindings and the configured momentum modifier was pressed, use momentum
+        bindings = findBindingsForCandidates(getBindingCodeCandidates(baseKey));
         if (bindings.length > 0 && hasMomentumModifier(payload.keyCode, config.momentumModifier)) {
           useModifierForMomentum = true;
         }
@@ -117,7 +189,7 @@ export function useKeyDetection() {
         return;
       }
 
-      const soundMap = new Map(currentProfile.sounds.map(s => [s.id, s]));
+      const soundMap = new Map(currentProfile.sounds.map((s) => [s.id, s]));
 
       // Prepare all playback commands, then fire them concurrently for simultaneous multi-track playback
       const playTasks = bindings.map(async (binding) => {
@@ -131,7 +203,9 @@ export function useKeyDetection() {
 
         // Update currentIndex for off/sequential/random
         if (binding.loopMode !== "single") {
-          useProfileStore.getState().updateKeyBinding(binding.keyCode, binding.trackId, { currentIndex: nextIndex });
+          useProfileStore.getState().updateKeyBinding(binding.keyCode, binding.trackId, {
+            currentIndex: nextIndex,
+          });
         }
 
         const startPosition =
@@ -165,7 +239,48 @@ export function useKeyDetection() {
         lastTriggerTime.current = Date.now();
       }
     },
-    [setLastKeyPressed]
+    [findBindingsForCandidates, setLastKeyPressed]
+  );
+
+  const triggerBrowserCombo = useCallback(
+    (combo: string) => {
+      void handleKeyPress({
+        keyCode: combo,
+        withShift: combo.split("+").includes("Shift"),
+      });
+    },
+    [handleKeyPress]
+  );
+
+  const queueBrowserCombo = useCallback(
+    (combo: string) => {
+      clearBrowserChordTimer();
+      browserPendingComboRef.current = combo;
+
+      const chordWindowMs = useSettingsStore.getState().config.chordWindowMs;
+      browserChordTimerRef.current = window.setTimeout(() => {
+        const pendingCombo = browserPendingComboRef.current;
+        browserChordTimerRef.current = null;
+        browserPendingComboRef.current = null;
+
+        if (!pendingCombo) return;
+
+        const pendingParts = pendingCombo.split("+");
+        const bestMatch = findBestComboMatch(
+          pendingParts,
+          bindingMetaRef.current.comboParts,
+          bindingMetaRef.current.combos
+        );
+
+        if (bestMatch) {
+          triggerBrowserCombo(bestMatch);
+          return;
+        }
+
+        triggerBrowserCombo(pendingCombo);
+      }, chordWindowMs);
+    },
+    [clearBrowserChordTimer, triggerBrowserCombo]
   );
 
   // Listen for Tauri events from rdev (background key detection)
@@ -174,7 +289,7 @@ export function useKeyDetection() {
     const unlistenKey = listen<KeyPressedPayload>(
       "key_pressed",
       (event) => {
-        handleKeyPress(event.payload);
+        void handleKeyPress(event.payload);
       }
     );
 
@@ -183,42 +298,39 @@ export function useKeyDetection() {
     });
 
     const unlistenToggleKd = listen("toggle_key_detection", () => {
-      toggleKeyDetection();
+      void toggleKeyDetection();
     });
 
     const unlistenToggleAm = listen("toggle_auto_momentum", () => {
-      toggleAutoMomentum();
+      void toggleAutoMomentum();
     });
+
+    const unlistenBackendWarning = listen<{ message: string }>(
+      "key_detection_backend_warning",
+      (event) => {
+        useToastStore.getState().addToast(event.payload.message, "error");
+      }
+    );
 
     return () => {
       unlistenKey.then((f) => f());
       unlistenStop.then((f) => f());
       unlistenToggleKd.then((f) => f());
       unlistenToggleAm.then((f) => f());
+      unlistenBackendWarning.then((f) => f());
     };
   }, [handleKeyPress, setLastKeyPressed, toggleKeyDetection, toggleAutoMomentum]);
 
-  // Browser keyboard events - only for shortcuts and preventDefault
-  // Sound triggering is handled by the backend chord detector (rdev global hook)
-  const pressedKeysRef = useRef<Set<string>>(new Set());
-  const bindingPartsRef = useRef<{ parts: Set<string>[] }>({ parts: [] });
+  useEffect(() => {
+    syncBindingMeta();
+  }, [syncBindingMeta]);
 
   useEffect(() => {
-    const currentProfile = useProfileStore.getState().currentProfile;
-    bindingPartsRef.current.parts = (currentProfile?.keyBindings ?? []).map(
-      (kb) => new Set(kb.keyCode.split("+"))
-    );
-  }, []);
-
-  // Also subscribe to profile changes
-  useEffect(() => {
-    const unsub = useProfileStore.subscribe((state) => {
-      bindingPartsRef.current.parts = (state.currentProfile?.keyBindings ?? []).map(
-        (kb) => new Set(kb.keyCode.split("+"))
-      );
+    const unsub = useProfileStore.subscribe(() => {
+      syncBindingMeta();
     });
     return unsub;
-  }, []);
+  }, [syncBindingMeta]);
 
   useEffect(() => {
     const handleBrowserKeyDown = (e: KeyboardEvent) => {
@@ -227,21 +339,22 @@ export function useKeyDetection() {
         return;
       }
 
-      // Track pressed keys for shortcut detection (use physical code to match rdev)
       const resolvedCode = getKeyCode(e);
+      const isRepeat = pressedKeysRef.current.has(resolvedCode);
       pressedKeysRef.current.add(resolvedCode);
       recordKeyLayout(resolvedCode, e.key);
 
       // Read config via getState() to avoid dependency on config changes
       const config = useSettingsStore.getState().config;
 
-      // Prevent default for global shortcuts (actual handling is done by the
-      // backend global hook which emits Tauri events listened to above)
       if (
         config.keyDetectionShortcut.length > 0 &&
         config.keyDetectionShortcut.every((k) => pressedKeysRef.current.has(k))
       ) {
         e.preventDefault();
+        if (browserKeyFallback && !isRepeat) {
+          void toggleKeyDetection();
+        }
         return;
       }
 
@@ -250,6 +363,10 @@ export function useKeyDetection() {
         config.stopAllShortcut.every((k) => pressedKeysRef.current.has(k))
       ) {
         e.preventDefault();
+        if (browserKeyFallback && !isRepeat) {
+          void commands.stopAllSounds();
+          setLastKeyPressed(null);
+        }
         return;
       }
 
@@ -258,16 +375,14 @@ export function useKeyDetection() {
         config.autoMomentumShortcut.every((k) => pressedKeysRef.current.has(k))
       ) {
         e.preventDefault();
+        if (browserKeyFallback && !isRepeat) {
+          void toggleAutoMomentum();
+        }
         return;
       }
 
-      // Prevent default for keys that might have bindings (to avoid typing in UI)
-      // The actual sound triggering is handled by the backend chord detector
-      const baseKeyCode = getKeyCode(e);
-
-      // Use pre-built Sets for efficient lookup
-      const hasRelatedBinding = bindingPartsRef.current.parts.some((partsSet) =>
-        partsSet.has(baseKeyCode) ||
+      const hasRelatedBinding = bindingMetaRef.current.parts.some((partsSet) =>
+        partsSet.has(resolvedCode) ||
         (partsSet.has("Ctrl") && e.ctrlKey) ||
         (partsSet.has("Shift") && e.shiftKey) ||
         (partsSet.has("Alt") && e.altKey)
@@ -276,6 +391,37 @@ export function useKeyDetection() {
       if (hasRelatedBinding) {
         e.preventDefault();
       }
+
+      if (!browserKeyFallback || isRepeat) {
+        return;
+      }
+
+      const combo = buildComboFromPressedKeys(pressedKeysRef.current);
+      if (!combo) {
+        return;
+      }
+
+      const comboParts = combo.split("+");
+
+      if (hasComboExtensions(comboParts, bindingMetaRef.current.comboParts)) {
+        queueBrowserCombo(combo);
+        return;
+      }
+
+      clearBrowserChordTimer();
+
+      const bestMatch = findBestComboMatch(
+        comboParts,
+        bindingMetaRef.current.comboParts,
+        bindingMetaRef.current.combos
+      );
+
+      if (bestMatch) {
+        triggerBrowserCombo(bestMatch);
+        return;
+      }
+
+      triggerBrowserCombo(combo);
     };
 
     const handleBrowserKeyUp = (e: KeyboardEvent) => {
@@ -285,6 +431,7 @@ export function useKeyDetection() {
 
     const handleWindowBlur = () => {
       pressedKeysRef.current.clear();
+      clearBrowserChordTimer();
     };
 
     window.addEventListener("keydown", handleBrowserKeyDown);
@@ -294,6 +441,15 @@ export function useKeyDetection() {
       window.removeEventListener("keydown", handleBrowserKeyDown);
       window.removeEventListener("keyup", handleBrowserKeyUp);
       window.removeEventListener("blur", handleWindowBlur);
+      clearBrowserChordTimer();
     };
-  }, []);
+  }, [
+    browserKeyFallback,
+    clearBrowserChordTimer,
+    queueBrowserCombo,
+    setLastKeyPressed,
+    toggleAutoMomentum,
+    toggleKeyDetection,
+    triggerBrowserCombo,
+  ]);
 }

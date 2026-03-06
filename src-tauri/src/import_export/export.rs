@@ -1,7 +1,7 @@
+use super::ExportMetadata;
 use crate::audio::analysis::WaveformData;
 use crate::storage;
 use crate::types::{Profile, SoundSource};
-use super::ExportMetadata;
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
@@ -77,14 +77,17 @@ pub fn export_profile(
     let temp_path = final_path.with_extension("ktm.tmp");
 
     // Track the temp file so it can be cleaned up if the app is killed
-    fs::write(export_tracking_path(), temp_path.to_string_lossy().as_bytes()).ok();
+    fs::write(
+        export_tracking_path(),
+        temp_path.to_string_lossy().as_bytes(),
+    )
+    .ok();
 
-    let zip_file = fs::File::create(&temp_path)
-        .map_err(|e| format!("Failed to create temp file: {}", e))?;
+    let zip_file =
+        fs::File::create(&temp_path).map_err(|e| format!("Failed to create temp file: {}", e))?;
 
     let mut zip = ZipWriter::new(zip_file);
-    let options = SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     // Write profile.json
     zip.start_file("profile.json", options)
@@ -112,8 +115,13 @@ pub fn export_profile(
             cb(i, total_files, relative_path);
         }
 
-        let file_data = fs::read(absolute_path)
-            .map_err(|e| format!("Failed to read sound file '{}': {}", absolute_path.display(), e))?;
+        let file_data = fs::read(absolute_path).map_err(|e| {
+            format!(
+                "Failed to read sound file '{}': {}",
+                absolute_path.display(),
+                e
+            )
+        })?;
 
         let zip_entry_path = format!("sounds/{}", relative_path);
         zip.start_file(&zip_entry_path, options)
@@ -214,17 +222,17 @@ fn collect_sound_files(profile: &Profile) -> Result<(Profile, Vec<(String, PathB
 }
 
 /// Generate a unique filename by appending a counter if needed.
-fn make_unique_filename(
-    filename: &str,
-    used: &std::collections::HashSet<String>,
-) -> String {
+fn make_unique_filename(filename: &str, used: &std::collections::HashSet<String>) -> String {
     if !used.contains(filename) {
         return filename.to_string();
     }
 
     let path = Path::new(filename);
     let stem = path.file_stem().unwrap_or_default().to_string_lossy();
-    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let ext = path
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
 
     let mut counter = 2;
     loop {

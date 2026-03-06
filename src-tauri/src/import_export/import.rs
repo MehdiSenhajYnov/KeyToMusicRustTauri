@@ -1,7 +1,7 @@
+use super::{ExportMetadata, ImportResult};
 use crate::audio::analysis::WaveformData;
 use crate::storage;
 use crate::types::{Profile, SoundSource};
-use super::{ExportMetadata, ImportResult};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
@@ -16,15 +16,15 @@ pub fn import_profile(ktm_path: &str) -> Result<ImportResult, String> {
     }
 
     // Open and read the ZIP
-    let file = fs::File::open(ktm_file)
-        .map_err(|e| format!("Failed to open .ktm file: {}", e))?;
-    let mut archive = ZipArchive::new(file)
-        .map_err(|e| format!("Invalid .ktm file (not a valid ZIP): {}", e))?;
+    let file = fs::File::open(ktm_file).map_err(|e| format!("Failed to open .ktm file: {}", e))?;
+    let mut archive =
+        ZipArchive::new(file).map_err(|e| format!("Invalid .ktm file (not a valid ZIP): {}", e))?;
 
     // Read and parse metadata.json (optional - for version checking)
     if let Ok(mut entry) = archive.by_name("metadata.json") {
         let mut contents = String::new();
-        entry.read_to_string(&mut contents)
+        entry
+            .read_to_string(&mut contents)
             .map_err(|e| format!("Failed to read metadata.json: {}", e))?;
         let _metadata: ExportMetadata = serde_json::from_str(&contents)
             .map_err(|e| format!("Failed to parse metadata.json: {}", e))?;
@@ -33,10 +33,12 @@ pub fn import_profile(ktm_path: &str) -> Result<ImportResult, String> {
 
     // Read and parse profile.json (required)
     let mut profile: Profile = {
-        let mut entry = archive.by_name("profile.json")
+        let mut entry = archive
+            .by_name("profile.json")
             .map_err(|_| "Invalid .ktm file: missing profile.json".to_string())?;
         let mut contents = String::new();
-        entry.read_to_string(&mut contents)
+        entry
+            .read_to_string(&mut contents)
             .map_err(|e| format!("Failed to read profile.json: {}", e))?;
         serde_json::from_str(&contents)
             .map_err(|e| format!("Failed to parse profile.json: {}", e))?
@@ -112,7 +114,8 @@ pub fn import_profile(ktm_path: &str) -> Result<ImportResult, String> {
             ));
         };
 
-        let mut entry = archive.by_name(&entry_name)
+        let mut entry = archive
+            .by_name(&entry_name)
             .map_err(|e| format!("Failed to read '{}' from archive: {}", entry_name, e))?;
         let mut dest_file = fs::File::create(&dest_path)
             .map_err(|e| format!("Failed to create '{}': {}", dest_path.display(), e))?;
@@ -146,7 +149,9 @@ pub fn import_profile(ktm_path: &str) -> Result<ImportResult, String> {
     let waveforms = if let Ok(mut entry) = archive.by_name("waveforms.json") {
         let mut contents = String::new();
         if entry.read_to_string(&mut contents).is_ok() {
-            if let Ok(zip_waveforms) = serde_json::from_str::<HashMap<String, WaveformData>>(&contents) {
+            if let Ok(zip_waveforms) =
+                serde_json::from_str::<HashMap<String, WaveformData>>(&contents)
+            {
                 // Remap keys from ZIP-relative paths to new absolute paths
                 zip_waveforms
                     .into_iter()

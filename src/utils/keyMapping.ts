@@ -91,17 +91,11 @@ export function charToKeyCode(char: string): string | null {
 }
 
 /**
- * Get the correct key code for a keyboard event.
- * Prefers e.code for Numpad keys (to distinguish from Digit keys),
- * otherwise uses charToKeyCode for layout-aware mapping.
+ * Get the physical key code for a keyboard event.
+ * This must stay aligned with the backend, which uses Web KeyboardEvent.code-style values.
  */
 export function getKeyCode(e: KeyboardEvent): string {
-  // For Numpad keys, always use e.code to distinguish from digit row
-  if (e.code.startsWith("Numpad")) {
-    return e.code;
-  }
-  // For other keys, try character-based mapping for layout awareness
-  return charToKeyCode(e.key) || e.code;
+  return e.code;
 }
 
 export function isValidKeyCode(code: string): boolean {
@@ -402,6 +396,51 @@ export function normalizeCombo(combo: string): string {
   normalized.push(...baseKeys);
 
   return normalized.join("+");
+}
+
+function getLegacyLayoutAwareBaseKey(code: string): string | null {
+  const layoutChar = layoutMap.get(code);
+  if (!layoutChar) return null;
+
+  const legacyCode = charToKeyCode(layoutChar);
+  if (!legacyCode || legacyCode === code) return null;
+
+  return legacyCode;
+}
+
+/**
+ * Build a prioritized list of binding keys to try for an incoming event code.
+ * The first entry is the canonical physical code. The optional second entry
+ * keeps older layout-aware bindings working after the move to physical codes.
+ */
+export function getBindingCodeCandidates(code: string): string[] {
+  const canonical = code.includes("+") ? normalizeCombo(code) : code;
+  const candidates = [canonical];
+
+  const parts = canonical.split("+");
+  let changed = false;
+  const legacyParts = parts.map((part) => {
+    if (part === "Ctrl" || part === "Shift" || part === "Alt") {
+      return part;
+    }
+
+    const legacy = getLegacyLayoutAwareBaseKey(part);
+    if (legacy) {
+      changed = true;
+      return legacy;
+    }
+
+    return part;
+  });
+
+  if (changed) {
+    const legacyCombo = normalizeCombo(legacyParts.join("+"));
+    if (!candidates.includes(legacyCombo)) {
+      candidates.push(legacyCombo);
+    }
+  }
+
+  return candidates;
 }
 
 /**

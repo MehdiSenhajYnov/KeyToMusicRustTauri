@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
-import type { KeyGridFilter, Track, LoopMode, MoodCategory } from "../../types";
+import type { KeyGridFilter, Track, LoopMode, BaseMood } from "../../types";
 import { MOOD_CATEGORIES } from "../../utils/moodHelpers";
 
 interface FilterChip {
@@ -50,7 +50,8 @@ export const SearchFilterBar = forwardRef<SearchFilterBarHandle, SearchFilterBar
           trackName: trackChip?.value ?? null,
           loopMode: (loopChip?.value as LoopMode) ?? null,
           status: (statusChip?.value as "playing" | "stopped") ?? null,
-          mood: (moodChip?.value as MoodCategory) ?? null,
+          mood: (moodChip?.value as BaseMood) ?? null,
+          intensity: null, // TODO: parse m:mood:intensity format
         };
       },
       []

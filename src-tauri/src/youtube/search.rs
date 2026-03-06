@@ -81,10 +81,7 @@ pub async fn search_youtube(
                 .unwrap_or("Unknown")
                 .to_string();
 
-            let duration = json
-                .get("duration")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
+            let duration = json.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
             let channel = json
                 .get("channel")
@@ -95,7 +92,11 @@ pub async fn search_youtube(
 
             let thumbnail_url = json
                 .get("thumbnail")
-                .or_else(|| json.get("thumbnails").and_then(|t| t.as_array()).and_then(|a| a.last()))
+                .or_else(|| {
+                    json.get("thumbnails")
+                        .and_then(|t| t.as_array())
+                        .and_then(|a| a.last())
+                })
                 .and_then(|v| {
                     if v.is_string() {
                         v.as_str().map(|s| s.to_string())
@@ -215,10 +216,7 @@ pub async fn fetch_playlist(
                 continue;
             }
 
-            let duration = json
-                .get("duration")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0);
+            let duration = json.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
             let channel = json
                 .get("channel")
@@ -229,7 +227,11 @@ pub async fn fetch_playlist(
 
             let thumbnail_url = json
                 .get("thumbnail")
-                .or_else(|| json.get("thumbnails").and_then(|t| t.as_array()).and_then(|a| a.last()))
+                .or_else(|| {
+                    json.get("thumbnails")
+                        .and_then(|t| t.as_array())
+                        .and_then(|a| a.last())
+                })
                 .and_then(|v| {
                     if v.is_string() {
                         v.as_str().map(|s| s.to_string())
@@ -278,8 +280,12 @@ pub struct StreamUrlResult {
 }
 
 /// In-memory cache for stream URLs (valid ~6h on YouTube CDN, we use 4h TTL).
-fn stream_cache() -> &'static std::sync::Mutex<std::collections::HashMap<String, (StreamUrlResult, std::time::Instant)>> {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, (StreamUrlResult, std::time::Instant)>>> = std::sync::OnceLock::new();
+fn stream_cache() -> &'static std::sync::Mutex<
+    std::collections::HashMap<String, (StreamUrlResult, std::time::Instant)>,
+> {
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, (StreamUrlResult, std::time::Instant)>>,
+    > = std::sync::OnceLock::new();
     CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
@@ -331,17 +337,17 @@ pub async fn get_stream_url(video_id: &str) -> Result<StreamUrlResult, String> {
         .spawn()
         .map_err(|e| format!("Failed to run yt-dlp stream extraction: {}", e))?;
 
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(15),
-        child.wait_with_output(),
-    )
-    .await
-    .map_err(|_| "yt-dlp stream extraction timed out".to_string())?
-    .map_err(|e| format!("yt-dlp stream extraction failed: {}", e))?;
+    let output = tokio::time::timeout(std::time::Duration::from_secs(15), child.wait_with_output())
+        .await
+        .map_err(|_| "yt-dlp stream extraction timed out".to_string())?
+        .map_err(|e| format!("yt-dlp stream extraction failed: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("yt-dlp stream extraction failed: {}", stderr.trim()));
+        return Err(format!(
+            "yt-dlp stream extraction failed: {}",
+            stderr.trim()
+        ));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -362,10 +368,7 @@ pub async fn get_stream_url(video_id: &str) -> Result<StreamUrlResult, String> {
         .and_then(|s| s.parse::<f64>().ok())
         .unwrap_or(0.0);
 
-    let format = lines
-        .get(2)
-        .unwrap_or(&"m4a")
-        .to_string();
+    let format = lines.get(2).unwrap_or(&"m4a").to_string();
 
     let result = StreamUrlResult {
         url,
@@ -378,7 +381,10 @@ pub async fn get_stream_url(video_id: &str) -> Result<StreamUrlResult, String> {
         let mut cache = stream_cache().lock().unwrap();
         let ttl = std::time::Duration::from_secs(STREAM_URL_TTL_SECS);
         cache.retain(|_, (_, t)| t.elapsed() < ttl);
-        cache.insert(video_id.to_string(), (result.clone(), std::time::Instant::now()));
+        cache.insert(
+            video_id.to_string(),
+            (result.clone(), std::time::Instant::now()),
+        );
     }
 
     Ok(result)
