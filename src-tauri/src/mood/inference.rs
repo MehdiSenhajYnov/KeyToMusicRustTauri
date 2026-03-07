@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::path::Path;
 use std::process::Stdio;
 use tokio::process::{Child, Command};
 
@@ -131,6 +133,25 @@ pub struct LlamaServer {
 #[derive(Debug, Clone, Default)]
 pub struct LlamaServerStartOptions {
     pub reasoning_format: Option<String>,
+    pub context_size: Option<u32>,
+    pub parallel_slots: Option<u32>,
+    pub gpu_layers: Option<u32>,
+    pub runtime_intent: Option<LlamaRuntimeIntent>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+pub enum LlamaRuntimeIntent {
+    #[default]
+    AppDefault,
+    BenchmarkPrimary,
+    ResearchLarge,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+struct ResolvedRuntimeProfile {
+    context_size: u32,
+    parallel_slots: u32,
+    gpu_layers: u32,
 }
 
 #[cfg(target_os = "linux")]
@@ -166,6 +187,8 @@ impl LlamaServer {
             mmproj_path,
             LlamaServerStartOptions {
                 reasoning_format: reasoning_format_from_env(),
+                context_size: None,
+                parallel_slots: None,
             },
         )
         .await
@@ -198,6 +221,7 @@ impl LlamaServer {
         );
 
         let mut cmd = Command::new(&server_path);
+        let context_size = options.context_size.unwrap_or(32768);
         cmd.args([
             "-m",
             model_path,
@@ -206,7 +230,7 @@ impl LlamaServer {
             "--port",
             &port.to_string(),
             "-c",
-            "32768",
+            &context_size.to_string(),
             "--flash-attn",
             "auto",
             "--cache-type-k",
@@ -217,10 +241,15 @@ impl LlamaServer {
             "99",
             "--image-min-tokens",
             "1024",
-        ])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::from(stderr_file));
+        ]);
+
+        if let Some(parallel_slots) = options.parallel_slots {
+            cmd.args(["-np", &parallel_slots.to_string()]);
+        }
+
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(stderr_file));
 
         if let Some(reasoning_format) = options.reasoning_format.as_deref() {
             cmd.args(["--reasoning-format", reasoning_format]);
@@ -1816,7 +1845,7 @@ pub(crate) fn parse_mood_intensity_response(json: &serde_json::Value) -> Result<
         &text
     };
 
-    // 1. Try regex: mood followed by intensity digit
+    // 1. Direct compact answer: "mood 2"
     let re = regex::Regex::new(
         r"(?i)\b(epic|tension|sadness|comedy|romance|horror|peaceful|mystery)\s+([123])\b",
     )
@@ -1840,7 +1869,32 @@ pub(crate) fn parse_mood_intensity_response(json: &serde_json::Value) -> Result<
         return Ok(MoodTag { mood, intensity });
     }
 
-    // 2. Fallback: find last mood keyword without intensity → default Medium
+    // 2. Field-oriented formats:
+    //    "mood: tension\nintensity: 2" or JSON-ish {"mood":"tension","intensity":2}
+    let field_patterns = [
+        r#"(?is)mood\s*[:=]\s*["`']?(epic|tension|sadness|comedy|romance|horror|peaceful|mystery)["`']?[^a-z0-9]{0,80}intensity\s*[:=]\s*["`']?([123])["`']?"#,
+        r#"(?is)intensity\s*[:=]\s*["`']?([123])["`']?[^a-z0-9]{0,80}mood\s*[:=]\s*["`']?(epic|tension|sadness|comedy|romance|horror|peaceful|mystery)["`']?"#,
+        r#"(?im)^\s*(?:mood|answer|final answer)\s*[:=-]?\s*(epic|tension|sadness|comedy|romance|horror|peaceful|mystery)(?:\s*[,;:-]\s*|\s+)([123])\s*$"#,
+    ];
+    for pattern in field_patterns {
+        let re = regex::Regex::new(pattern).unwrap();
+        if let Some(cap) = re.captures_iter(cleaned).last() {
+            let (mood_str, intensity_str) =
+                if pattern.contains("intensity") && pattern.starts_with("(?is)intensity") {
+                    (cap.get(2).unwrap().as_str(), cap.get(1).unwrap().as_str())
+                } else {
+                    (cap.get(1).unwrap().as_str(), cap.get(2).unwrap().as_str())
+                };
+            if let Some(mood) = BaseMood::from_str_opt(mood_str) {
+                return Ok(MoodTag {
+                    mood,
+                    intensity: MoodIntensity::from_u8(intensity_str.parse::<u8>().unwrap_or(2)),
+                });
+            }
+        }
+    }
+
+    // 3. Fallback: find the last mood keyword, and reuse an explicit intensity field if present.
     let mut best: Option<(BaseMood, usize)> = None;
     for &mood in BaseMood::ALL.iter() {
         if let Some(pos) = cleaned.rfind(mood.as_str()) {
@@ -1851,10 +1905,15 @@ pub(crate) fn parse_mood_intensity_response(json: &serde_json::Value) -> Result<
     }
 
     if let Some((mood, _)) = best {
-        return Ok(MoodTag {
-            mood,
-            intensity: MoodIntensity::Medium,
-        });
+        let intensity = regex::Regex::new(r#"(?i)intensity\s*[:=]\s*["`']?([123])"#)
+            .unwrap()
+            .captures_iter(cleaned)
+            .last()
+            .and_then(|cap| cap.get(1))
+            .and_then(|m| m.as_str().parse::<u8>().ok())
+            .map(MoodIntensity::from_u8)
+            .unwrap_or(MoodIntensity::Medium);
+        return Ok(MoodTag { mood, intensity });
     }
 
     Err(format!(

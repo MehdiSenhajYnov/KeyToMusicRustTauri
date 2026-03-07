@@ -140,7 +140,10 @@ async fn fetch_llama_server_url() -> Result<String, String> {
         .map_err(|e| format!("Failed to parse release info: {}", e))?;
 
     let patterns = asset_search_patterns();
-    tracing::info!("Looking for llama.cpp assets matching patterns: {:?}", patterns);
+    tracing::info!(
+        "Looking for llama.cpp assets matching patterns: {:?}",
+        patterns
+    );
 
     let assets = response["assets"]
         .as_array()
