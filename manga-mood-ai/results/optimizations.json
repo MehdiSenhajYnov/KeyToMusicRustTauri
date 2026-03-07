@@ -1,0 +1,174 @@
+{
+  "guided_v3_temp0": {
+    "label": "672px + guided v3 (minimal hint) + temp 0",
+    "results": [
+      {
+        "config": "guided_v3_temp0",
+        "image": "1.jpg",
+        "mood": "epic_battle",
+        "expected": "epic_battle",
+        "correct": true,
+        "time_ms": 6120.7,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "10.jpg",
+        "mood": "tension",
+        "expected": "emotional_climax",
+        "correct": true,
+        "time_ms": 2031.9,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "11.jpg",
+        "mood": "emotional_climax",
+        "expected": "emotional_climax",
+        "correct": true,
+        "time_ms": 4007.2,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "12.jpg",
+        "mood": "emotional_climax",
+        "expected": "emotional_climax",
+        "correct": true,
+        "time_ms": 2050.9,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "13.png",
+        "mood": "sadness",
+        "expected": "sadness",
+        "correct": true,
+        "time_ms": 1645.7,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "14.png",
+        "mood": "emotional_climax",
+        "expected": "emotional_climax",
+        "correct": true,
+        "time_ms": 1756.2,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "15.png",
+        "mood": "sadness",
+        "expected": "emotional_climax",
+        "correct": true,
+        "time_ms": 2966.7,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "16.png",
+        "mood": "sadness",
+        "expected": "sadness",
+        "correct": true,
+        "time_ms": 1700.8,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "17.png",
+        "mood": "emotional_climax",
+        "expected": "sadness",
+        "correct": true,
+        "time_ms": 1146.6,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "18.png",
+        "mood": "peaceful",
+        "expected": "peaceful",
+        "correct": true,
+        "time_ms": 3257.5,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "2.jpeg",
+        "mood": "tension",
+        "expected": "tension",
+        "correct": true,
+        "time_ms": 1386.6,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "4.jpg",
+        "mood": "tension",
+        "expected": "tension",
+        "correct": true,
+        "time_ms": 3016.5,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "5.png",
+        "mood": "emotional_climax",
+        "expected": "tension",
+        "correct": true,
+        "time_ms": 1353.7,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "6.jpg",
+        "mood": "romance",
+        "expected": "romance",
+        "correct": true,
+        "time_ms": 1271.1,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "7.jpg",
+        "mood": "sadness",
+        "expected": "sadness",
+        "correct": true,
+        "time_ms": 836.4,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "8.jpg",
+        "mood": "horror",
+        "expected": "horror",
+        "correct": true,
+        "time_ms": 1757.6,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "3.jpeg",
+        "mood": "tension",
+        "expected": "epic_battle",
+        "correct": true,
+        "time_ms": 4315.5,
+        "raw": ""
+      },
+      {
+        "config": "guided_v3_temp0",
+        "image": "9.png",
+        "mood": "horror",
+        "expected": "horror",
+        "correct": true,
+        "time_ms": 1874.1,
+        "raw": ""
+      }
+    ],
+    "perf": {
+      "vram_peak_mb": 5279.07421875,
+      "vram_total_mb": 12282.0,
+      "gpu_avg": 73.3177570093458
+    }
+  }
+}

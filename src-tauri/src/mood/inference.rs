@@ -154,6 +154,210 @@ struct ResolvedRuntimeProfile {
     gpu_layers: u32,
 }
 
+fn parse_env_u32(key: &str) -> Option<u32> {
+    std::env::var(key)
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u32>().ok())
+        .filter(|value| *value > 0)
+}
+
+fn model_size_bytes(model_path: &str) -> Option<u64> {
+    std::fs::metadata(Path::new(model_path))
+        .ok()
+        .map(|meta| meta.len())
+}
+
+fn runtime_intent_name(intent: LlamaRuntimeIntent) -> &'static str {
+    match intent {
+        LlamaRuntimeIntent::AppDefault => "app_default",
+        LlamaRuntimeIntent::BenchmarkPrimary => "benchmark_primary",
+        LlamaRuntimeIntent::ResearchLarge => "research_large",
+    }
+}
+
+fn derive_runtime_intent(options: &LlamaServerStartOptions) -> LlamaRuntimeIntent {
+    if let Some(intent) = options.runtime_intent {
+        intent
+    } else if options.context_size.unwrap_or(0) >= 32768 || options.parallel_slots.unwrap_or(0) > 1
+    {
+        LlamaRuntimeIntent::ResearchLarge
+    } else {
+        LlamaRuntimeIntent::AppDefault
+    }
+}
+
+fn default_context_size(intent: LlamaRuntimeIntent, model_bytes: Option<u64>) -> u32 {
+    if let Some(value) = parse_env_u32("KEYTOMUSIC_LLAMA_CONTEXT_SIZE") {
+        return value;
+    }
+
+    match intent {
+        LlamaRuntimeIntent::AppDefault => {
+            if model_bytes.unwrap_or_default() > 3_500_000_000 {
+                12_288
+            } else {
+                8_192
+            }
+        }
+        LlamaRuntimeIntent::BenchmarkPrimary => 12_288,
+        LlamaRuntimeIntent::ResearchLarge => 32_768,
+    }
+}
+
+fn default_parallel_slots(intent: LlamaRuntimeIntent) -> u32 {
+    if let Some(value) = parse_env_u32("KEYTOMUSIC_LLAMA_PARALLEL") {
+        return value.max(1);
+    }
+
+    match intent {
+        LlamaRuntimeIntent::ResearchLarge => 4,
+        LlamaRuntimeIntent::AppDefault | LlamaRuntimeIntent::BenchmarkPrimary => 1,
+    }
+}
+
+fn min_supported_vram_mib(model_bytes: Option<u64>) -> u32 {
+    match model_bytes.unwrap_or_default() {
+        0 => 6_144,
+        bytes if bytes <= 3_000_000_000 => 4_096,
+        bytes if bytes <= 6_000_000_000 => 6_144,
+        _ => 8_192,
+    }
+}
+
+fn detect_total_vram_mib() -> Option<u32> {
+    if let Some(value) = parse_env_u32("KEYTOMUSIC_LLAMA_VRAM_MIB") {
+        return Some(value);
+    }
+
+    let output = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    text.lines().next()?.trim().parse::<u32>().ok()
+}
+
+fn choose_gpu_layers(model_path: &str, explicit_layers: Option<u32>) -> Result<u32, String> {
+    if let Some(value) = explicit_layers.or_else(|| parse_env_u32("KEYTOMUSIC_LLAMA_GPU_LAYERS")) {
+        return Ok(value);
+    }
+
+    let model_bytes = model_size_bytes(model_path);
+    let min_vram = min_supported_vram_mib(model_bytes);
+    let detected_vram = detect_total_vram_mib();
+
+    if let Some(total_vram) = detected_vram {
+        if total_vram < min_vram {
+            return Err(format!(
+                "GPU memory too low for manga mood ({} MiB detected, need roughly >= {} MiB).",
+                total_vram, min_vram
+            ));
+        }
+
+        let layers = match total_vram {
+            v if v >= 12_288 => 99,
+            v if v >= 10_240 => 80,
+            v if v >= 8_192 => 64,
+            v if v >= 6_144 => 48,
+            _ => 32,
+        };
+        return Ok(layers);
+    }
+
+    let conservative = match model_bytes.unwrap_or_default() {
+        0 => 48,
+        bytes if bytes <= 3_000_000_000 => 80,
+        bytes if bytes <= 6_000_000_000 => 64,
+        _ => 48,
+    };
+    Ok(conservative)
+}
+
+fn gpu_layer_fallbacks(initial: u32) -> Vec<u32> {
+    let mut values = vec![initial];
+    for candidate in [80, 64, 48, 32, 24, 16] {
+        if candidate < initial {
+            values.push(candidate);
+        }
+    }
+    values
+}
+
+fn context_fallbacks(initial: u32) -> Vec<u32> {
+    let mut values = vec![initial];
+    for candidate in [12_288, 8_192, 4_096] {
+        if candidate < initial {
+            values.push(candidate);
+        }
+    }
+    values
+}
+
+fn build_runtime_candidates(
+    base: ResolvedRuntimeProfile,
+    lock_context: bool,
+    lock_parallel: bool,
+    lock_gpu_layers: bool,
+) -> Vec<ResolvedRuntimeProfile> {
+    let context_variants = if lock_context {
+        vec![base.context_size]
+    } else {
+        context_fallbacks(base.context_size)
+    };
+    let parallel_variants = if lock_parallel || base.parallel_slots == 1 {
+        vec![base.parallel_slots]
+    } else {
+        vec![base.parallel_slots, 1]
+    };
+    let gpu_variants = if lock_gpu_layers {
+        vec![base.gpu_layers]
+    } else {
+        gpu_layer_fallbacks(base.gpu_layers)
+    };
+
+    let mut ordered = Vec::new();
+    let mut seen = HashSet::new();
+    for context_size in context_variants {
+        for parallel_slots in &parallel_variants {
+            for gpu_layers in &gpu_variants {
+                let candidate = ResolvedRuntimeProfile {
+                    context_size,
+                    parallel_slots: *parallel_slots,
+                    gpu_layers: *gpu_layers,
+                };
+                if seen.insert(candidate) {
+                    ordered.push(candidate);
+                }
+            }
+        }
+    }
+    ordered
+}
+
+fn resolve_runtime_profile(
+    model_path: &str,
+    options: &LlamaServerStartOptions,
+) -> Result<ResolvedRuntimeProfile, String> {
+    let intent = derive_runtime_intent(options);
+    let model_bytes = model_size_bytes(model_path);
+    let context_size = options
+        .context_size
+        .unwrap_or_else(|| default_context_size(intent, model_bytes));
+    let parallel_slots = options
+        .parallel_slots
+        .unwrap_or_else(|| default_parallel_slots(intent));
+    let gpu_layers = choose_gpu_layers(model_path, options.gpu_layers)?;
+
+    Ok(ResolvedRuntimeProfile {
+        context_size,
+        parallel_slots: parallel_slots.max(1),
+        gpu_layers,
+    })
+}
+
 #[cfg(target_os = "linux")]
 pub(crate) fn lower_process_priority(pid: u32) {
     let pid = pid.to_string();
@@ -180,48 +384,30 @@ pub(crate) fn lower_current_process_priority() {
 }
 
 impl LlamaServer {
-    /// Start llama-server with the given model and mmproj paths.
-    pub async fn start(model_path: &str, mmproj_path: &str) -> Result<Self, String> {
-        Self::start_with_options(
-            model_path,
-            mmproj_path,
-            LlamaServerStartOptions {
-                reasoning_format: reasoning_format_from_env(),
-                context_size: None,
-                parallel_slots: None,
-            },
-        )
-        .await
-    }
-
-    /// Start llama-server with explicit startup options.
-    pub async fn start_with_options(
+    async fn start_once_with_profile(
+        server_path: &Path,
         model_path: &str,
         mmproj_path: &str,
-        options: LlamaServerStartOptions,
+        reasoning_format: Option<&str>,
+        runtime: ResolvedRuntimeProfile,
+        log_path: &Path,
     ) -> Result<Self, String> {
-        let server_path = llama_manager::find_llama_server()
-            .ok_or_else(|| "llama-server not installed".to_string())?;
-
-        // Find a free port
         let port = find_free_port().map_err(|e| format!("Failed to find free port: {}", e))?;
-
-        // Log llama-server stderr to a file for debugging
-        let log_dir = crate::storage::config::get_app_data_dir().join("logs");
-        let _ = std::fs::create_dir_all(&log_dir);
-        let stderr_file = std::fs::File::create(log_dir.join("llama-server.log"))
+        let stderr_file = std::fs::File::create(log_path)
             .map_err(|e| format!("Failed to create llama-server log: {}", e))?;
 
         tracing::info!(
-            "Starting llama-server: {:?} -m {} --mmproj {} --port {} -c 32768 -ngl 99",
+            "Starting llama-server: {:?} -m {} --mmproj {} --port {} -c {} -np {} -ngl {}",
             server_path,
             model_path,
             mmproj_path,
-            port
+            port,
+            runtime.context_size,
+            runtime.parallel_slots,
+            runtime.gpu_layers
         );
 
-        let mut cmd = Command::new(&server_path);
-        let context_size = options.context_size.unwrap_or(32768);
+        let mut cmd = Command::new(server_path);
         cmd.args([
             "-m",
             model_path,
@@ -230,7 +416,9 @@ impl LlamaServer {
             "--port",
             &port.to_string(),
             "-c",
-            &context_size.to_string(),
+            &runtime.context_size.to_string(),
+            "-np",
+            &runtime.parallel_slots.to_string(),
             "--flash-attn",
             "auto",
             "--cache-type-k",
@@ -238,20 +426,16 @@ impl LlamaServer {
             "--cache-type-v",
             "q8_0",
             "-ngl",
-            "99",
+            &runtime.gpu_layers.to_string(),
             "--image-min-tokens",
             "1024",
         ]);
-
-        if let Some(parallel_slots) = options.parallel_slots {
-            cmd.args(["-np", &parallel_slots.to_string()]);
-        }
 
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::from(stderr_file));
 
-        if let Some(reasoning_format) = options.reasoning_format.as_deref() {
+        if let Some(reasoning_format) = reasoning_format {
             cmd.args(["--reasoning-format", reasoning_format]);
         }
 
@@ -270,12 +454,102 @@ impl LlamaServer {
         }
 
         let mut server = Self { process, port };
-
-        // Wait for server to become ready (VLM model loading can take a while)
-        server.wait_for_ready(120).await?;
+        if let Err(err) = server.wait_for_ready(120).await {
+            server.stop();
+            return Err(err);
+        }
 
         tracing::info!("llama-server started on port {}", port);
         Ok(server)
+    }
+
+    /// Start llama-server with the given model and mmproj paths.
+    pub async fn start(model_path: &str, mmproj_path: &str) -> Result<Self, String> {
+        Self::start_with_options(
+            model_path,
+            mmproj_path,
+            LlamaServerStartOptions {
+                reasoning_format: reasoning_format_from_env(),
+                context_size: None,
+                parallel_slots: None,
+                gpu_layers: None,
+                runtime_intent: Some(LlamaRuntimeIntent::ResearchLarge),
+            },
+        )
+        .await
+    }
+
+    /// Start llama-server with explicit startup options.
+    pub async fn start_with_options(
+        model_path: &str,
+        mmproj_path: &str,
+        options: LlamaServerStartOptions,
+    ) -> Result<Self, String> {
+        llama_manager::ensure_mood_runtime_supported()?;
+
+        let server_path = llama_manager::find_llama_server()
+            .ok_or_else(|| "llama-server not installed".to_string())?;
+
+        let log_dir = crate::storage::config::get_app_data_dir().join("logs");
+        let _ = std::fs::create_dir_all(&log_dir);
+        let log_path = log_dir.join("llama-server.log");
+        let runtime_intent = derive_runtime_intent(&options);
+        let base_profile = resolve_runtime_profile(model_path, &options)?;
+        let lock_context = options.context_size.is_some()
+            || parse_env_u32("KEYTOMUSIC_LLAMA_CONTEXT_SIZE").is_some();
+        let lock_parallel = options.parallel_slots.is_some()
+            || parse_env_u32("KEYTOMUSIC_LLAMA_PARALLEL").is_some();
+        let lock_gpu_layers =
+            options.gpu_layers.is_some() || parse_env_u32("KEYTOMUSIC_LLAMA_GPU_LAYERS").is_some();
+        let runtime_candidates =
+            build_runtime_candidates(base_profile, lock_context, lock_parallel, lock_gpu_layers);
+
+        tracing::info!(
+            "Resolved llama runtime: intent={} base={:?} candidates={:?}",
+            runtime_intent_name(runtime_intent),
+            base_profile,
+            runtime_candidates
+        );
+
+        let mut failures = Vec::new();
+        for (index, runtime) in runtime_candidates.iter().enumerate() {
+            tracing::info!(
+                "Trying llama runtime candidate {}/{}: {:?}",
+                index + 1,
+                runtime_candidates.len(),
+                runtime
+            );
+
+            match Self::start_once_with_profile(
+                &server_path,
+                model_path,
+                mmproj_path,
+                options.reasoning_format.as_deref(),
+                *runtime,
+                &log_path,
+            )
+            .await
+            {
+                Ok(server) => return Ok(server),
+                Err(err) => {
+                    tracing::warn!(
+                        "llama-server startup failed for candidate {:?}: {}",
+                        runtime,
+                        err
+                    );
+                    failures.push(format!(
+                        "c={} np={} ngl={} => {}",
+                        runtime.context_size, runtime.parallel_slots, runtime.gpu_layers, err
+                    ));
+                }
+            }
+        }
+
+        Err(format!(
+            "Failed to start llama-server after {} runtime candidate(s): {}",
+            runtime_candidates.len(),
+            failures.join(" | ")
+        ))
     }
 
     /// Poll GET /health until the server responds 200.
@@ -1708,7 +1982,7 @@ impl LlamaServer {
     }
 }
 
-fn reasoning_format_from_env() -> Option<String> {
+pub(crate) fn reasoning_format_from_env() -> Option<String> {
     match std::env::var("KEYTOMUSIC_LLAMA_REASONING_FORMAT") {
         Ok(value) if matches!(value.as_str(), "" | "omit" | "default") => None,
         Ok(value) => Some(value),
@@ -1719,6 +1993,56 @@ fn reasoning_format_from_env() -> Option<String> {
 impl Drop for LlamaServer {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn research_runtime_defaults_to_parallel_four() {
+        assert_eq!(default_parallel_slots(LlamaRuntimeIntent::ResearchLarge), 4);
+        assert_eq!(default_parallel_slots(LlamaRuntimeIntent::AppDefault), 1);
+    }
+
+    #[test]
+    fn runtime_candidates_reduce_gpu_and_context_progressively() {
+        let base = ResolvedRuntimeProfile {
+            context_size: 32_768,
+            parallel_slots: 4,
+            gpu_layers: 99,
+        };
+
+        let candidates = build_runtime_candidates(base, false, false, false);
+
+        assert_eq!(candidates.first().copied(), Some(base));
+        assert!(candidates.contains(&ResolvedRuntimeProfile {
+            context_size: 32_768,
+            parallel_slots: 1,
+            gpu_layers: 99,
+        }));
+        assert!(candidates.contains(&ResolvedRuntimeProfile {
+            context_size: 12_288,
+            parallel_slots: 1,
+            gpu_layers: 48,
+        }));
+    }
+
+    #[test]
+    fn runtime_intent_prefers_explicit_value() {
+        let options = LlamaServerStartOptions {
+            reasoning_format: None,
+            context_size: Some(8_192),
+            parallel_slots: Some(1),
+            gpu_layers: None,
+            runtime_intent: Some(LlamaRuntimeIntent::BenchmarkPrimary),
+        };
+
+        assert_eq!(
+            derive_runtime_intent(&options),
+            LlamaRuntimeIntent::BenchmarkPrimary
+        );
     }
 }
 

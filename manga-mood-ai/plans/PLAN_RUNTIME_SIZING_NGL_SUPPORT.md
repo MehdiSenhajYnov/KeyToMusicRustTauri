@@ -10,6 +10,30 @@ Ce plan couvre uniquement les trois points suivants:
 
 Ce document ne couvre pas la strategie CUDA / backend vendor-specific, qui est suivie a part.
 
+## Statut
+
+Implementation de base faite le 2026-03-07:
+
+- `LlamaServerStartOptions` porte maintenant `gpu_layers` et `runtime_intent`
+- `llama-server` n'est plus lance avec `32768 / ngl 99` hardcodes
+- le runtime essaye plusieurs profils decroissants si le premier demarrage echoue
+- le bench utilise maintenant `primary_12288x1` par defaut et garde `research_32768x4` seulement pour les runs historiques
+- sous Linux, le CPU n'est plus un fallback auto pour la feature mood
+- override manuel conserve via `KEYTOMUSIC_LLAMA_BACKEND=cpu`
+
+Verification faite:
+
+- `cargo test --manifest-path src-tauri/Cargo.toml runtime_ -- --nocapture`
+- `cargo test --manifest-path src-tauri/Cargo.toml mood::director::tests::same_mood_does_not_change -- --nocapture`
+- smoke bench: `REALTEST_FILTER=BL/1 REALTEST_PAGE_LIMIT=1 REALTEST_EXPERIMENTS=baseline_cache,t4b_wide5_selective cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture`
+- rerun complet: `REALTEST_FILTER=BL/1 REALTEST_EXPERIMENTS=baseline_cache,t4b_wide5_selective cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture`
+
+Resultat du rerun complet:
+
+- score inchange pour `t4b_wide5_selective` sur la nouvelle annotation: `56/70` strict, `68/70` relaxed, `24/70` intensity
+- temps moyen un peu plus lent avec le nouveau runtime: `13.0s/page` contre environ `11.1s/page` sur le run precedent documente
+- conclusion: ce chantier runtime n'apporte pas de gain benchmark direct sur `BL/1`; il reste surtout justifie par la robustesse, la politique memoire et la suppression du fallback CPU auto
+
 ---
 
 ## Objectif produit

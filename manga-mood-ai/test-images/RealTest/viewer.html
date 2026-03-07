@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Manga Mood Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #eee; font-family: -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+  .topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: #16213e; border-bottom: 1px solid #333; flex-shrink: 0; flex-wrap: wrap; }
+  .topbar select { background: #0f3460; color: #eee; border: 1px solid #555; padding: 6px 10px; border-radius: 6px; font-size: 14px; }
+  .topbar .counter { margin-left: auto; font-size: 13px; color: #888; }
+  .topbar .shortcuts { font-size: 11px; color: #666; }
+  .main { flex: 1; display: flex; overflow: hidden; }
+  .image-panel { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; background: #111; }
+  .image-panel img { max-width: 95%; max-height: 95%; object-fit: contain; border-radius: 4px; }
+  .badge { position: absolute; top: 16px; right: 16px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .mood-pill { padding: 8px 18px; border-radius: 20px; font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+  .intensity-bar { display: flex; gap: 4px; }
+  .intensity-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); }
+  .intensity-dot.active { border-color: #fff; }
+  .confidence-label { font-size: 12px; color: #aaa; }
+  .reasoning { font-size: 13px; color: #ccc; background: rgba(0,0,0,0.7); padding: 6px 12px; border-radius: 8px; max-width: 350px; text-align: right; }
+  .mood-epic { background: #e74c3c; color: #fff; }
+  .mood-tension { background: #e67e22; color: #fff; }
+  .mood-sadness { background: #3498db; color: #fff; }
+  .mood-comedy { background: #f1c40f; color: #222; }
+  .mood-romance { background: #e91e8a; color: #fff; }
+  .mood-horror { background: #8e44ad; color: #fff; }
+  .mood-peaceful { background: #2ecc71; color: #222; }
+  .mood-mystery { background: #1abc9c; color: #fff; }
+  .sidebar { width: 220px; overflow-y: auto; background: #16213e; border-left: 1px solid #333; flex-shrink: 0; }
+  .sidebar .item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid #1a1a2e; font-size: 13px; transition: background 0.1s; }
+  .sidebar .item:hover { background: #1a3a5c; }
+  .sidebar .item.active { background: #0f3460; }
+  .sidebar .item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .sidebar .item .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sidebar .item .int { font-size: 11px; color: #888; }
+  .nav-arrow { position: absolute; top: 50%; transform: translateY(-50%); font-size: 48px; color: rgba(255,255,255,0.4); cursor: pointer; padding: 30px 14px; user-select: none; z-index: 10; }
+  .nav-arrow:hover { color: #fff; }
+  .nav-arrow.left { left: 0; }
+  .nav-arrow.right { right: 0; }
+  .edit-overlay { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: none; gap: 8px; background: rgba(0,0,0,0.85); padding: 10px 16px; border-radius: 12px; align-items: center; }
+  .edit-overlay.show { display: flex; }
+  .edit-overlay select, .edit-overlay button { background: #0f3460; color: #eee; border: 1px solid #555; padding: 6px 10px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+  .edit-overlay button { background: #2ecc71; color: #222; font-weight: 600; }
+  .edit-overlay button.cancel { background: #555; color: #eee; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <select id="mangaFilter">
+    <option value="all">Tous les mangas</option>
+    <option value="BL">BL - Blue Lock</option>
+    <option value="OP">OP - One Piece</option>
+    <option value="SL">SL - Solo Leveling</option>
+    <option value="SNK">SNK - Attack on Titan</option>
+    <option value="TPN">TPN - Promised Neverland</option>
+    <option value="TR">TR - Tokyo Revengers</option>
+  </select>
+  <select id="moodFilter">
+    <option value="all">Tous les moods</option>
+    <option value="epic">epic</option>
+    <option value="tension">tension</option>
+    <option value="sadness">sadness</option>
+    <option value="comedy">comedy</option>
+    <option value="romance">romance</option>
+    <option value="horror">horror</option>
+    <option value="peaceful">peaceful</option>
+    <option value="mystery">mystery</option>
+  </select>
+  <select id="intensityFilter">
+    <option value="all">Toutes intensites</option>
+    <option value="1">Intensite 1</option>
+    <option value="2">Intensite 2</option>
+    <option value="3">Intensite 3</option>
+  </select>
+  <span class="shortcuts">Fleches/AD: naviguer | E: editer | S: exporter</span>
+  <span class="counter" id="counter">0 / 0</span>
+</div>
+
+<div class="main">
+  <div class="image-panel">
+    <div class="nav-arrow left" onclick="navigate(-1)">&lsaquo;</div>
+    <img id="mainImage" src="" alt="">
+    <div class="badge">
+      <div class="mood-pill" id="moodPill"></div>
+      <div class="intensity-bar" id="intensityBar"></div>
+      <div class="confidence-label" id="confidenceLabel"></div>
+      <div class="reasoning" id="reasoning"></div>
+    </div>
+    <div class="nav-arrow right" onclick="navigate(1)">&rsaquo;</div>
+    <div class="edit-overlay" id="editOverlay">
+      <select id="editMood">
+        <option value="epic">epic</option><option value="tension">tension</option>
+        <option value="sadness">sadness</option><option value="comedy">comedy</option>
+        <option value="romance">romance</option><option value="horror">horror</option>
+        <option value="peaceful">peaceful</option><option value="mystery">mystery</option>
+      </select>
+      <select id="editIntensity">
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+      </select>
+      <button onclick="saveEdit()">OK</button>
+      <button class="cancel" onclick="cancelEdit()">Annuler</button>
+    </div>
+  </div>
+  <div class="sidebar" id="sidebar"></div>
+</div>
+
+<!-- ground_truth.js = var GROUND_TRUTH = { ... }; -->
+<script src="ground_truth.js"></script>
+<script>
+var groundTruth = GROUND_TRUTH;
+var filteredKeys = [];
+var currentIndex = 0;
+var editMode = false;
+
+var moodColors = {
+  epic: '#e74c3c', tension: '#e67e22', sadness: '#3498db', comedy: '#f1c40f',
+  romance: '#e91e8a', horror: '#8e44ad', peaceful: '#2ecc71', mystery: '#1abc9c'
+};
+
+function sortKey(a, b) {
+  var pa = a.split('/'), pb = b.split('/');
+  if (pa[0] !== pb[0]) return pa[0].localeCompare(pb[0]);
+  if (pa[1] !== pb[1]) return parseInt(pa[1]) - parseInt(pb[1]);
+  return parseInt(pa[2]) - parseInt(pb[2]);
+}
+
+function applyFilters() {
+  var manga = document.getElementById('mangaFilter').value;
+  var mood = document.getElementById('moodFilter').value;
+  var intensity = document.getElementById('intensityFilter').value;
+  filteredKeys = Object.keys(groundTruth).filter(function(k) {
+    if (manga !== 'all' && k.indexOf(manga + '/') !== 0) return false;
+    if (mood !== 'all' && groundTruth[k].mood !== mood) return false;
+    if (intensity !== 'all' && groundTruth[k].intensity !== parseInt(intensity)) return false;
+    return true;
+  }).sort(sortKey);
+  currentIndex = 0;
+  renderSidebar();
+  showCurrent();
+}
+
+function renderSidebar() {
+  var sb = document.getElementById('sidebar');
+  var html = '';
+  for (var i = 0; i < filteredKeys.length; i++) {
+    var k = filteredKeys[i];
+    var v = groundTruth[k];
+    var parts = k.split('/');
+    html += '<div class="item' + (i === currentIndex ? ' active' : '') + '" onclick="goTo(' + i + ')" data-idx="' + i + '">' +
+      '<span class="dot" style="background:' + moodColors[v.mood] + '"></span>' +
+      '<span class="name">' + parts[0] + ' ' + parts[1] + '/' + parts[2] + '</span>' +
+      '<span class="int">' + v.intensity + '</span></div>';
+  }
+  sb.innerHTML = html;
+}
+
+function showCurrent() {
+  if (filteredKeys.length === 0) {
+    document.getElementById('mainImage').src = '';
+    document.getElementById('moodPill').textContent = '';
+    document.getElementById('reasoning').textContent = 'Aucune image';
+    document.getElementById('counter').textContent = '0 / 0';
+    return;
+  }
+  var key = filteredKeys[currentIndex];
+  var val = groundTruth[key];
+  document.getElementById('mainImage').src = key;
+  var pill = document.getElementById('moodPill');
+  pill.textContent = val.mood;
+  pill.className = 'mood-pill mood-' + val.mood;
+  var dots = '';
+  for (var i = 1; i <= 3; i++) {
+    dots += '<div class="intensity-dot' + (i <= val.intensity ? ' active' : '') + '" style="background:' + (i <= val.intensity ? moodColors[val.mood] : 'transparent') + '"></div>';
+  }
+  document.getElementById('intensityBar').innerHTML = dots;
+  document.getElementById('confidenceLabel').textContent = 'confidence: ' + (val.confidence != null ? val.confidence : '?');
+  document.getElementById('reasoning').textContent = val.reasoning || '';
+  document.getElementById('counter').textContent = (currentIndex + 1) + ' / ' + filteredKeys.length;
+  var items = document.querySelectorAll('.sidebar .item');
+  for (var j = 0; j < items.length; j++) items[j].classList.remove('active');
+  var el = document.querySelector('.sidebar .item[data-idx="' + currentIndex + '"]');
+  if (el) { el.classList.add('active'); el.scrollIntoView({ block: 'nearest' }); }
+}
+
+function navigate(delta) {
+  if (filteredKeys.length === 0) return;
+  currentIndex = (currentIndex + delta + filteredKeys.length) % filteredKeys.length;
+  showCurrent();
+}
+function goTo(idx) { currentIndex = idx; showCurrent(); }
+
+function toggleEdit() {
+  editMode = !editMode;
+  var overlay = document.getElementById('editOverlay');
+  if (editMode && filteredKeys.length > 0) {
+    var val = groundTruth[filteredKeys[currentIndex]];
+    document.getElementById('editMood').value = val.mood;
+    document.getElementById('editIntensity').value = val.intensity;
+    overlay.classList.add('show');
+  } else { overlay.classList.remove('show'); editMode = false; }
+}
+function saveEdit() {
+  var key = filteredKeys[currentIndex];
+  groundTruth[key].mood = document.getElementById('editMood').value;
+  groundTruth[key].intensity = parseInt(document.getElementById('editIntensity').value);
+  groundTruth[key].confidence = 1.0;
+  editMode = false;
+  document.getElementById('editOverlay').classList.remove('show');
+  renderSidebar(); showCurrent();
+}
+function cancelEdit() { editMode = false; document.getElementById('editOverlay').classList.remove('show'); }
+
+function exportJSON() {
+  var blob = new Blob([JSON.stringify(groundTruth, null, 2)], { type: 'application/json' });
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'ground_truth.json'; a.click(); URL.revokeObjectURL(a.href);
+}
+
+document.addEventListener('keydown', function(e) {
+  if (editMode) { if (e.key === 'Escape') cancelEdit(); if (e.key === 'Enter') saveEdit(); return; }
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') navigate(-1);
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') navigate(1);
+  if (e.key === 'e' || e.key === 'E') toggleEdit();
+  if (e.key === 's' || e.key === 'S') { if (e.ctrlKey || e.metaKey) e.preventDefault(); exportJSON(); }
+});
+
+document.getElementById('mangaFilter').addEventListener('change', applyFilters);
+document.getElementById('moodFilter').addEventListener('change', applyFilters);
+document.getElementById('intensityFilter').addEventListener('change', applyFilters);
+
+applyFilters();
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@
 >
 > **Mise a jour (mars 2026) :** ce document est historique. Les references actuelles sont :
 > - **31 pages Blue Lock :** V12 multi-image + Qwen3.5-VL 4B → **23/31 strict, 28/31 relaxed**
-> - **RealTest `BL/1` par defaut dans le repo :** protocole historique V12 + Qwen3-VL-4B-Thinking → **46/70 strict, 59/70 relaxed (84.3%)**
+> - **RealTest `BL/1` par defaut dans le repo :** protocole historique V12 + Qwen3-VL-4B-Thinking → **47/70 strict, 60/70 relaxed (85.7%)**
 > - Voir `manga-mood-ai/research/RESEARCH_SYNTHESIS.md` pour la vue d'ensemble a jour.
 
 ## Probleme

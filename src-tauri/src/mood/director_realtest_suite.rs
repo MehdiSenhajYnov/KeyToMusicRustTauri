@@ -1,6 +1,7 @@
 use super::super::*;
 use crate::mood::inference::{
-    self, extract_content, parse_mood_intensity_response, LlamaServer, LlamaServerStartOptions,
+    self, extract_content, parse_mood_intensity_response, LlamaRuntimeIntent, LlamaServer,
+    LlamaServerStartOptions,
 };
 use crate::types::BaseMood;
 use base64::Engine;
@@ -156,6 +157,8 @@ struct SamplingConfig {
 #[derive(Clone, Copy, Debug, Serialize)]
 struct RuntimeProfile {
     name: &'static str,
+    #[serde(skip_serializing)]
+    intent: LlamaRuntimeIntent,
     context_size: u32,
     parallel_slots: u32,
 }
@@ -472,14 +475,22 @@ fn build_suite() -> Vec<ExperimentSpec> {
         max_tokens: 512,
     };
     const RUNTIME_DEFAULT: RuntimeProfile = RuntimeProfile {
-        name: "default_32768x4",
-        context_size: 32768,
-        parallel_slots: 4,
+        name: "primary_12288x1",
+        intent: LlamaRuntimeIntent::BenchmarkPrimary,
+        context_size: 12288,
+        parallel_slots: 1,
     };
     const RUNTIME_QUIET: RuntimeProfile = RuntimeProfile {
         name: "quiet_8192x1",
+        intent: LlamaRuntimeIntent::BenchmarkPrimary,
         context_size: 8192,
         parallel_slots: 1,
+    };
+    const RUNTIME_RESEARCH: RuntimeProfile = RuntimeProfile {
+        name: "research_32768x4",
+        intent: LlamaRuntimeIntent::ResearchLarge,
+        context_size: 32768,
+        parallel_slots: 4,
     };
 
     vec![
@@ -516,7 +527,7 @@ fn build_suite() -> Vec<ExperimentSpec> {
                 context: ContextWindow::Triad,
                 prompt_style: PromptStyle::SequenceWindow,
                 sampling: GREEDY_HIST,
-                runtime: RUNTIME_DEFAULT,
+                runtime: RUNTIME_RESEARCH,
                 grammar: false,
                 decision: DecisionStrategy::Majority,
             }),
@@ -531,7 +542,7 @@ fn build_suite() -> Vec<ExperimentSpec> {
                 context: ContextWindow::Triad,
                 prompt_style: PromptStyle::SequenceWindow,
                 sampling: GREEDY_HIST,
-                runtime: RUNTIME_DEFAULT,
+                runtime: RUNTIME_RESEARCH,
                 grammar: false,
                 decision: DecisionStrategy::CenterOverride,
             }),
@@ -1085,6 +1096,8 @@ async fn run_live_experiment(
             reasoning_format: model.reasoning_format.map(str::to_string),
             context_size: Some(live.runtime.context_size),
             parallel_slots: Some(live.runtime.parallel_slots),
+            gpu_layers: None,
+            runtime_intent: Some(live.runtime.intent),
         },
     )
     .await;

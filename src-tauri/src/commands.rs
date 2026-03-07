@@ -1919,7 +1919,18 @@ pub async fn start_mood_server(
 
     let model_str = model_path.to_string_lossy().to_string();
     let mmproj_str = mmproj_path.to_string_lossy().to_string();
-    let server = mood::inference::LlamaServer::start(&model_str, &mmproj_str).await?;
+    let server = mood::inference::LlamaServer::start_with_options(
+        &model_str,
+        &mmproj_str,
+        mood::inference::LlamaServerStartOptions {
+            reasoning_format: mood::inference::reasoning_format_from_env(),
+            context_size: None,
+            parallel_slots: None,
+            gpu_layers: None,
+            runtime_intent: Some(mood::inference::LlamaRuntimeIntent::AppDefault),
+        },
+    )
+    .await?;
 
     let _ = app_handle.emit(
         "mood_server_status",

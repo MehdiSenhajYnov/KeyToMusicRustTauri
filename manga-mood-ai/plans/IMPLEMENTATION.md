@@ -3,9 +3,9 @@
 ## Modele choisi
 
 **Production actuelle : Qwen3-VL 2B** (GGUF Q4_K_M, ~1.9 GB) — deploye dans l'app (classification simple sans contexte).
-**Ancien baseline RealTest : Qwen3-VL-4B-Thinking historique** — protocole V12 3 pages, **46/70 strict et 59/70 relaxed (84.3%)** sur `BL/1`.
-**Nouveau winner benchmark local : `t4b_wide5_selective`** — `Qwen3-VL-4B-Thinking` + backbone `wide-5` + reprompts selectifs aux bords de runs, **55/70 strict, 67/70 relaxed, 24/70 intensity** sur `BL/1`, **~10.2s/page**, `12` pages reanalysees.
-**Meilleur variant recherche non deployable : ensemble derive** — **46/70 strict, 61/70 relaxed, 41/70 intensity** sur `BL/1` en fusionnant `t4b_hist_live + t4b_focus_direct + q3vl_2b + q35_9b` avec Viterbi. **Utile pour la recherche, mais trop lent pour la prod**.
+**Ancien baseline RealTest : Qwen3-VL-4B-Thinking historique** — protocole V12 3 pages, **47/70 strict et 60/70 relaxed (85.7%)** sur `BL/1`.
+**Nouveau winner benchmark local : `t4b_wide5_selective`** — `Qwen3-VL-4B-Thinking` + backbone `wide-5` + reprompts selectifs aux bords de runs, **56/70 strict, 68/70 relaxed, 24/70 intensity** sur `BL/1`, **~13.0s/page**, `12` pages reanalysees.
+**Meilleur variant recherche non deployable : ensemble derive** — **47/70 strict, 62/70 relaxed, 41/70 intensity** sur `BL/1` en fusionnant `t4b_hist_live + t4b_focus_direct + q3vl_2b + q35_9b` avec Viterbi. **Utile pour la recherche, mais trop lent pour la prod**.
 **Meilleur challenger live observe : Qwen3.5-9B** — **36/70 strict, 57/70 relaxed, 26/70 intensity** sur `BL/1`, ~2.8s/window, ~9.5 GB VRAM.
 **Meilleur modele auxiliaire observe : Qwen3-VL-2B-Instruct** — **41/70 intensity** sur `BL/1`, ~1.2s/window, utile comme tete d'intensite ou expert `tension`.
 **Reference recherche 31 pages Blue Lock : Qwen3.5-VL 4B** (GGUF Q4_K_M, ~2.5 GB) — meilleur resultat sur le benchmark sequentiel 31 pages, avec V12 multi-image a **23/31 strict, 28/31 relaxed**.
@@ -16,8 +16,8 @@
 | Qwen3.5-VL 4B | Non teste | 23/31 strict (74%), 28/31 relaxed (90%) avec V12 | **23/70 strict, 32/70 relaxed** dans la suite comparative Mars 2026 | ~1.9s/window | ~58% |
 | Qwen3.5-9B | Non teste | Non teste | **36/70 strict, 57/70 relaxed, 26/70 intensity** | ~2.8s/window | ~79% |
 | Qwen3-VL-2B-Instruct | Non teste | Non teste | **32/70 strict, 55/70 relaxed, 41/70 intensity** | ~1.2s/window | ~55% |
-| Qwen3-VL-4B-Thinking | Non teste | Variante dediee thinking, pas winner sur le 31 pages | **55/70 strict, 67/70 relaxed** avec `wide5_selective` ; ancien historique: 46/70 | ~10.2s/page (`wide5_selective`) | ~69% |
-| Ensemble derive (4 signaux) | Non teste | Non teste | **46/70 strict, 61/70 relaxed, 41/70 intensity** | ~19-23s/page effectifs selon les dependances | VRAM pic = max du plus gros modele actif |
+| Qwen3-VL-4B-Thinking | Non teste | Variante dediee thinking, pas winner sur le 31 pages | **56/70 strict, 68/70 relaxed** avec `wide5_selective` ; ancien historique: 47/70 | ~13.0s/page (`wide5_selective`) | ~69% |
+| Ensemble derive (4 signaux) | Non teste | Non teste | **47/70 strict, 62/70 relaxed, 41/70 intensity** | ~19-23s/page effectifs selon les dependances | VRAM pic = max du plus gros modele actif |
 
 - Thinking model : utilise des `<think>` tags internes pour raisonner avant de repondre
 - **8 moods dimensionnels** : epic, tension, sadness, comedy, romance, horror, peaceful, mystery — chacun avec intensite 1-3
@@ -26,12 +26,17 @@
 - **Pipeline V6 :** historique important, mais depasse comme reference benchmark
 - **Suite comparative RealTest (mars 2026) :** baseline cache + variantes live comparees automatiquement par `realtest_benchmark`
 - **Plan runtime hors CUDA :** `manga-mood-ai/plans/PLAN_RUNTIME_SIZING_NGL_SUPPORT.md`
+- **Runtime hors CUDA implemente (2026-03-07) :**
+  - demarrage `llama-server` avec `context / np / ngl` dynamiques et fallback decroissant
+  - bench par defaut ramene de `32768x4` a `primary_12288x1`
+  - `research_32768x4` conserve seulement pour les runs historiques
+  - CPU retire du chemin auto supporte sous Linux, garde uniquement via override explicite
 - **Attention :** sur `Qwen3-VL-4B-Thinking`, toutes les variantes activees avec grammar / PNG / Viterbi / OCR / semantic ont collapse en sortie quasi constante `sadness`; ces runs ne prouvent donc pas encore que ces axes sont mauvais, ils signalent d'abord un probleme de protocole/harness.
 - **Observation cle :** les meilleurs gains pratiques viennent pour l'instant d'une **fusion conservative de plusieurs specialistes**, pas d'un unique prompt miracle.
 - **Nouveau gate de validation :** une variante n'est consideree comme gagnante que si elle reste dans un budget de cout proche du baseline historique et apporte **au moins +2 strict** ou **+4 relaxed** sur `BL/1`.
 - **Eliminations smoke deja actees :** les variantes `thinking4b` en prompt direct courant-page (`focus_short`, `focus_grammar_short`, `wide5_narrative`, `wide5_narrative_grammar`) sont trop instables ou trop mauvaises des les 3 premieres pages; elles ne doivent plus etre priorisees tant que leur parsing/protocole n'est pas repense.
 - **Mini-amelioration documentee mais insuffisante :** `t4b_wide5_sequence` et `t4b_wide5_sequence_viterbi` montent a **61/70 relaxed** avec un cout encore proche du baseline (~9.3-9.4s/window), mais restent a **43/70 strict**. Cette famille a servi de backbone au winner final.
-- **Winner final documente :** `t4b_wide5_selective` reprend ce backbone `wide-5`, puis ne reprompte que `12` pages aux bords de runs `comedy / tension / epic`. Resultat: **55/70 strict**, **67/70 relaxed**, **24/70 intensity**, **~10.2s/page**. Le gain vient de corrections locales structurelles:
+- **Winner final documente :** `t4b_wide5_selective` reprend ce backbone `wide-5`, puis ne reprompte que `12` pages aux bords de runs `comedy / tension / epic`. Resultat: **56/70 strict**, **68/70 relaxed**, **24/70 intensity**, **~13.0s/page**. Le gain vient de corrections locales structurelles:
   - ouverture de petits runs `epic` qui sont encore en fait du `tension`
   - faux runs `comedy` dont seuls les bords sont reellement `mystery` ou `tension`
   - longs runs `tension` qui cachent un debut `mystery` et une fin `epic`
@@ -320,7 +325,7 @@ L'exploration historique du pipeline V6 est terminee. **V6 a ete le meilleur res
 
 Depuis, la reference benchmark a evolue :
 - **31 pages Blue Lock :** V12 multi-image + Qwen3.5-VL 4B → 23/31 strict, 28/31 relaxed
-- **RealTest `BL/1` par defaut dans le repo :** protocole historique V12 + Qwen3-VL-4B-Thinking → 46/70 strict, 59/70 relaxed (84.3%)
+- **RealTest `BL/1` par defaut dans le repo :** protocole historique V12 + Qwen3-VL-4B-Thinking → 47/70 strict, 60/70 relaxed (85.7%)
 
 Toutes les variantes V7-V11 regressent par rapport a V6 dans la famille "descriptions contextuelles". Voir FINDINGS.md section 7 et RESULTS.md Phase 3 pour les details complets.
 

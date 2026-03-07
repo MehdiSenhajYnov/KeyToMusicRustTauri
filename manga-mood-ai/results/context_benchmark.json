@@ -1,0 +1,260 @@
+{
+  "context_0": {
+    "label": "context=0 (visual)",
+    "context_size": 0,
+    "score": 17,
+    "total": 31,
+    "avg_time_ms": 3762.7,
+    "total_time_s": 116.6,
+    "results": [
+      {
+        "image": "BlueLockTome1-006.webp",
+        "mood": "tension",
+        "expected": "tension",
+        "correct": true,
+        "time_ms": 5057.7,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-007.webp",
+        "mood": "tension",
+        "expected": "tension",
+        "correct": true,
+        "time_ms": 3824.3,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-008.webp",
+        "mood": "tension",
+        "expected": "tension",
+        "correct": true,
+        "time_ms": 2596.3,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-009.webp",
+        "mood": "tension",
+        "expected": "tension",
+        "correct": true,
+        "time_ms": 2669.0,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-010.webp",
+        "mood": "emotional_climax",
+        "expected": "emotional_climax",
+        "correct": true,
+        "time_ms": 1808.4,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-011.webp",
+        "mood": "emotional_climax",
+        "expected": "mystery",
+        "correct": true,
+        "time_ms": 4043.1,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-012.webp",
+        "mood": "emotional_climax",
+        "expected": "tension",
+        "correct": false,
+        "time_ms": 2212.1,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-013.webp",
+        "mood": "emotional_climax",
+        "expected": "chase_action",
+        "correct": false,
+        "time_ms": 2608.3,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-014.webp",
+        "mood": "epic_battle",
+        "expected": "tension",
+        "correct": true,
+        "time_ms": 1563.1,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-015.webp",
+        "mood": "emotional_climax",
+        "expected": "tension",
+        "correct": false,
+        "time_ms": 1417.8,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-016.webp",
+        "mood": "emotional_climax",
+        "expected": "tension",
+        "correct": false,
+        "time_ms": 3192.6,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-017.webp",
+        "mood": "tension",
+        "expected": "tension",
+        "correct": true,
+        "time_ms": 1437.8,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-018.webp",
+        "mood": "emotional_climax",
+        "expected": "epic_battle",
+        "correct": false,
+        "time_ms": 2884.4,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-019.webp",
+        "mood": "?()",
+        "expected": "tension",
+        "correct": false,
+        "time_ms": 22440.2,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-020.webp",
+        "mood": "emotional_climax",
+        "expected": "chase_action",
+        "correct": false,
+        "time_ms": 1837.7,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-021.webp",
+        "mood": "epic_battle",
+        "expected": "sadness",
+        "correct": false,
+        "time_ms": 4297.4,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-022.webp",
+        "mood": "emotional_climax",
+        "expected": "sadness",
+        "correct": false,
+        "time_ms": 1372.5,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-023.webp",
+        "mood": "emotional_climax",
+        "expected": "emotional_climax",
+        "correct": true,
+        "time_ms": 6178.9,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-024.webp",
+        "mood": "emotional_climax",
+        "expected": "emotional_climax",
+        "correct": true,
+        "time_ms": 1876.9,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-025.webp",
+        "mood": "emotional_climax",
+        "expected": "emotional_climax",
+        "correct": true,
+        "time_ms": 1585.7,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-026.webp",
+        "mood": "emotional_climax",
+        "expected": "sadness",
+        "correct": false,
+        "time_ms": 1758.3,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-027.webp",
+        "mood": "emotional_climax",
+        "expected": "sadness",
+        "correct": false,
+        "time_ms": 4772.8,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-028.webp",
+        "mood": "emotional_climax",
+        "expected": "sadness",
+        "correct": false,
+        "time_ms": 1925.4,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-029.webp",
+        "mood": "emotional_climax",
+        "expected": "sadness",
+        "correct": false,
+        "time_ms": 1498.7,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-030.webp",
+        "mood": "tension",
+        "expected": "sadness",
+        "correct": true,
+        "time_ms": 7552.7,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-031.webp",
+        "mood": "tension",
+        "expected": "sadness",
+        "correct": false,
+        "time_ms": 6025.2,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-032.webp",
+        "mood": "mystery",
+        "expected": "sadness",
+        "correct": true,
+        "time_ms": 3275.7,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-033.webp",
+        "mood": "emotional_climax",
+        "expected": "sadness",
+        "correct": true,
+        "time_ms": 2680.0,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-034.webp",
+        "mood": "peaceful",
+        "expected": "peaceful",
+        "correct": true,
+        "time_ms": 1662.1,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-035.webp",
+        "mood": "tension",
+        "expected": "mystery",
+        "correct": true,
+        "time_ms": 7998.2,
+        "context_images": 0
+      },
+      {
+        "image": "BlueLockTome1-036.webp",
+        "mood": "tension",
+        "expected": "mystery",
+        "correct": true,
+        "time_ms": 2591.4,
+        "context_images": 0
+      }
+    ]
+  }
+}

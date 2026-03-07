@@ -2,6 +2,14 @@ use std::path::PathBuf;
 
 use crate::storage::config::get_app_data_dir;
 
+#[cfg(target_os = "linux")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LinuxRuntimeMode {
+    Vulkan,
+    CpuExplicit,
+    Unsupported,
+}
+
 /// Get the platform-specific llama-server binary name.
 fn llama_server_binary_name() -> &'static str {
     if cfg!(target_os = "windows") {
@@ -83,31 +91,16 @@ pub fn is_model_downloaded() -> bool {
     llm_ok && mmproj_ok
 }
 
-/// Search pattern to match the right asset in llama.cpp GitHub releases.
-fn asset_search_patterns() -> Vec<&'static str> {
-    if cfg!(target_os = "windows") {
-        vec!["win-vulkan-x64"]
-    } else if cfg!(target_os = "macos") {
-        if cfg!(target_arch = "aarch64") {
-            vec!["macos-arm64"]
-        } else {
-            vec!["macos-x64"]
-        }
-    } else if prefers_linux_vulkan() {
-        vec!["ubuntu-vulkan-x64", "ubuntu-x64"]
-    } else {
-        vec!["ubuntu-x64"]
-    }
+#[cfg(target_os = "linux")]
+fn backend_override() -> Option<String> {
+    std::env::var("KEYTOMUSIC_LLAMA_BACKEND")
+        .ok()
+        .map(|value| value.trim().to_lowercase())
+        .filter(|value| !value.is_empty())
 }
 
 #[cfg(target_os = "linux")]
-fn prefers_linux_vulkan() -> bool {
-    match std::env::var("KEYTOMUSIC_LLAMA_BACKEND").ok().as_deref() {
-        Some("cpu") => return false,
-        Some("vulkan") => return true,
-        _ => {}
-    }
-
+fn vulkan_available() -> bool {
     std::process::Command::new("vulkaninfo")
         .arg("--summary")
         .output()
@@ -115,9 +108,78 @@ fn prefers_linux_vulkan() -> bool {
         .unwrap_or(false)
 }
 
+#[cfg(target_os = "linux")]
+fn resolve_linux_runtime_mode(
+    backend_override: Option<&str>,
+    has_vulkan: bool,
+) -> LinuxRuntimeMode {
+    match backend_override {
+        Some("cpu") => LinuxRuntimeMode::CpuExplicit,
+        Some("vulkan") => {
+            if has_vulkan {
+                LinuxRuntimeMode::Vulkan
+            } else {
+                LinuxRuntimeMode::Unsupported
+            }
+        }
+        Some(_) => LinuxRuntimeMode::Unsupported,
+        None => {
+            if has_vulkan {
+                LinuxRuntimeMode::Vulkan
+            } else {
+                LinuxRuntimeMode::Unsupported
+            }
+        }
+    }
+}
+
+/// Search pattern to match the right asset in llama.cpp GitHub releases.
+fn asset_search_patterns() -> Result<Vec<&'static str>, String> {
+    if cfg!(target_os = "windows") {
+        Ok(vec!["win-vulkan-x64"])
+    } else if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            Ok(vec!["macos-arm64"])
+        } else {
+            Ok(vec!["macos-x64"])
+        }
+    } else {
+        #[cfg(target_os = "linux")]
+        {
+            return match resolve_linux_runtime_mode(
+                backend_override().as_deref(),
+                vulkan_available(),
+            ) {
+                LinuxRuntimeMode::Vulkan => Ok(vec!["ubuntu-vulkan-x64"]),
+                LinuxRuntimeMode::CpuExplicit => Ok(vec!["ubuntu-x64"]),
+                LinuxRuntimeMode::Unsupported => Err(
+                    "Manga mood requires GPU acceleration on Linux. No supported GPU backend detected. Install/enable Vulkan or set KEYTOMUSIC_LLAMA_BACKEND=cpu for unsupported debug mode."
+                        .to_string(),
+                ),
+            };
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            Ok(vec!["ubuntu-x64"])
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+pub fn ensure_mood_runtime_supported() -> Result<(), String> {
+    match resolve_linux_runtime_mode(backend_override().as_deref(), vulkan_available()) {
+        LinuxRuntimeMode::Vulkan | LinuxRuntimeMode::CpuExplicit => Ok(()),
+        LinuxRuntimeMode::Unsupported => Err(
+            "Manga mood requires GPU acceleration on Linux. No supported GPU backend detected. Install/enable Vulkan or set KEYTOMUSIC_LLAMA_BACKEND=cpu for unsupported debug mode."
+                .to_string(),
+        ),
+    }
+}
+
 #[cfg(not(target_os = "linux"))]
-fn prefers_linux_vulkan() -> bool {
-    false
+pub fn ensure_mood_runtime_supported() -> Result<(), String> {
+    Ok(())
 }
 
 /// Fetch the download URL for the latest llama-server release from GitHub API.
@@ -139,7 +201,7 @@ async fn fetch_llama_server_url() -> Result<String, String> {
         .await
         .map_err(|e| format!("Failed to parse release info: {}", e))?;
 
-    let patterns = asset_search_patterns();
+    let patterns = asset_search_patterns()?;
     tracing::info!(
         "Looking for llama.cpp assets matching patterns: {:?}",
         patterns
@@ -179,6 +241,31 @@ async fn fetch_llama_server_url() -> Result<String, String> {
         "No llama-server release found for platform patterns {:?}",
         patterns
     ))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::{resolve_linux_runtime_mode, LinuxRuntimeMode};
+
+    #[test]
+    fn linux_runtime_prefers_vulkan_when_available() {
+        assert_eq!(
+            resolve_linux_runtime_mode(None, true),
+            LinuxRuntimeMode::Vulkan
+        );
+    }
+
+    #[test]
+    fn linux_runtime_requires_explicit_cpu_override() {
+        assert_eq!(
+            resolve_linux_runtime_mode(None, false),
+            LinuxRuntimeMode::Unsupported
+        );
+        assert_eq!(
+            resolve_linux_runtime_mode(Some("cpu"), false),
+            LinuxRuntimeMode::CpuExplicit
+        );
+    }
 }
 
 /// Download llama-server binary and all its dependencies.

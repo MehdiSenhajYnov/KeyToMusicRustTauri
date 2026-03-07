@@ -1,0 +1,405 @@
+[
+  [
+    6,
+    {
+      "mood": "tension",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 7,
+        "narrative": "flashback",
+        "atmosphere": "** Formal, serious, urgent.",
+        "content": "** A new member of the Japan Football Association is proposing a strategic plan to overcome the team's recent failure in the World Cup."
+      }
+    }
+  ],
+  [
+    7,
+    {
+      "mood": "tension",
+      "features": {
+        "emotion": "shock",
+        "intensity": 7,
+        "narrative": "present",
+        "atmosphere": "cynical debate",
+        "content": "The President of the JFA cynically explains that football is just a business where losses are tolerated to protect profits, shocking the woman listening to him."
+      }
+    }
+  ],
+  [
+    8,
+    {
+      "mood": "tension",
+      "features": {
+        "emotion": "determination",
+        "intensity": 7,
+        "narrative": "present",
+        "atmosphere": "serious and anxious",
+        "content": "The page contrasts the friends' nostalgic laughter with a serious discussion about the decline of Japanese sports, culminating in a determined plea for change."
+      }
+    }
+  ],
+  [
+    9,
+    {
+      "mood": "tension",
+      "features": {
+        "emotion": "fear",
+        "intensity": 7,
+        "narrative": "present",
+        "atmosphere": "high stakes",
+        "content": "The characters are engaged in a heated debate about the possibility of winning the World Cup, creating a tense atmosphere of anticipation."
+      }
+    }
+  ],
+  [
+    10,
+    {
+      "mood": "tension",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "** Competitive, Serious",
+        "content": "** The protagonist declares her resolve to create the ultimate player to defeat Japan, while her team discusses the future of their game."
+      }
+    }
+  ],
+  [
+    11,
+    {
+      "mood": "tension",
+      "features": {
+        "emotion": "determination",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "electric, aggressive",
+        "content": "The characters are rallying around a specific player to overcome a challenge."
+      }
+    }
+  ],
+  [
+    12,
+    {
+      "mood": "emotional_climax",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 9,
+        "narrative": "present",
+        "atmosphere": "** Electric, Passionate.",
+        "content": "** The fans are screaming with determination and passion as they cheer for Isagi during the match."
+      }
+    }
+  ],
+  [
+    13,
+    {
+      "mood": "epic_battle",
+      "features": {
+        "emotion": "determination",
+        "intensity": 9,
+        "narrative": "present",
+        "atmosphere": "sweaty, aggressive",
+        "content": "The central player is being aggressively tackled by two opponents in a high-stakes soccer match."
+      }
+    }
+  ],
+  [
+    14,
+    {
+      "mood": "chase_action",
+      "features": {
+        "emotion": "shock",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "frantic energy",
+        "content": "The character is running at high speed while shouting at his opponent, who is confused and sweating as he realizes he has been tricked."
+      }
+    }
+  ],
+  [
+    15,
+    {
+      "mood": "tension",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "** High-stakes, suspenseful.",
+        "content": "** The goalkeeper faces a critical shot from the opposing player during the National Championship match."
+      }
+    }
+  ],
+  [
+    16,
+    {
+      "mood": "chase_action",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "** Intense, Competitive.",
+        "content": "** The protagonist is under pressure from an aggressive opponent who is shouting encouragement, while internally realizing the tactical advantage of a specific play."
+      }
+    }
+  ],
+  [
+    17,
+    {
+      "mood": "emotional_climax",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 9,
+        "narrative": "present",
+        "atmosphere": "** Overwhelming, Pressured",
+        "content": "** The coach delivers a passionate speech about the team's unity, causing Isagi to feel shocked and overwhelmed by the intensity of the moment."
+      }
+    }
+  ],
+  [
+    18,
+    {
+      "mood": "epic_battle",
+      "features": {
+        "emotion": "determination",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "gritty, intense",
+        "content": "A determined soccer player with number 11 focuses intensely on the ball during a serious match, surrounded by panels depicting the high drama and action of the game."
+      }
+    }
+  ],
+  [
+    19,
+    {
+      "mood": "emotional_climax",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 9,
+        "narrative": "present",
+        "atmosphere": "** Chaotic, explosive.",
+        "content": "** The team is shocked by a sudden goal that their goalkeeper failed to stop."
+      }
+    }
+  ],
+  [
+    20,
+    {
+      "mood": "epic_battle",
+      "features": {
+        "emotion": "determination",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "high-speed action",
+        "content": "A soccer match is depicted with intense focus and physical exertion as players compete for the ball."
+      }
+    }
+  ],
+  [
+    21,
+    {
+      "mood": "emotional_climax",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "** Shocking, Final.",
+        "content": "** The goalkeeper is stunned by a spectacular goal that seals a 2-0 defeat."
+      }
+    }
+  ],
+  [
+    22,
+    {
+      "mood": "emotional_climax",
+      "features": {
+        "emotion": "joy",
+        "intensity": 9,
+        "narrative": "present",
+        "atmosphere": "triumphant exhaustion",
+        "content": "The team celebrates a hard-fought victory, culminating in the emotional collapse of pure relief and happiness."
+      }
+    }
+  ],
+  [
+    23,
+    {
+      "mood": "emotional_climax",
+      "features": {
+        "emotion": "determination",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "energetic press event",
+        "content": "The protagonist passionately declares his goal to win the national championship with his team, contrasting with the interviewer's question about his age."
+      }
+    }
+  ],
+  [
+    24,
+    {
+      "mood": "sadness",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 7,
+        "narrative": "present",
+        "atmosphere": "** Painful, Solemn",
+        "content": "** The coach, in agony, delivers a final, heartbreaking warning to his players about the memories they will carry after their defeat."
+      }
+    }
+  ],
+  [
+    25,
+    {
+      "mood": "sadness",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "** Tearful, conflicted.",
+        "content": "** The protagonist is overcome with sorrow and regret, weeping while his teammates shout in anger behind him."
+      }
+    }
+  ],
+  [
+    26,
+    {
+      "mood": "sadness",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 7,
+        "narrative": "present",
+        "atmosphere": "** Melancholic, intimate.",
+        "content": "** A protagonist confesses his team's failure to a friend, who comforts him with a gentle smile."
+      }
+    }
+  ],
+  [
+    27,
+    {
+      "mood": "emotional_climax",
+      "features": {
+        "emotion": "determination",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "intense, nostalgic",
+        "content": "The page captures a high-stakes soccer match where a player reflects on his journey, transitioning from the adrenaline of the game to a quiet, inspiring memory of his childhood passion."
+      }
+    }
+  ],
+  [
+    28,
+    {
+      "mood": "emotional_climax",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 7,
+        "narrative": "flashback",
+        "atmosphere": "** Melancholic, determined",
+        "content": "** The protagonist reflects on his past triumphs and the coach's passionate words while acknowledging the painful reality of his current situation."
+      }
+    }
+  ],
+  [
+    29,
+    {
+      "mood": "emotional_climax",
+      "features": {
+        "emotion": "determination",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "triumphant celebration",
+        "content": "The character celebrates a major victory with his team, reflecting on his determination to become a professional despite the gap between him and his peers."
+      }
+    }
+  ],
+  [
+    30,
+    {
+      "mood": "sadness",
+      "features": {
+        "emotion": "nostalgia",
+        "intensity": 6,
+        "narrative": "flashback",
+        "atmosphere": "quiet reflection",
+        "content": "The character mentally replays a specific moment in a soccer game, questioning his decision to pass the ball rather than shoot, creating a sense of looking back at a past event."
+      }
+    }
+  ],
+  [
+    31,
+    {
+      "mood": "emotional_climax",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 8,
+        "narrative": "present",
+        "atmosphere": "** The atmosphere is **shocking and tense**.",
+        "content": "** The page depicts the moment a goal is scored, causing shock and anger among the players."
+      }
+    }
+  ],
+  [
+    32,
+    {
+      "mood": "sadness",
+      "features": {
+        "emotion": "nostalgia",
+        "intensity": 6,
+        "narrative": "flashback",
+        "atmosphere": "nostalgic, reflective",
+        "content": "The characters reflect on their past friendship and the importance of football, realizing that their shared experiences shaped their lives."
+      }
+    }
+  ],
+  [
+    33,
+    {
+      "mood": "sadness",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 7,
+        "narrative": "flashback",
+        "atmosphere": "** Regretful, Tense",
+        "content": "** The protagonist expresses deep regret and frustration after losing to an angry opponent, while a flashback shows a different moment in his life."
+      }
+    }
+  ],
+  [
+    34,
+    {
+      "mood": "comedy",
+      "features": {
+        "emotion": "joy",
+        "intensity": 6,
+        "narrative": "present",
+        "atmosphere": "lively kitchen",
+        "content": "The characters are sharing a light-hearted moment over food in a bustling home environment."
+      }
+    }
+  ],
+  [
+    35,
+    {
+      "mood": "emotional_climax",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 8,
+        "narrative": "flashback",
+        "atmosphere": "** **Classroom tension**, **sudden realization**.",
+        "content": "** Isagi receives a letter announcing his selection for a player improvement project, causing him to tear up in shock and excitement."
+      }
+    }
+  ],
+  [
+    36,
+    {
+      "mood": "tension",
+      "features": {
+        "emotion": "neutral",
+        "intensity": 6,
+        "narrative": "present",
+        "atmosphere": "** Confused, urban.",
+        "content": "** The protagonist is confused and anxious because he is in the wrong place and doesn't know where he is."
+      }
+    }
+  ]
+]

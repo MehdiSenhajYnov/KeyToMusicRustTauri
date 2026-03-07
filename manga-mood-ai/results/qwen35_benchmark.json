@@ -1,0 +1,558 @@
+{
+  "qwen3vl-2b": {
+    "display": "Qwen3-VL 2B (current)",
+    "results": [
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "1.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 148.6,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "10.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 146.2,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "11.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 130.8,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "12.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 598.2,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "13.png",
+        "mood": "emotional_climax",
+        "time_ms": 139.8,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "14.png",
+        "mood": "emotional_climax",
+        "time_ms": 137.0,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "15.png",
+        "mood": "emotional_climax",
+        "time_ms": 133.0,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "16.png",
+        "mood": "emotional_climax",
+        "time_ms": 119.3,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "17.png",
+        "mood": "emotional_climax",
+        "time_ms": 160.9,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "18.png",
+        "mood": "emotional_climax",
+        "time_ms": 136.4,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "2.jpeg",
+        "mood": "emotional_climax",
+        "time_ms": 144.8,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "4.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 145.5,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "5.png",
+        "mood": "emotional_climax",
+        "time_ms": 149.2,
+        "raw_response": "emotional_climax"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "6.jpg",
+        "mood": "romance",
+        "time_ms": 125.3,
+        "raw_response": "romance"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "7.jpg",
+        "mood": "sadness",
+        "time_ms": 145.8,
+        "raw_response": "sadness"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "8.jpg",
+        "mood": "horror",
+        "time_ms": 136.2,
+        "raw_response": "horror"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "3.jpeg",
+        "mood": "epic_battle",
+        "time_ms": 119.7,
+        "raw_response": "epic_battle"
+      },
+      {
+        "model": "Qwen3-VL 2B (current)",
+        "image": "9.png",
+        "mood": "horror",
+        "time_ms": 127.0,
+        "raw_response": "horror"
+      }
+    ],
+    "perf": {
+      "vram_avg_mb": 5040.425091911765,
+      "vram_peak_mb": 5043.9140625,
+      "vram_delta_mb": 2659.640625,
+      "vram_total_mb": 12282.0,
+      "gpu_avg": 29.823529411764707,
+      "gpu_peak": 62
+    }
+  },
+  "qwen35-2b": {
+    "display": "Qwen3.5 2B",
+    "results": [
+      {
+        "model": "Qwen3.5 2B",
+        "image": "1.jpg",
+        "mood": "epic_battle",
+        "time_ms": 15426.8,
+        "raw_response": "The manga page features a character in a dynamic, powerful stance — likely Goku in Super Saiyan form — with intense facial expression, clenched fists, and explosive energy effects radiating around him. The large “VNNN” text suggests a sound effect or power surge, emphasizing intensity and action. There is no indication of sadness, romance, mystery, or peacefulness. The scene is clearly set during an active confrontation or battle, with high energy and dramatic visual cues.\n\nTherefore, the correc"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "10.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 1059.9,
+        "raw_response": "The manga page depicts a group of soccer players walking toward the stadium, with one player (Isagi) looking back at the camera with a surprised expression and the text “...WOW.” The scene is set in a large stadium under bright lights, suggesting a significant moment — likely before or during a match. The players’ posture is forward-moving but not aggressive; Isagi’s wide-eyed reaction suggests awe or disbelief, possibly at the scale of the stadium or the significance of the event.\n\nThere is no "
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "11.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 1031.8,
+        "raw_response": "The manga page shows a muscular, determined fighter in mid-action — likely delivering a powerful punch or strike. His body is tensed, muscles bulging, and he’s leaning forward with intensity. Behind him, several figures are shown as translucent, emotional silhouettes — some looking shocked, others defiant or supportive. The text “THERE ARE PEOPLE WHO SUPPORT ME!!” suggests a moment of triumph or emotional release, possibly after overcoming adversity.\n\nThe scene is dynamic, action-oriented, and c"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "12.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 1158.6,
+        "raw_response": "The manga page features Luffy in a state of extreme emotional distress — his face is contorted, sweat is pouring down, and he’s screaming with anguish. The background shows other characters (Zoro, Nami, Usopp, Chopper, Sanji) looking on with expressions of shock, fear, or disbelief — some even appear to be crying or recoiling. The speech bubble says: “I STILL HAVE MY FRIENDS!!!!” — which is a powerful declaration of loyalty and resilience.\n\nThis scene is not about sadness (it’s not sorrow or reg"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "13.png",
+        "mood": "emotional_climax",
+        "time_ms": 2810.8,
+        "raw_response": "1. **What are the characters expressing?**  \n   - The top panel shows a character (likely Luffy) with wide, tearful eyes, mouth open in a scream or shout, and sweat flying — indicating extreme distress or emotional release.  \n   - The bottom panels show another character (possibly Zoro) shouting “SOB! I LIKE YOU GUYS, DARN IT!!” with a “BOO-HOO” sound effect, suggesting frustration or anger.  \n   - A third character (Sabo) is shown grinning while others are being taken away, with dialogue like “"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "14.png",
+        "mood": "emotional_climax",
+        "time_ms": 3843.3,
+        "raw_response": "1.  **Analysis of Characters and Posture:**\n    *   **Top Left Panel:** A close-up of two men. One (the older man, likely the coach) is speaking calmly but intensely. The younger man (the player) looks up at him, listening.\n    *   **Top Right Panel:** A wide shot of the team standing in formation on the field. They are looking towards the coach. The coach is shouting instructions (\"Rassemblement, équipe!\"). The players are standing still, showing discipline and respect.\n    *   **Middle Panel:*"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "15.png",
+        "mood": "sadness",
+        "time_ms": 2800.2,
+        "raw_response": "Reasoning:\n\n1.  **Characters Expressing:**\n    *   **Top Panel:**\n        *   **Left Character (Foreground):** He is laughing hysterically, covering his face with his hand. His posture is open and relaxed. He is speaking about his \"eyes\" and \"Lycée Ichinan,\" indicating a moment of joy and nostalgia.\n        *   **Background Characters:** They are standing in a line, looking forward. Their expressions range from serious to slightly smiling. One is shouting, another is looking down. They are weari"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "16.png",
+        "mood": "emotional_climax",
+        "time_ms": 3614.8,
+        "raw_response": "1. **What are the characters expressing?**\n   - **Top Left Panel:** The boy with the scarf is looking at the boy with the large eye (presumably the narrator). He says, \"On n'a pas prévu juste parce que j'ai choisi!\" (We didn't plan just because I chose it!). He is gesturing with his hand, looking serious and explanatory. The narrator replies, \"Avec des si, on aurait pu faire un autre sport...\" (With those [other] ones, we could have done another sport...). The narrator is looking down, seemingly"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "17.png",
+        "mood": "emotional_climax",
+        "time_ms": 3199.9,
+        "raw_response": "1. **What are the characters expressing?** (faces, posture, gestures)\n   - **Left Panel:** A character with dark hair is shown in a close-up, lying down or reclining. Their eyes are open, looking upwards with an intense, determined expression. Their mouth is slightly open, and they are wearing a plaid shirt. A speech bubble says \"JE VOULAIS GAGNER...!\" (I wanted to win...!). This indicates a moment of high determination and a desire to achieve something.\n   - **Right Panel:** This panel shows a "
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "18.png",
+        "mood": "tension",
+        "time_ms": 8637.2,
+        "raw_response": "Reasoning:\n\n1.  **Characters Expressing:**\n    *   **Top Panel:** The boy (likely the protagonist) is holding a phone, looking at it with a surprised or shocked expression. The girl (likely the antagonist) is standing outside, looking down at him with a calm, perhaps slightly mocking or determined posture.\n    *   **Second Panel:** The girl is speaking to the boy. She says \"On a prison!\" (referring to the phone) and \"Bon-soir!!\" (Good evening!!). The boy is listening, looking at her with a mix o"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "2.jpeg",
+        "mood": "tension",
+        "time_ms": 8348.4,
+        "raw_response": "Reasoning:\n\n1.  **Character Expression:** The character has wide, staring eyes, a slightly open mouth, and a tense posture. There is no movement or action depicted.\n2.  **Feeling:** The author wants the reader to feel suspense, anxiety, or anticipation.\n3.  **Classification:**\n    -   **Sadness vs. Emotional Climax:** The character is not expressing sorrow or regret (sadness). They are in a state of high tension/anticipation (emotional climax).\n    -   **Tension vs. Epic Battle:** There is no ac"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "4.jpg",
+        "mood": "peaceful",
+        "time_ms": 3321.9,
+        "raw_response": "Reasoning:\n1. The characters are standing in a line, facing each other, with serious expressions.\n2. Posture is upright and rigid, suggesting determination or readiness.\n3. Gestures are minimal, mostly hands at sides or slightly raised, indicating a formal or ceremonial setting.\n4. The setting appears to be a stadium or arena at night, with bright lights and a crowd, suggesting a significant event.\n5. The mood is solemn and focused, not sad, tense, or comedic.\n6. The scene does not show active c"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "5.png",
+        "mood": "emotional_climax",
+        "time_ms": 1223.9,
+        "raw_response": "Reasoning:\n\n1.  **Character Analysis:** The character is shown with a determined, almost defiant posture. The speech bubble reads \"I DON'T GIVE UP!\" This indicates a strong sense of determination and emotional climax. The character's face is not sad; it is focused and resolute. The posture is upright and strong, not slumped.\n\n2.  **Feeling:** The author wants the reader to feel a sense of triumph and determination. The character's determination is the key element here.\n\n3.  **Classification:**\n "
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "6.jpg",
+        "mood": "ERROR",
+        "time_ms": 60.8,
+        "raw_response": "500 Server Error: Internal Server Error for url: http://127.0.0.1:21381/v1/chat/completions"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "7.jpg",
+        "mood": "ERROR",
+        "time_ms": 49.5,
+        "raw_response": "500 Server Error: Internal Server Error for url: http://127.0.0.1:21381/v1/chat/completions"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "8.jpg",
+        "mood": "horror",
+        "time_ms": 8405.1,
+        "raw_response": "Reasoning:\n1. The characters are expressing intense fear and horror. The top panel shows a face with wide, terrified eyes and a grimace, while the bottom panel depicts a monstrous, screaming mouth with teeth and blood, surrounded by the word \"vingle\" (likely a typo for \"vampire\" or \"vingle\" as in a specific horror term). The middle panel shows a person's face with wide eyes and tears, indicating extreme distress.\n2. The author wants the reader to experience a feeling of terror and dread, which i"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "3.jpeg",
+        "mood": "epic_battle",
+        "time_ms": 2456.9,
+        "raw_response": "1. **What are the characters expressing? (faces, posture, gestures)**\n   - **Left Character:** The character on the left is shown in profile, facing right. His posture is upright and still. His expression is calm, perhaps slightly serious or contemplative, but not aggressive. He is not gesturing; he is simply standing and observing.\n   - **Right Character:** The character on the right is depicted in a dynamic, aggressive stance. He is leaning forward, his head is tilted down, and his eyes are gl"
+      },
+      {
+        "model": "Qwen3.5 2B",
+        "image": "9.png",
+        "mood": "horror",
+        "time_ms": 574.8,
+        "raw_response": "Reasoning:\n1. The character is a distorted, skeletal face with glowing red eyes and a wide, toothy grin, set against a dark, jagged background.\n2. The posture is static, with no movement or action depicted.\n3. The author wants the reader to experience a feeling of dread or fear due to the unsettling appearance.\n4. The category is classified as:\n\nhorror"
+      }
+    ],
+    "perf": {
+      "vram_avg_mb": 5098.484420687135,
+      "vram_peak_mb": 5114.2265625,
+      "vram_delta_mb": 2729.953125,
+      "vram_total_mb": 12282.0,
+      "gpu_avg": 69.55847953216374,
+      "gpu_peak": 91
+    }
+  },
+  "qwen35-4b": {
+    "display": "Qwen3.5 4B",
+    "results": [
+      {
+        "model": "Qwen3.5 4B",
+        "image": "1.jpg",
+        "mood": "epic_battle",
+        "time_ms": 3313.2,
+        "raw_response": "1. **Characters expressing:**\n   - The character (Goku in Super Saiyan form) has a determined, intense facial expression with furrowed brows and focused eyes.\n   - His posture is dynamic and powerful — standing firmly with fists clenched, muscles tensed, and energy radiating outward.\n   - The “VNNN” sound effect emphasizes impact or explosive force, suggesting he’s just delivered a powerful attack or is about to unleash one.\n\n2. **Feeling the author wants to evoke:**\n   - The reader should feel "
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "10.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 4334.8,
+        "raw_response": "1. **Characters expressing:**\n   - The main character in the bottom-left corner has wide eyes and a small mouth, with the text \"...WOW.\" — indicating awe, shock, or intense admiration.\n   - The players on the field are walking away from the camera, backs turned, suggesting they are leaving or retreating — possibly after a match or during a dramatic moment.\n   - Their postures are upright but not aggressive; no gestures of victory or defeat are shown — just movement away from the viewer.\n   - The"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "11.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 3977.3,
+        "raw_response": "1. **Characters expressing:**\n   - The main character (a muscular boxer) is mid-action, leaping or lunging forward with intense focus and determination. His facial expression shows grit and resolve.\n   - Behind him, four other characters are shown in silhouette or semi-transparent form, looking up at him with expressions of awe, admiration, and emotional support — some with tears, others with open mouths in shock or joy.\n   - The text bubble says: “THERE ARE PEOPLE WHO SUPPORT ME!!” — indicating"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "12.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 4166.1,
+        "raw_response": "1. **Characters expressing:**\n   - The main character (Luffy) is shown in extreme distress, with a face contorted in anguish, sweat, and tears. His eyes are wide, mouth open in a scream or sob, and his body language suggests he is being overwhelmed by emotion or pain.\n   - In the background, other characters (Zoro, Sanji, Usopp, Nami, Chopper, Robin, Franky) are shown with expressions of concern, determination, or support — some smiling encouragingly, others looking worried or ready to fight.\n  "
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "13.png",
+        "mood": "emotional_climax",
+        "time_ms": 3957.3,
+        "raw_response": "1. **Characters expressing:**\n   - The main character (Nami) is shown in an extreme close-up, screaming with tears streaming down her face. Her mouth is wide open, eyes bulging, and she appears to be in a state of total emotional breakdown or desperation.\n   - In the bottom panel, other characters are reacting: one is laughing maniacally (“Boo—Hoo!”), another is grinning, and others are standing around seemingly unbothered or observing.\n   - Posture and gestures: Nami’s body language suggests co"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "14.png",
+        "mood": "emotional_climax",
+        "time_ms": 3194.0,
+        "raw_response": "1. **Characters expressing:**\n   - The main character (likely a coach or mentor) is speaking with intense emotion, his face contorted in what appears to be a mix of determination and nostalgia. His posture is forward-leaning, suggesting he is addressing the group with urgency and passion.\n   - The players are standing in formation, listening attentively. Their expressions range from serious to slightly reflective, indicating they are absorbing the words being spoken.\n   - The gestures include po"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "15.png",
+        "mood": "emotional_climax",
+        "time_ms": 4677.4,
+        "raw_response": "1. **Characters expressing:**\n   - The characters are shown with intense facial expressions: tears streaming down their faces, mouths open in shouts or sobs, and eyes wide with emotion.\n   - Postures are dynamic — some leaning forward, others standing tall but visibly shaken.\n   - Gestures include hands covering mouths, arms raised, and bodies tensed as if reacting to a powerful moment.\n   - One character (the boy in the center) is shown alone in the bottom panel, looking forward with determinat"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "16.png",
+        "mood": "sadness",
+        "time_ms": 4043.0,
+        "raw_response": "1. **What are the characters expressing? (faces, posture, gestures)**  \nThe main character (a boy with dark hair and a scarf) is shown in profile, looking downcast, with a slightly furrowed brow and downturned mouth — classic signs of regret or disappointment. His posture is slumped, and he avoids eye contact, reinforcing his internal struggle. In the flashback panels, other boys are depicted with neutral or mildly concerned expressions, suggesting they’re observing or reacting to the protagonis"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "17.png",
+        "mood": "emotional_climax",
+        "time_ms": 5089.5,
+        "raw_response": "1. **Characters expressing:**\n   - The main character (left panel) is shown in a close-up, head tilted back, eyes wide with intensity, mouth open as if shouting or gasping. His posture suggests physical strain or exertion.\n   - He’s wearing a checkered headband and appears to be mid-action — possibly after being hit or during a struggle.\n   - The speech bubble says “JE VOULAIS GAGNER...!” (“I wanted to win...!”), indicating regret, frustration, or emotional climax tied to defeat.\n   - Right pane"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "18.png",
+        "mood": "ERROR",
+        "time_ms": 78.5,
+        "raw_response": "500 Server Error: Internal Server Error for url: http://127.0.0.1:36010/v1/chat/completions"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "2.jpeg",
+        "mood": "ERROR",
+        "time_ms": 67.4,
+        "raw_response": "500 Server Error: Internal Server Error for url: http://127.0.0.1:36010/v1/chat/completions"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "4.jpg",
+        "mood": "tension",
+        "time_ms": 1686.6,
+        "raw_response": "The characters are standing in two opposing lines, facing each other with serious expressions and rigid postures. There is no active combat, movement, or dialogue shown—just the visual setup of a confrontation. The mood is tense, with an air of anticipation before something significant happens. This fits the definition of **tension**: anxious anticipation, not yet resolved.\n\nIt is not an emotional climax (no triumph or sorrow expressed), not a battle (no fighting), not sadness (no regret or nost"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "5.png",
+        "mood": "emotional_climax",
+        "time_ms": 2124.5,
+        "raw_response": "1. **Characters expressing:**\n   - The character has a distorted, almost monstrous face with wide eyes and an open mouth, suggesting intense emotion.\n   - The posture is upright but the facial expression conveys determination and resolve.\n   - The gesture is minimal but the speech bubble \"I DON'T GIVE UP!\" clearly indicates a declaration of perseverance.\n\n2. **Feeling the author wants the reader to experience:**\n   - The reader is meant to feel the character's unwavering spirit and determination"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "6.jpg",
+        "mood": "romance",
+        "time_ms": 3683.3,
+        "raw_response": "1. **Characters expressing:**\n   - The girl is reaching up to a bookshelf, her face turned toward the boy, eyes wide and focused. Her posture suggests curiosity or perhaps slight apprehension as she looks at him.\n   - The boy stands behind her, leaning in close, his hand resting near hers on the shelf. His expression is soft, almost affectionate, with a gentle gaze directed at her.\n   - Their body language indicates intimacy and shared focus — they are together in a quiet moment, possibly select"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "7.jpg",
+        "mood": "sadness",
+        "time_ms": 2380.2,
+        "raw_response": "1. **Characters expressing:**\n   - The character is shown with a hand over their face, suggesting distress or overwhelming emotion.\n   - A tear is visible on the cheek, indicating sadness or grief.\n   - The mouth is slightly open, possibly in a gasp or silent cry.\n   - The posture is slumped, and the other hand is clutching the chest, which can indicate deep emotional pain or shock.\n\n2. **Feeling the author wants the reader to experience:**\n   - The combination of the tear, the hand over the fac"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "8.jpg",
+        "mood": "horror",
+        "time_ms": 2421.5,
+        "raw_response": "1. **Characters expressing:**\n   - The first panel shows a dark, ominous scene with bells ringing, suggesting an eerie or unsettling atmosphere.\n   - The second panel features a character with wide, terrified eyes, indicating fear or shock.\n   - The third panel depicts a grotesque, monstrous face with sharp teeth and a menacing expression, surrounded by the sound of bells, enhancing the horror element.\n\n2. **Feeling the author wants the reader to experience:**\n   - The combination of the eerie b"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "3.jpeg",
+        "mood": "epic_battle",
+        "time_ms": 3064.2,
+        "raw_response": "1. **Characters expressing:**\n   - The male character on the left is shown in profile, facing right. His expression is serious and focused, with no visible signs of fear or aggression. His posture is upright and steady, suggesting determination.\n   - The large creature on the right appears to be roaring or attacking, with its mouth open and glowing red eyes. Its posture is aggressive and dynamic, indicating active combat.\n   - There are visual effects (blue energy around the man, pink/red energy"
+      },
+      {
+        "model": "Qwen3.5 4B",
+        "image": "9.png",
+        "mood": "horror",
+        "time_ms": 3295.6,
+        "raw_response": "1. **Characters expressing:**\n   - The character is shown in a close-up, with an exaggerated, wide grin that reveals many teeth.\n   - The eyes are glowing red, suggesting a supernatural or intense state.\n   - The facial expression is not one of joy or happiness, but rather something unsettling—like a sinister laugh or a demonic smile.\n   - There is no other character visible, so the focus is entirely on this single figure’s expression.\n\n2. **Feeling the author wants to evoke:**\n   - The image is"
+      }
+    ],
+    "perf": {
+      "vram_avg_mb": 6649.093946012545,
+      "vram_peak_mb": 6677.0390625,
+      "vram_delta_mb": 4292.765625,
+      "vram_total_mb": 12282.0,
+      "gpu_avg": 89.14336917562724,
+      "gpu_peak": 98
+    }
+  },
+  "qwen35-9b": {
+    "display": "Qwen3.5 9B",
+    "results": [
+      {
+        "model": "Qwen3.5 9B",
+        "image": "1.jpg",
+        "mood": "epic_battle",
+        "time_ms": 6463.5,
+        "raw_response": "The character is depicted with an intense, determined expression, clenched fists, and a dynamic pose that suggests readiness for combat. The background features explosive effects and debris, indicating a high-energy scene. The onomatopoeic text \"VNNN\" further emphasizes the intensity and power of the moment.\n\n1. **Characters expressing**: The character's face shows determination and focus, with furrowed brows and a set jaw. The posture is aggressive and ready for action, with fists clenched and "
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "10.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 2704.8,
+        "raw_response": "The characters are shown from behind, walking toward a massive stadium filled with spectators. The scene is grand and dramatic, with bright lights and an energetic atmosphere. One character in the foreground has a shocked expression with wide eyes and says “...WOW.” This suggests awe or disbelief at the scale of the event. The posture of the players — standing tall, facing forward — conveys determination and readiness. There’s no active combat, but the setting and expressions suggest a pivotal m"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "11.jpg",
+        "mood": "epic_battle",
+        "time_ms": 1974.4,
+        "raw_response": "The central character is mid-kick, muscles tensed, face grimacing with effort and determination — clearly in active combat. The background figures are reaching out or reacting with awe/fear, suggesting they’re either allies or opponents caught in the moment. The text “THERE ARE PEOPLE WHO SUPPORT ME!!” reinforces a climactic declaration of resolve during battle. This is not passive emotion (sadness), nor is it suspenseful anticipation (tension) — it’s full-throttle action.\n\nepic_battle"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "12.jpg",
+        "mood": "emotional_climax",
+        "time_ms": 3039.6,
+        "raw_response": "The image shows a character (Luffy) in extreme distress, with tears and sweat, screaming “I STILL HAVE MY FRIENDS!!!!” while surrounded by images of his crew members — some smiling, some serious, some injured or dead (like the skull). The visual style is intense, with heavy shading and dynamic lines. Luffy’s expression is one of desperate hope and emotional release, not sorrow or regret — he’s clinging to hope amid despair. This is a peak emotional moment, likely after a major loss or battle, wh"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "13.png",
+        "mood": "emotional_climax",
+        "time_ms": 2409.4,
+        "raw_response": "The characters are expressing extreme desperation and a raw, unfiltered will to survive. The central figure is screaming with tears streaming down their face, mouth wide open in a cry of \"I WANT TO LIVE!!\". This is not passive sadness; it is an active, explosive release of emotion. The surrounding panels show other characters reacting with shock or attempting to intervene, heightening the drama. The author wants the reader to experience the peak of emotional intensity—the moment where a characte"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "14.png",
+        "mood": "emotional_climax",
+        "time_ms": 3022.8,
+        "raw_response": "The characters are expressing intense emotion — the coach is shouting with determination and pride, while the players stand solemnly, listening. The coach’s face shows grit and resolve; his posture is forward-leaning, emphasizing urgency and passion. The players’ expressions range from somber to focused, indicating they are absorbing a final, powerful message.\n\nThe author wants the reader to feel the weight of this moment — not just sadness or regret, but a surge of inspiration, closure, and emo"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "15.png",
+        "mood": "ERROR",
+        "time_ms": 116.0,
+        "raw_response": "500 Server Error: Internal Server Error for url: http://127.0.0.1:48400/v1/chat/completions"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "16.png",
+        "mood": "sadness",
+        "time_ms": 2256.3,
+        "raw_response": "The characters are expressing deep introspection and melancholy. Their faces show sorrow and regret, their postures are slumped or turned away, and their gestures (like the hand on the shoulder) suggest comfort in the face of loss. The dialogue revolves around unfulfilled dreams, the pain of not being able to win alone, and the realization that football is not personal. The author wants the reader to experience a profound sense of sadness and nostalgia for what could have been. This is not an em"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "17.png",
+        "mood": "sadness",
+        "time_ms": 1668.0,
+        "raw_response": "The characters are expressing intense regret and sorrow. The face is contorted in anguish, the posture is slumped and defeated, and the gesture (hand on head) indicates despair. The author wants the reader to experience a deep sense of sadness and empathy for the character's tragic realization. This is not a moment of triumph or determination, but of profound sorrow and regret.\n\nsadness"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "18.png",
+        "mood": "peaceful",
+        "time_ms": 2392.3,
+        "raw_response": "The page depicts a mundane, everyday scene: a boy returning home, greeting his family, and receiving mail. The characters' expressions are neutral or slightly surprised (the mother's \"Ah, olit?\"), and their postures are relaxed. There is no active combat, pursuit, or intense emotional display. The author aims to portray a slice-of-life moment, focusing on the quiet rhythm of daily interactions. This aligns with the \"peaceful (calm daily life)\" category, as it captures ordinary, non-dramatic mome"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "2.jpeg",
+        "mood": "ERROR",
+        "time_ms": 90.6,
+        "raw_response": "500 Server Error: Internal Server Error for url: http://127.0.0.1:48400/v1/chat/completions"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "4.jpg",
+        "mood": "tension",
+        "time_ms": 1944.0,
+        "raw_response": "The characters are standing in two opposing lines, facing each other with serious expressions and rigid postures. There is no active combat, chase, or overt emotional display like crying or shouting. The scene conveys a sense of standoff, anticipation, and unresolved conflict. The author wants the reader to feel the weight of the situation — the tension before a confrontation. This fits best under “tension,” as it represents anxious anticipation rather than active battle or emotional climax.\n\nte"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "5.png",
+        "mood": "emotional_climax",
+        "time_ms": 2301.7,
+        "raw_response": "The character is shown with a grotesque, decaying face but is speaking the line “I DON’T GIVE UP!” — indicating inner strength and defiance despite physical horror. The posture is upright, not collapsing or fleeing, and the speech bubble emphasizes determination. The author wants the reader to feel the triumph of will over despair, even in the face of monstrous suffering. This is not sadness (no sorrow or regret), nor tension (no anxious anticipation), nor epic battle (no active combat). It’s a "
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "6.jpg",
+        "mood": "romance",
+        "time_ms": 2711.3,
+        "raw_response": "The characters are standing close together in a quiet, intimate setting. The girl is reaching for a book on a shelf while the boy stands beside her, looking down at her with a soft, attentive expression. Their body language is relaxed and gentle, suggesting comfort and affection. There is no indication of conflict, urgency, or deep emotion—just a calm, everyday moment shared between two people who clearly care for each other.\n\nThis scene evokes a sense of warmth, tenderness, and quiet connection"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "7.jpg",
+        "mood": "ERROR",
+        "time_ms": 79.1,
+        "raw_response": "500 Server Error: Internal Server Error for url: http://127.0.0.1:48400/v1/chat/completions"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "8.jpg",
+        "mood": "horror",
+        "time_ms": 2674.7,
+        "raw_response": "The manga page depicts a terrifying encounter with a monstrous entity. The character's face shows extreme fear and shock, with wide eyes and tears streaming down. The monster itself is grotesque, with sharp teeth and an unsettling grin. The text \"jingle\" appears repeatedly, suggesting a creepy, rhythmic sound associated with the monster. The overall atmosphere is one of dread and horror.\n\n1. The character is expressing intense fear and terror. The monster is portrayed as menacing and frightening"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "3.jpeg",
+        "mood": "tension",
+        "time_ms": 4013.1,
+        "raw_response": "The page depicts a dramatic confrontation between two characters: one on the left, seemingly human or humanoid, and another on the right, appearing monstrous or alien with glowing red eyes and sharp features. The character on the left stands in a calm, almost defiant posture, while the one on the right looms aggressively. There is no active combat shown—no punches, kicks, or weapons being used—but the atmosphere is charged with anticipation. The visual style emphasizes contrast (blue vs. pink/re"
+      },
+      {
+        "model": "Qwen3.5 9B",
+        "image": "9.png",
+        "mood": "horror",
+        "time_ms": 2660.7,
+        "raw_response": "The character is depicted with an exaggerated, wide grin showing all teeth, glowing red eyes, and a skeletal or monstrous appearance. The expression is not one of joy or humor, but rather of menace, madness, or supernatural threat. The posture is static but intense, focused on confronting or overwhelming the viewer.\n\nThe author wants the reader to feel fear, unease, or dread — a sense that something dangerous and otherworldly is present. This is not a moment of triumph, sorrow, or action, but a "
+      }
+    ],
+    "perf": {
+      "vram_avg_mb": 9179.600394275702,
+      "vram_peak_mb": 9197.5390625,
+      "vram_delta_mb": 6813.265625,
+      "vram_total_mb": 12282.0,
+      "gpu_avg": 86.74299065420561,
+      "gpu_peak": 100
+    }
+  }
+}

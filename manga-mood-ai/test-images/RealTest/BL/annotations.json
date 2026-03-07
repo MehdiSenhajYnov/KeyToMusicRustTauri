@@ -1,0 +1,1862 @@
+{
+  "1/01.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0,
+    "reasoning": "Page de couverture volume couleur, page non-narrative"
+  },
+  "1/02.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0,
+    "reasoning": "Couverture N&B volume, page de titre non-narrative"
+  },
+  "1/03.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.85,
+    "reasoning": "Introduction du manga avec la Coupe du Monde et la vision héroïque du football mondial"
+  },
+  "1/04.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0,
+    "reasoning": "Page de titre du chapitre avec logo Blue Lock, non-narrative"
+  },
+  "1/05.png": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0,
+    "reasoning": "Page blanche avec logo Blue Lock, non-narrative"
+  },
+  "1/06.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Réunion JFA, Anri Teieri expose le problème du football japonais dans une ambiance grave"
+  },
+  "1/07.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Confrontation de points de vue entre dirigeants et Anri, malaise dans la salle"
+  },
+  "1/08.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Débat tendu, Anri présente son analyse devant des sceptiques"
+  },
+  "1/09.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Déclaration fracassante d'Anri : le Japon ne gagnera jamais la Coupe du Monde — choc dans la salle"
+  },
+  "1/10.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Anri révèle son plan pour créer le joueur ultime, ambiance mystérieuse"
+  },
+  "1/11.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Presentation de Jinpachi Ego, entree imposante d'un personnage cle qui expose une vision radicale pour revolutionner la selection"
+  },
+  "1/12.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Match crucial en cours, score 0-1, finale préfecture de Saitama, pression maximale"
+  },
+  "1/13.png": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Isagi dribble deux défenseurs, introduction dynamique du héros en action"
+  },
+  "1/14.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Isagi entend les cris pour aller au national, dilemme crucial tirer ou passer"
+  },
+  "1/15.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Face à face avec le gardien adverse Shohei Inaba, moment décisif imminent"
+  },
+  "1/16.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Tama démarqué appelle la passe, Isagi hésite entre égoïsme et jeu collectif"
+  },
+  "1/17.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Isagi réfléchit au football collectif et choisit de passer, regret anticipé intérieur"
+  },
+  "1/18.png": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Egalisation ! Isagi tire et marque, moment d'action intense"
+  },
+  "1/19.png": {
+    "mood": "sadness",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "0-2, Kira marque pour l'adversaire, défaite consommée malgré les efforts"
+  },
+  "1/20.png": {
+    "mood": "sadness",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "L'équipe adverse fête, les joueurs d'Ichinan s'effondrent, défaite 4-0"
+  },
+  "1/21.png": {
+    "mood": "sadness",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Discours post-défaite du coach, dernier match pour les terminales, émotion lourde"
+  },
+  "1/22.png": {
+    "mood": "sadness",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Isagi en larmes : Je voulais gagner — pic émotionnel maximal du match perdu"
+  },
+  "1/23.png": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Isagi rentre chez lui, reçoit un courrier mystérieux de la JFA, tournant narratif"
+  },
+  "1/24.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi arrive devant le bâtiment JFA, lieu inconnu, curiosité et appréhension"
+  },
+  "1/25.png": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Ryosuke Kira reconnaît Isagi, rencontre légère et détendue dans le couloir"
+  },
+  "1/26.jpg": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Kira se vante gentiment de ses performances passées, ton décontracté et légèrement comique"
+  },
+  "1/27.jpg": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Kira jovial propose à Isagi d'être amis, légèreté avant la grande révélation"
+  },
+  "1/28.jpg": {
+    "mood": "mystery",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Découverte de la grande salle avec 300 attaquants, choc visuel et pression croissante"
+  },
+  "1/29.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego entre dans la salle, introduit de manière inquiétante devant les 300 joueurs"
+  },
+  "1/30.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego révèle son projet grandiose sous un éclairage théâtral, ambiance oppressante"
+  },
+  "1/31.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Annonce officielle du projet Blue Lock, révélation du bâtiment pentagonal"
+  },
+  "1/32.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego révèle la règle d'élimination : le dernier debout gagne, choc dans la salle"
+  },
+  "1/33.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Stupeur collective des joueurs face aux paroles choquantes d'Ego"
+  },
+  "1/34.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Kira se lève et refuse les règles au nom de l'esprit d'équipe, confrontation directe"
+  },
+  "1/35.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego cynique répond : vous pouvez partir — pression psychologique maximale sur les joueurs"
+  },
+  "1/36.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Ego développe sa philosophie de l'égoïsme au football, monologue conceptuel"
+  },
+  "1/37.png": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Ego cite Noël Noa et sa vision individualiste du football, référence à une légende"
+  },
+  "1/38.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Ego cite Pelé et Cantona pour illustrer l'égoïsme des grands champions"
+  },
+  "1/39.png": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Phrase clé du manga : sans l'ego qui va avec vous ne serez jamais le meilleur — impact maximal"
+  },
+  "1/40.jpg": {
+    "mood": "mystery",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Ego projette les joueurs dans un scénario hypothétique de finale de Coupe du Monde"
+  },
+  "1/41.jpg": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Scénario ultime : Japan vs Germany 0-0 dernière action, Isagi seul face au gardien"
+  },
+  "1/42.jpg": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Les espoirs du Japon reposent sur vos épaules — pression narrative maximale du discours d'Ego"
+  },
+  "1/43.jpg": {
+    "mood": "epic",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Révélation du concept central du manga : l'égoïsme rebel, tirer sans hésiter — pic absolu du chapitre"
+  },
+  "1/44.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego invite les joueurs à franchir la porte, appel à l'action, réveil du héros Isagi"
+  },
+  "1/45.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Ego inspire : sur le terrain vous êtes la star — philosophie motivante"
+  },
+  "1/46.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Isagi réalise que ces mots changent sa vie, éveil intérieur puissant"
+  },
+  "1/47.png": {
+    "mood": "epic",
+    "intensity": 3,
+    "confidence": 0.95,
+    "reasoning": "Je suis un attaquant ! — déclaration du héros, pic émotionnel maximum, tournant décisif"
+  },
+  "1/48.png": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Les 300 joueurs se ruent vers la porte dans un élan collectif frénétique"
+  },
+  "1/49.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Isagi rejoint la foule qui entre dans Blue Lock, début de l'aventure"
+  },
+  "1/50.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Voix off narrative de transition, retour sur le concept du manga"
+  },
+  "1/51.png": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Montage des visages des 300 attaquants, présentation de la galerie de personnages"
+  },
+  "1/52.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "300 joueurs entrent dans Blue Lock, la machine est en marche, ambiance lourde"
+  },
+  "1/53.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Dialogue en coulisses entre Anri et Ego sur l'essence de Blue Lock, intrigue institutionnelle"
+  },
+  "1/54.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego serein annonce l'instant le plus crucial du football — cliffhanger final du chapitre"
+  },
+  "1/55.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego confronte agressivement les joueurs sur leur manque d ambition en comparaison avec les meilleurs clubs mondiaux, ton provocateur et dominateur"
+  },
+  "1/56.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Citations de Noel Noa et Eric Cantona sur l ego et l individualisme, discours inspirant sur la mentalite des grands joueurs"
+  },
+  "1/57.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Reference a Pele sur l ego extraordinaire, Ego declare ce qui manque au football japonais : l egoisme absolu"
+  },
+  "1/58.png": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Gros plan saisissant d Ego avec message choc : jamais le meilleur sans l ego qui va avec, impact visuel et rhethorique maximal"
+  },
+  "1/59.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego decrit le heros qui s extirpe des 299 cadavres des autres joueurs, imagery dramatique et dark sur la competition"
+  },
+  "1/60.png": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego invite les joueurs a imaginer la finale de la Coupe du Monde dans un stade de 80 000 spectateurs, vision epique construite"
+  },
+  "1/61.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Tableau de bord 0-0 Japon-Allemagne dans le temps additionnel, ultime action du match, pression maximale"
+  },
+  "1/62.jpg": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Face-a-face avec le gardien, Isagi avec le ballon, ailier a 6m, instant decisif de la Coupe du Monde"
+  },
+  "1/63.png": {
+    "mood": "epic",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Ego revele le dilemme moral : passer ou tirer seul, egoisme rebel, moment de verite sur l identite d attaquant"
+  },
+  "1/64.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego ouvre la porte, Isagi crie Haut et fort, revelation fracassante de son identite d attaquant"
+  },
+  "1/65.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego explique que le football existe pour developper les attaquants, Isagi frissonne face a des mots qui changent tout"
+  },
+  "1/66.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego declare c est vous la star, personne n avait jamais dit ca a Isagi, choc interieur liberateur"
+  },
+  "1/67.png": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Isagi realise qu Ego est un attaquant a son sens, moment epiphanique qui change la forme de son destin"
+  },
+  "1/68.png": {
+    "mood": "epic",
+    "intensity": 3,
+    "confidence": 0.95,
+    "reasoning": "Splash page minimaliste : Je suis un attaquant ! Resolution interieure absolue d Isagi, climax emotionnel du chapitre"
+  },
+  "1/69.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Les 300 joueurs se precipitent en masse vers la porte, chaos enthousiaste, elan collectif irresistible"
+  },
+  "1/70.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Plan large des joueurs montant les escaliers vers la lumiere en masse, Ego seul en bas, symbolisme fort"
+  },
+  "1/71.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Mosaique de portraits des 300 candidats Blue Lock, introduction des personnages cles dans une ambiance competitive"
+  },
+  "1/72.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Grande salle, 300 joueurs arrivent, debut officiel du programme Blue Lock, la machine se met en marche"
+  },
+  "1/73.png": {
+    "mood": "mystery",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego et Anri dans les coulisses revelent que sacrifier 299 joueurs est l essence de Blue Lock, ambiance froide et calculatrice"
+  },
+  "1/74.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego assis zen annonce l instant le plus crucial du football, cliffhanger de fin de chapitre, tension suspendue"
+  },
+  "2/01.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Page titre chapitre 2 Installation, Ego présente Blue Lock avec des joueurs en bus"
+  },
+  "2/02.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Arrivée au complexe Blue Lock, bâtiment imposant découvert, appréhension"
+  },
+  "2/03.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Installation : confiscation des affaires, distribution des uniformes, numéro 299Z"
+  },
+  "2/04.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi explore les couloirs labyrinthiques de béton pour trouver sa salle"
+  },
+  "2/05.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Grande salle type prison avec 11 joueurs dispersés, atmosphère oppressante du dortoir"
+  },
+  "2/06.png": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Isagi retrouve Kira, reconnaissance mutuelle, moment familier et léger"
+  },
+  "2/07.png": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Kunigami enlève son t-shirt, Igarashi dort, humour de vestiaire détendu"
+  },
+  "2/08.png": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Gurimu Igarashi se présente comme agitateur, personnage comique dans la dynamique de groupe"
+  },
+  "2/09.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Igarashi révèle son deal avec son père : devenir pro sinon il devient moine"
+  },
+  "2/10.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego apparaît brusquement sur l'écran, interrompant le groupe, imposant sa présence"
+  },
+  "2/11.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego révèle que les colocataires sont des rivaux, règles antagonistes imposées"
+  },
+  "2/12.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Les 5 premiers du classement iront au tournoi national U-20, enjeux clarifiés"
+  },
+  "2/13.jpg": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Révélation choc : les éliminés seront bannis à vie de la sélection nationale — conséquences irréversibles"
+  },
+  "2/14.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Premier exercice Le Loup lancé immédiatement avec 6 minutes au chrono, urgence"
+  },
+  "2/15.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Règles du Loup affichées à l'écran, exposition des règles du jeu"
+  },
+  "2/16.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "La porte se verrouille — panique dans la salle, piège refermé sur les joueurs"
+  },
+  "2/17.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Igarashi s'empare du ballon et veut être le loup, joueur agressif prend le contrôle"
+  },
+  "2/18.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Igarashi fonce sur Isagi numéro 299, engagement physique brutal dans le chaos"
+  },
+  "2/19.png": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Engagement général, mêlée chaotique dans la salle avec le ballon en jeu"
+  },
+  "2/20.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Passes difficiles, combat intense pour le ballon dans l'espace restreint"
+  },
+  "2/21.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Isagi lutte mentalement contre l'envie de fuir, résolution intérieure du héros"
+  },
+  "2/22.png": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Kunigami percute violemment tout le monde pour prendre le ballon, impact physique"
+  },
+  "2/23.png": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Présentation de Rensuke Kunigami classement 291, entrée en scène d'un rival puissant"
+  },
+  "2/24.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Kunigami heurte Isagi dans la mêlée, affrontement physique direct"
+  },
+  "2/25.png": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Kunigami présenté en pleine action explosive — introduction héroïque d'un rival de taille"
+  },
+  "2/26.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Isagi devient le loup malgré lui après le tir de Kunigami, compte à rebours angoissant"
+  },
+  "2/27.png": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "59 secondes restantes, Isagi doit toucher quelqu'un ou sa carrière est terminée"
+  },
+  "2/28.png": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Isagi réalise qu'il doit éliminer quelqu'un — désespoir face aux enjeux ultimes"
+  },
+  "2/29.png": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Isagi vise Igarashi mais hésite, pression maximale du chrono avec 29 secondes"
+  },
+  "2/30.png": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "45 secondes, Isagi pense je veux gagner à tout prix — résolution dans l'urgence absolue"
+  },
+  "2/31.png": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Bachira surgit de nulle part et décroche Igarashi, rebondissement inattendu"
+  },
+  "2/32.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Mêlée acharnée autour du ballon, combat féroce pour la survie"
+  },
+  "2/33.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Isagi relance, Bachira est présent, action contre-action frénétique"
+  },
+  "2/34.png": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Bachira tente une acrobatie spectaculaire avec le ballon, technique brillante"
+  },
+  "2/35.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Bachira Meguru classement 290 révélé, 10 secondes restantes, situation critique"
+  },
+  "2/36.png": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Bachira envoie volontairement le ballon à Isagi — comportement incompréhensible"
+  },
+  "2/37.png": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Isagi face au dilemme : tirer sur Kira son ami ou perdre sa carrière — 15 secondes"
+  },
+  "2/38.png": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.95,
+    "reasoning": "Révélation fondatrice d'Isagi : accomplir ses rêves exige d'annihiler ceux des autres"
+  },
+  "2/39.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Isagi tire sur Kira son ami pour survivre — action décisive du héros contre l'ami"
+  },
+  "2/40.png": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Bachira Meguru entre en action à la dernière seconde avec son style unique"
+  },
+  "2/41.jpg": {
+    "mood": "sadness",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "PERDU — Kira éliminé du jeu, écran affiche sa défaite, fin de son rêve Blue Lock"
+  },
+  "2/42.png": {
+    "mood": "sadness",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Isagi réalise que la balle est arrivée si vite — regret et choc post-action"
+  },
+  "2/43.png": {
+    "mood": "sadness",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego annonce officiellement le renvoi de Ryosuke Kira, sentence brutale"
+  },
+  "2/44.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Kira proteste avec véhémence contre son élimination, confrontation émotionnelle"
+  },
+  "2/45.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Ego explique les vraies règles de l'exercice et les dimensions d'une surface de réparation"
+  },
+  "2/46.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Ego : ceux qui ne savent pas se positionner ne méritent pas d'être appelés attaquants talentueux"
+  },
+  "2/47.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Ego révèle que la possession réelle d'un joueur en match est d'environ 2 minutes"
+  },
+  "2/48.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Ego critique directement Isagi : tu as laissé passer ta chance de rattraper ton erreur"
+  },
+  "2/49.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Ego accuse Isagi psychologiquement : tu as déjà abandonné au fond de toi"
+  },
+  "2/50.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Ego explique comment rattraper une erreur avec le genou, leçon technique"
+  },
+  "2/51.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Ego philosophe : celui qui a la balle décide de qui gagne et qui perd"
+  },
+  "2/52.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Ego valide Isagi et Bachira : c'est l'égoïsme qu'il recherche en eux"
+  },
+  "2/53.png": {
+    "mood": "sadness",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Ego chasse Kira définitivement — moment le plus déchirant du chapitre, fin du rêve de Kira"
+  },
+  "2/54.png": {
+    "mood": "sadness",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Kira effondré sort, Isagi réalise les conséquences de son geste sur son ami"
+  },
+  "2/55.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi se demande s'il est aussi surexcité par la victoire — questionnement intérieur"
+  },
+  "2/56.png": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Bachira révèle qu'il a intentionnellement envoyé le ballon à Isagi car il a cru en lui"
+  },
+  "2/57.png": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Bachira souriant : j'ai cru en toi donc j'ai gagné — moment étrange mais léger"
+  },
+  "2/58.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Ego expose sa philosophie : le monde se déroule selon gagnants et perdants"
+  },
+  "2/59.png": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Ego annonce que ce n'était qu'un aperçu de l'essence de Blue Lock, tension montante"
+  },
+  "2/60.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Ego : gravez dans vos cerveaux le sentiment de victoire — discours inspirant"
+  },
+  "2/61.png": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Félicitations, vous avez réussi le test d'entrée — 11 joueurs survivants ensemble"
+  },
+  "2/62.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Introduction des 11 membres de l'équipe Z, rivaux et coéquipiers présentés"
+  },
+  "2/63.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi, Bachira, Kunigami — l'équipe Z révélée, cliffhanger de fin de chapitre"
+  },
+  "2/64.png": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0,
+    "reasoning": "Note de traduction du scantrad, page non-narrative"
+  },
+  "2/65.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi se demande s'il est aussi surexcité par la victoire — questionnement intérieur post-match"
+  },
+  "2/66.png": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Bachira sourit : j'ai cru en toi donc j'ai gagné — moment détendu et étrange avec Isagi"
+  },
+  "2/67.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Ego : le monde se déroule selon gagnants et perdants — philosophie imposée aux joueurs"
+  },
+  "2/68.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Ego : ce n'était qu'un aperçu de l'essence de Blue Lock — tension montante pour la suite"
+  },
+  "2/69.png": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Ego : gravez le sentiment de victoire dans vos cerveaux — discours inspirant"
+  },
+  "2/70.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Félicitations, vous avez réussi le test d'entrée Blue Lock — 11 joueurs survivants"
+  },
+  "2/71.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Présentation des noms des 11 membres : vous pouvez coopérer ou trahir"
+  },
+  "2/72.png": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi, Bachira, Kunigami — vous êtes l'équipe Z de Blue Lock, cliffhanger final"
+  },
+  "2/73.png": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0,
+    "reasoning": "Note de traduction du scantrad, page non-narrative"
+  },
+  "3/01.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Page titre ch3 Monstre, tests de course intenses, Isagi et Igarashi sur tapis roulant"
+  },
+  "3/02.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Jingo Raichi 294e se vante de sa vitesse 20km/h et humilie les moins bons, rivalité instaurée"
+  },
+  "3/03.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Wataru Kuon 293e offre de l'eau à Isagi, moment de répit calme entre les entraînements"
+  },
+  "3/04.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Test de saut révèle Chigiri 68cm vs Isagi 61cm, Bachira surprend — comparaisons humiliantes"
+  },
+  "3/05.jpg": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Repas à la cafétéria selon classement, natto pour les bas classés comme Isagi — humour de la hiérarchie"
+  },
+  "3/06.jpg": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Gin Gagamaru 296e présentation comique en train de manger son gyoza sans baguettes"
+  },
+  "3/07.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Asahi Naruhaya vole la nourriture, vestiaire de repos — vie quotidienne légère de Blue Lock"
+  },
+  "3/08.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi insomniaque la nuit dans le vestiaire, trop nerveux pour dormir, anxiété sourde"
+  },
+  "3/09.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi s'entraîne seul la nuit et repense à son tir contre Kira, questionnement intérieur"
+  },
+  "3/10.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Bachira surgit et propose un 1v1 au terrain, moment de connexion inattendu et détendu"
+  },
+  "3/11.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Isagi demande pourquoi Bachira lui a passé le ballon — Bachira répond de façon énigmatique"
+  },
+  "3/12.jpg": {
+    "mood": "mystery",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Bachira révèle que se tapit un monstre en lui qui lui dicte ses actions au football — choc"
+  },
+  "3/13.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Le monstre de Bachira lui a dit de passer le ballon à Isagi — explication de sa voix intérieure"
+  },
+  "3/14.jpg": {
+    "mood": "mystery",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Bachira voit aussi un monstre en Isagi — révélation que le héros porte la même puissance"
+  },
+  "3/15.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Bachira explique sa philosophie : il écoute le monstre et celui-ci le guide au football"
+  },
+  "3/16.jpg": {
+    "mood": "mystery",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Isagi réalise qu'un monstre est peut-être en lui — la clé de sa survie à Blue Lock"
+  },
+  "3/17.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Bachira sincère : je suis heureux d'être venu à Blue Lock parce que j'ai fait ta connaissance"
+  },
+  "3/18.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Bachira donne à Isagi le courage de continuer malgré ses doutes — moment inspirant"
+  },
+  "3/19.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Je survivrai quoi qu'il m'en coûte — résolution ferme d'Isagi, résultats des tests compilés"
+  },
+  "3/20.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Vestiaire, nouveau classement affiché, Ego apparaît à l'écran pour annoncer la suite"
+  },
+  "3/21.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego révèle le système des 5 bâtiments et 25 équipes — la vraie structure de Blue Lock"
+  },
+  "3/22.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "L'équipe Z est dans le bâtiment 5, joueurs 265-275, les pires parmi les pires — humiliation"
+  },
+  "3/23.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego révèle que les meilleurs vivent comme des rois — inégalité criante, motivation par la jalousie"
+  },
+  "3/24.jpg": {
+    "mood": "epic",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Blue Lock 1st Selection annoncée — que la première sélection commence, climax de fin de chapitre"
+  },
+  "4/01.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Page titre ch4 Maintenant, interview d'un joueur japonais (Sae Itoshi) pour Real Madrid, flash parallèle"
+  },
+  "4/02.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0,
+    "reasoning": "Page credits scantrad, non-narrative"
+  },
+  "4/03.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Sae Itoshi : honnêtement plutôt mourir que jouer au foot dans ce pays — déclaration choquante du prodige"
+  },
+  "4/04.jpg": {
+    "mood": "sadness",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Sae : aucun avant-centre japonais ne mérite ses passes, né au mauvais endroit — mélancolie froide"
+  },
+  "4/05.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Manager révèle que Sae est l'un des meilleurs joueurs du monde — personnage-clé introduit mystérieusement"
+  },
+  "4/06.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Sae croise par hasard la conférence de presse Blue Lock dans son hôtel"
+  },
+  "4/07.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Conférence de presse JFA, Anri présente le Blue Lock Project officiellement, contexte institutionnel"
+  },
+  "4/08.jpg": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Ego répond de façon cynique et comique aux questions des journalistes méfiants"
+  },
+  "4/09.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Anri clame vouloir créer un héros du football japonais — passion et conviction visibles"
+  },
+  "4/10.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Ego explique la 1ère sélection round-robin entre 5 équipes, seuls les 2 meilleurs avancent"
+  },
+  "4/11.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Discussions tactiques au sein de l'équipe Z sur les postes — Chigiri, Iemon, Imamura se disputent"
+  },
+  "4/12.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Ego révèle le concept radical : jouer avec 11 attaquants et repartir de zéro tactiquement"
+  },
+  "4/13.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Ego retrace l'histoire du football japonais depuis 1992, ton informatif et contemplatif"
+  },
+  "4/14.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Anri : le football japonais ne peut pas rester dans cet état — discours de conviction et d'urgence"
+  },
+  "4/15.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Anri proclame solennellement la résurrection du football japonais devant la presse"
+  },
+  "4/16.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Ego cite Messi, Ronaldo, Neymar : la simple présence d'un héros change le sport à jamais"
+  },
+  "4/17.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Anri : le football japonais guidé par 300 lycéens entre dans une nouvelle phase historique"
+  },
+  "4/18.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Anri questionne la salle : avons-nous le courage d'adopter ce nouveau rêve — interpellation directe"
+  },
+  "4/19.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0,
+    "reasoning": "Page vide ou de transition, non-narrative"
+  },
+  "4/20.jpg": {
+    "mood": "epic",
+    "intensity": 3,
+    "confidence": 0.95,
+    "reasoning": "Sae veut voir ce nouvel attaquant japonais, Isagi résolu : celui qui survivra ce sera moi — destins croisés"
+  },
+  "5/01.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Page titre ch5 Ego, présentation du match Team Z vs Team X dans le gymnase de Blue Lock"
+  },
+  "5/02.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Équipe Z en infériorité flagrante face à l'équipe X, premiers échanges tendus sur le terrain"
+  },
+  "5/03.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "L'équipe X domine le jeu, l'équipe Z peine à répondre, pression défensive constante"
+  },
+  "5/04.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Combat pour le ballon dans la surface, l'équipe Z résiste tant bien que mal à l'assaut"
+  },
+  "5/05.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Bachira et Isagi tentent de se créer des occasions, effort collectif minimal dans le chaos"
+  },
+  "5/06.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Discussion tactique en plein match, l'équipe Z cherche comment stopper l'attaque adverse"
+  },
+  "5/07.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "L'équipe X continue de pousser, l'équipe Z dans les cordes, score en faveur de l'adversaire"
+  },
+  "5/08.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Score 1-0 pour Team X affiché, l'équipe Z réalise l'ampleur du défi, ambiance pesante"
+  },
+  "5/09.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi tente une action offensive individuelle pour relancer son équipe, énergie désespérée"
+  },
+  "5/10.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "L'équipe Z perd le ballon encore, frustrante impuissance face à la supériorité adverse"
+  },
+  "5/11.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Discussions entre joueurs sur le terrain, tentative d'organisation sans réelle cohésion"
+  },
+  "5/12.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Score 2-0, l'équipe Z s'effondre progressivement, les visages montrent la détresse"
+  },
+  "5/13.jpg": {
+    "mood": "sadness",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Score 3-0, l'écart se creuse dangereusement, l'équipe Z est au bord de l'implosion"
+  },
+  "5/14.jpg": {
+    "mood": "sadness",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Score 4-0, défaite cuisante en cours, les joueurs de l'équipe Z sont épuisés et démoralisés"
+  },
+  "5/15.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Mi-temps, joueurs assis, échanges sur ce qui ne va pas, tentative de redressement"
+  },
+  "5/16.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Réflexion collective sur la stratégie pour la deuxième mi-temps, ambiance morne"
+  },
+  "5/17.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Joueurs de l'équipe Z discutent, cherchent à comprendre comment Baro domine autant"
+  },
+  "5/18.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Baro Shoei (classé 250e) révélé comme menace : son jeu de pression est décrit aux coéquipiers"
+  },
+  "5/19.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Baro s'échappe défense, Isagi essaie de l'arrêter, duels individuels perdus un à un"
+  },
+  "5/20.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Action explosive de jeu rapide, quelqu'un s'échappe vers le but, tension de contre-attaque"
+  },
+  "5/21.jpg": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Révélation de Baro Shoei classé 250e : je vais te détruire — confrontation directe pic du chapitre"
+  },
+  "6/01.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Page titre ch6 Fondations : Isagi face à Baro, match repris, défi individuel immédiat"
+  },
+  "6/02.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Baro exécute un sombrero technique devant Isagi, démonstration de supériorité balle au pied"
+  },
+  "6/03.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Mêlée collective sur le terrain, l'équipe X se réorganise, Baro donne des ordres"
+  },
+  "6/04.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Baro percute et tire en pivot sur la cage adverse, tir fulgurant vers le but"
+  },
+  "6/05.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Baro déclare l'équipe ne valent pas mieux que le ballon, égo absolu affiché à l'équipe"
+  },
+  "6/06.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Baro explique ses règles : vous n'êtes là que pour me faire briller, dominance totale"
+  },
+  "6/07.jpg": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Chaos dans l'équipe Z, les joueurs se disputent pour avoir le ballon, scène désorganisée et risible"
+  },
+  "6/08.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Score 1-0 pour Team X, Isagi réalise qu'il faut passer par Bachira pour exister dans ce match"
+  },
+  "6/09.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Chaos total dans l'équipe Z, joueurs qui s'insultent, Isagi observe et analyse la situation"
+  },
+  "6/10.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Bachira reprend le jeu avec Isagi, tentative de coordination à deux contre le désordre général"
+  },
+  "6/11.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Baro s'organise, l'équipe X commence à former une unité cohérente autour de lui"
+  },
+  "6/12.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Baro intercepte encore, l'équipe Z incapable de contenir l'offensive coordonnée de X"
+  },
+  "6/13.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Belle passe percutante, l'équipe X en autoroute vers le but, contre-attaque imparable"
+  },
+  "6/14.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Score 2-0 pour X, l'équipe Z s'effondre collectivement, détresse sur les visages"
+  },
+  "6/15.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Isagi observe Baro et réalise : son équipe s'est formée autour de son unique talent — révélation"
+  },
+  "6/16.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Score 3-0, Baro enchaîne les buts, l'équipe Z est impuissante face à cette machine"
+  },
+  "6/17.jpg": {
+    "mood": "sadness",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Score 4-0, l'écart est insurmontable, l'équipe Z en train de s'effondrer moralement"
+  },
+  "6/18.jpg": {
+    "mood": "sadness",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Score 5-0, défaite totale consommée — pic de l'humiliation, l'équipe Z est déjà perdue"
+  },
+  "6/19.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "3 minutes restantes, score 5-0 impossible, Bachira propose de marquer au moins un but"
+  },
+  "6/20.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Isagi décide d'être les fondations de l'équipe Z, résolution interne : alors c'est moi"
+  },
+  "7/01.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Page titre ch7 Mets-toi devant le but, score 5-0, plan de Bachira et Isagi pour la contre-attaque finale"
+  },
+  "7/02.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Isagi décide : c'est moi qui vais marquer — résolution affirmée sous la pression du score"
+  },
+  "7/03.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Isagi comprend ce qu'est construire les fondations d'une équipe, Bachira lui fait confiance"
+  },
+  "7/04.jpg": {
+    "mood": "epic",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "On sera le phare de l'équipe Z — déclaration forte de Bachira et Isagi, pic du duo"
+  },
+  "7/05.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Passe parfaite de Bachira, Isagi reçoit le ballon en situation de 1 contre 1"
+  },
+  "7/06.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Baro surgit devant Isagi : incline-toi devant moi, confrontation directe ultime"
+  },
+  "7/07.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Isagi hésite face à Baro, sait qu'il va perdre le duel, mais reçoit un appel dans le dos"
+  },
+  "7/08.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Kunigami appelle la passe, Isagi face au dilemme : tirer seul ou faire confiance au coéquipier"
+  },
+  "7/09.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Isagi réfléchit instinctivement, si je passe à Raichi il aurait dû passer à Baro..."
+  },
+  "7/10.jpg": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Baro debout comme un roi devant Isagi, ombre menaçante — moment de décision absolue du chapitre"
+  },
+  "7/11.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Frappe de Baro dans les airs, contact brutal avec Isagi, le ballon dévie vers Kunigami"
+  },
+  "7/12.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Bien joué Isagi — la passe involontaire libère Kunigami seul devant le but"
+  },
+  "7/13.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Kunigami fonce vers le but en explosion athlétique, tir à venir"
+  },
+  "7/14.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.9,
+    "reasoning": "But de Team Z — le ballon rentre dans les filets, score 5-1, premier but de l'équipe"
+  },
+  "7/15.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Kunigami célèbre avec fougue, coéquipiers étonnés, soulagement et joie dans l'équipe Z"
+  },
+  "7/16.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Kunigami reproche à Isagi d'avoir passé au lieu de tirer, scène de conflit post-but"
+  },
+  "7/17.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Dispute tendue : Kunigami accuse Isagi, équipe Z finalement à 5-1, fin de match imminente"
+  },
+  "7/18.jpg": {
+    "mood": "sadness",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Fin du match 5-1 pour X, Baro déclare Isagi totalement dépourvu de talent — humiliation finale"
+  },
+  "7/19.jpg": {
+    "mood": "sadness",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Isagi seul à terre se demande suis-je un attaquant raté — pic émotionnel de doute du chapitre"
+  },
+  "8/01.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Page titre ch8 Le Message, vestiaire post-match, Raichi et Kunigami se disputent le rôle de meneur"
+  },
+  "8/02.jpg": {
+    "mood": "sadness",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Isagi seul dans sa tête : totalement dépourvu de talent — les mots de Baro continuent à faire mal"
+  },
+  "8/03.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Kuon intervient pour calmer le groupe, Nagi apparaît pour la première fois, ambiance de vestiaire"
+  },
+  "8/04.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Ego explique le tournoi round-robin 5 équipes, tableau de points et règles d'élimination"
+  },
+  "8/05.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Ego : l'équipe Z est à deux points de l'élimination, une défaite de plus = pratiquement éliminés"
+  },
+  "8/06.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Kunigami réfléchit à l'analyse du match, Isagi s'interroge sur leur condition de victoire"
+  },
+  "8/07.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Discussion légère en vestiaire sur le sens du message d'Ego, ambiance détendue mais pensive"
+  },
+  "8/08.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi développe son analyse : au début du match tous ne pensaient qu'à marquer individuellement"
+  },
+  "8/09.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Isagi explique que le premier but de Baro a tout changé en créant un catalyseur collectif"
+  },
+  "8/10.jpg": {
+    "mood": "mystery",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Isagi révèle l'insight clé : Baro a été lui-même les fondations de son équipe par son talent pur"
+  },
+  "8/11.jpg": {
+    "mood": "mystery",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego a délibérément utilisé ce système pour que les équipes fondent leur identité sur un super-buteur"
+  },
+  "8/12.jpg": {
+    "mood": "mystery",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego apparaît : le football et les équipes naissent d'un attaquant de premier ordre — révélation centrale"
+  },
+  "8/13.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Ego présente le classement : Team V écrase tout 8-0, Team Z à 0 point, situation critique"
+  },
+  "8/14.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Ego parle du caractère national japonais et du baseball comme sport culturellement dominant"
+  },
+  "8/15.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Ego explique pourquoi le football exige une puissance individuelle que le baseball n'a pas"
+  },
+  "8/16.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego s'emporte : les Japonais ne connaîtront jamais la révolution en restant dans leurs rôles"
+  },
+  "8/17.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ego : un attaquant porte une arme — révélation du concept central du chapitre"
+  },
+  "8/18.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ce n'est qu'avec vos armes que vous pourrez faire la révolution — appel à l'action inspirant"
+  },
+  "8/19.jpg": {
+    "mood": "epic",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Isagi réalise : ce qu'il me manque c'est une arme — révélation personnelle pic du chapitre"
+  },
+  "9/01.jpg": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Page titre ch9 Super-héros, chaque joueur annonce fièrement son arme, ton léger et auto-promotionnel"
+  },
+  "9/02.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi ne sait pas quelle est son arme, dortoir détendu, coéquipiers passent au suivant"
+  },
+  "9/03.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Miss Chigiri refuse de parler, scène tranquille au dortoir, ambiance de veillée après match"
+  },
+  "9/04.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Kuon propose une tactique pour le prochain match, réflexion stratégique collective calme"
+  },
+  "9/05.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Tactique du prochain n°9 décidée, l'équipe vote, tension légère de préparation tactique"
+  },
+  "9/06.jpg": {
+    "mood": "epic",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Entraînement spécial de l'équipe Z, détermination pour le prochain match affiché"
+  },
+  "9/07.jpg": {
+    "mood": "sadness",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi seul au réfectoire avec du natto, réflexion solitaire et mélancolique sur ses capacités"
+  },
+  "9/08.jpg": {
+    "mood": "sadness",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Isagi : je n'ai rien — crise de confiance profonde, la semaine écoulée n'a apporté que des doutes"
+  },
+  "9/09.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Kunigami s'installe avec Isagi, vient le voir exprès, moment de connexion entre rivaux"
+  },
+  "9/10.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Kunigami remercie Isagi pour la passe, moment sincère et détendu qui allège la tristesse"
+  },
+  "9/11.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Isagi questionne Kunigami sur ses motivations, curiosité sincère, discussion entre joueurs"
+  },
+  "9/12.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Kunigami : je serai un super-héros du football — déclaration de rêve sincère et frappante"
+  },
+  "9/13.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Kunigami décrit les vrais héros qu'il voyait enfant : les attaquants qui marquaient des buts"
+  },
+  "9/14.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Kunigami : j'accomplirai mon rêve, je me battrai contre le monde entier en restant fair-play"
+  },
+  "9/15.jpg": {
+    "mood": "peaceful",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Kunigami donne à Isagi la moitié de son steak bonus, moment chaleureux et inattendu"
+  },
+  "9/16.jpg": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Réaction d'Isagi devant le Goal Bonus système, humour face aux récompenses absurdes de Blue Lock"
+  },
+  "9/17.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Kunigami explique qu'il a flairé le but lors de la passe — intuition inconsciente d'Isagi révélée"
+  },
+  "9/18.jpg": {
+    "mood": "mystery",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Ton arme c'est ta capacité à flairer le but — révélation de l'arme d'Isagi, tournant du chapitre"
+  },
+  "9/19.jpg": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.75,
+    "reasoning": "Trop bon ! Isagi goûte le steak et réagit avec excès, scène légère de repas partagé"
+  },
+  "9/20.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "On doit être prêts à gagner notre prochain match — duo Isagi-Kunigami décidé et soudé"
+  },
+  "10/01.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Page titre ch10 Tactique du je serai le prochain n°9, classement affiché, 4ème match imminent"
+  },
+  "10/02.jpg": {
+    "mood": "tension",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "L'équipe Y présentée avec son meneur Hibiki Okawa 254e, équipe adversaire dans même situation"
+  },
+  "10/03.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "L'équipe Z crie la victoire ou la mort avant le match, cohésion frénétique et désespérée"
+  },
+  "10/04.jpg": {
+    "mood": "mystery",
+    "intensity": 1,
+    "confidence": 0.8,
+    "reasoning": "Kuon explique la tactique en détail : rotation des postes toutes les 10 minutes, système offensif"
+  },
+  "10/05.jpg": {
+    "mood": "comedy",
+    "intensity": 1,
+    "confidence": 0.7,
+    "reasoning": "Discussion sur les problèmes de la rotation, Raichi refuse le gardien, ton légèrement comique"
+  },
+  "10/06.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "KICK OFF — coup d'envoi du match contre l'équipe Y, départ explosif de l'action"
+  },
+  "10/07.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Bachira dribble en liberté, sa tactique de jeu personnel expliquée, l'équipe tourne autour de lui"
+  },
+  "10/08.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "L'équipe Y marque Bachira à deux, bloque son dribble, la rotation est contrecarrée"
+  },
+  "10/09.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Formation 4-5-1 de l'équipe Y révélée, tactique défensive organisée contre l'approche Z"
+  },
+  "10/10.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "L'équipe Y neutralise l'attaque de Bachira, Isagi réalise qu'ils doivent s'adapter"
+  },
+  "10/11.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Kunigami entre dans sa zone de tir, l'équipe Z exécute le plan B avec Kunigami comme prochain n°9"
+  },
+  "10/12.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Tir de Kunigami bloqué par l'équipe Y, défense serrée et efficace, occasion ratée"
+  },
+  "10/13.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "L'équipe Z perd la possession, l'équipe Y contient sans attaquer, stratégie d'usure"
+  },
+  "10/14.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "L'équipe Z repasse en attaque, Isagi récupère, passe à Bachira pour relancer"
+  },
+  "10/15.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "Kunigami tente encore, tir bloqué, l'équipe Y résiste avec méthode sur chaque action"
+  },
+  "10/16.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.8,
+    "reasoning": "L'équipe Y attend leur moment, Okawa positionné prudemment, stratégie de contre en préparation"
+  },
+  "10/17.jpg": {
+    "mood": "tension",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Bachira passe à Kunigami, ce dernier prêt à tirer, l'équipe Y se jette pour bloquer"
+  },
+  "10/18.jpg": {
+    "mood": "epic",
+    "intensity": 2,
+    "confidence": 0.85,
+    "reasoning": "Action spectaculaire, le ballon en l'air après le contact, l'équipe Z en reconquête offensive"
+  },
+  "10/19.jpg": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Okawa entre en mouvement pour la contre-attaque : l'équipe Y se repose mais attend — pic du chapitre"
+  },
+  "10/20.jpg": {
+    "mood": "tension",
+    "intensity": 3,
+    "confidence": 0.9,
+    "reasoning": "Contre-attaque surprise de l'équipe Y par Niko Ikki : sur la contre-attaque — cliffhanger final"
+  }
+}

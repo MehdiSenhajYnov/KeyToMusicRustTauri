@@ -1,0 +1,312 @@
+[
+  [
+    6,
+    {
+      "emotion": "determination",
+      "intensity": 8,
+      "narrative": "present",
+      "atmosphere": "Serious, professional",
+      "content": "A new member of the Japan Football Association, Anri Teieri, addresses a board meeting regarding the team's recent failure in the World Cup and the need for a new plan."
+    }
+  ],
+  [
+    7,
+    {
+      "emotion": "neutral",
+      "intensity": 3,
+      "narrative": "present",
+      "atmosphere": "corporate, cynical",
+      "content": "The President of the JFA explains that the national football team is treated as a business to generate profits while maintaining a positive image."
+    }
+  ],
+  [
+    8,
+    {
+      "emotion": "determination",
+      "intensity": 8,
+      "narrative": "present",
+      "atmosphere": "bright, energetic",
+      "content": "A group of men are laughing and reminiscing about a past event while a serious character delivers a passionate speech about the current state of Japanese sports."
+    }
+  ],
+  [
+    9,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "dark, tense",
+      "content": "A character declares that they will never win the World Cup, while others express shock and disbelief at the possibility of Japan winning."
+    }
+  ],
+  [
+    10,
+    {
+      "emotion": "determination",
+      "intensity": 8,
+      "narrative": "present",
+      "atmosphere": "professional, focused",
+      "content": "A character passionately declares their intent to create the ultimate player who can win the tournament against Japan."
+    }
+  ],
+  [
+    11,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "bright, intense",
+      "content": "A female character is shouting a name while pointing at a screen showing a man's photo, with other characters reacting to the announcement."
+    }
+  ],
+  [
+    12,
+    {
+      "emotion": "joy",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "bright, energetic",
+      "content": "A soccer match is in progress with fans cheering enthusiastically"
+    }
+  ],
+  [
+    13,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "intense, gritty",
+      "content": "A soccer player in a white jersey is being aggressively tackled by two opponents in black jerseys while running with the ball."
+    }
+  ],
+  [
+    14,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "intense, dynamic, focused",
+      "content": "A soccer player is shown in a moment of high intensity, surrounded by the word \"NATIONAL!\" and then depicted in a close-up with a determined expression, followed by a scene of him running alongside another player, both focused on the game."
+    }
+  ],
+  [
+    15,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "intense, focused, gritty",
+      "content": "A soccer player is about to take a shot against the goalkeeper, while the goalkeeper is thinking about the championship and national team."
+    }
+  ],
+  [
+    16,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "intense, dynamic, focused",
+      "content": "A soccer player is shown in a moment of high intensity, preparing to make a crucial pass while his teammates cheer him on."
+    }
+  ],
+  [
+    17,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "intense, gritty, focused",
+      "content": "A coach yells at Isagi to play with all his heart, while Isagi reflects on the true meaning of football."
+    }
+  ],
+  [
+    18,
+    {
+      "emotion": "shock",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "gritty, intense, raw",
+      "content": "A soccer player in a white jersey with the number 11 is shown in a dynamic pose, kicking a soccer ball, with text in French that translates to \"A sport played by 11...\""
+    }
+  ],
+  [
+    19,
+    {
+      "emotion": "shock",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "dark, tense",
+      "content": "A soccer player scores a goal, causing the goalkeeper to fall into the net and the team to react with shock and disbelief."
+    }
+  ],
+  [
+    20,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "intense, dynamic, gritty",
+      "content": "A soccer player in a black uniform with the number 10 is shown in action, kicking a ball with great force and focus."
+    }
+  ],
+  [
+    21,
+    {
+      "emotion": "shock",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "dark, tense",
+      "content": "A soccer player scores a goal, leading to a final score of 0-2 and a sense of defeat."
+    }
+  ],
+  [
+    22,
+    {
+      "emotion": "joy",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "bright, energetic",
+      "content": "The page depicts a soccer team celebrating a hard-fought victory, with text confirming they won 2-0 and earned a spot in the national championship."
+    }
+  ],
+  [
+    23,
+    {
+      "emotion": "determination",
+      "intensity": 8,
+      "narrative": "present",
+      "atmosphere": "bright, energetic",
+      "content": "A young soccer player gives a press conference, expressing his determination to win the national championship with his team."
+    }
+  ],
+  [
+    24,
+    {
+      "emotion": "nostalgia",
+      "intensity": 7,
+      "narrative": "present",
+      "atmosphere": "dark, tense, melancholic",
+      "content": "A coach delivers a somber farewell speech to a soccer team, reminding them of their shared memories and the pain of their final defeat."
+    }
+  ],
+  [
+    25,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "intense, emotional, gritty",
+      "content": "A soccer team, led by a crying captain, declares that nothing is lost in life and that their school will always be in his eyes, while another character calls them the best team in Japan."
+    }
+  ],
+  [
+    26,
+    {
+      "emotion": "sadness",
+      "intensity": 7,
+      "narrative": "present",
+      "atmosphere": "desolate, melancholic",
+      "content": "A character reflects on the failure of his team while apologizing to another character named Noa."
+    }
+  ],
+  [
+    27,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "bright, energetic",
+      "content": "A young soccer player is shown in action, kicking the ball with intense focus and determination, while another player looks on in the background."
+    }
+  ],
+  [
+    28,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "flashback",
+      "atmosphere": "energetic, nostalgic, intense",
+      "content": "The page depicts a passionate memory of Isagi playing soccer with his friends in the past, contrasting with his current reflection on his dream of becoming a professional player."
+    }
+  ],
+  [
+    29,
+    {
+      "emotion": "joy",
+      "intensity": 10,
+      "narrative": "present",
+      "atmosphere": "bright, chaotic",
+      "content": "A soccer player celebrates winning the World Cup with confetti falling around him"
+    }
+  ],
+  [
+    30,
+    {
+      "emotion": "nostalgia",
+      "intensity": 7,
+      "narrative": "thought",
+      "atmosphere": "quiet, reflective",
+      "content": "A soccer player reflects on his past, imagining what might have happened if he had made different choices during a game."
+    }
+  ],
+  [
+    31,
+    {
+      "emotion": "shock",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "dark, tense",
+      "content": "The page depicts a soccer match where a goal is scored, followed by a close-up of a character's shocked face and a reflection of the opposing player's angry expression."
+    }
+  ],
+  [
+    32,
+    {
+      "emotion": "nostalgia",
+      "intensity": 7,
+      "narrative": "dream",
+      "atmosphere": "quiet, reflective, melancholic",
+      "content": "A character reflects on the past, imagining how their life might have been different if they had chosen to play football instead of collecting cards."
+    }
+  ],
+  [
+    33,
+    {
+      "emotion": "determination",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "dark, gritty, intense",
+      "content": "A character is shown in a moment of physical exertion, with a speech bubble indicating a desire to win, while another panel shows a figure in a dynamic pose."
+    }
+  ],
+  [
+    34,
+    {
+      "emotion": "neutral",
+      "intensity": 1,
+      "narrative": "present",
+      "atmosphere": "bright, casual",
+      "content": "A character returns home and is greeted by family while discussing food and football"
+    }
+  ],
+  [
+    35,
+    {
+      "emotion": "shock",
+      "intensity": 9,
+      "narrative": "present",
+      "atmosphere": "bright, tense",
+      "content": "A character receives a letter about a player improvement project and reacts with surprise while others discuss it."
+    }
+  ],
+  [
+    36,
+    {
+      "emotion": "shock",
+      "intensity": 8,
+      "narrative": "present",
+      "atmosphere": "bright, tense",
+      "content": "A character is shown reacting with shock and disbelief to discovering a hidden camera while trying to find a meeting location."
+    }
+  ]
+]

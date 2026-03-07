@@ -4,7 +4,7 @@
 >
 > **Mise a jour (mars 2026) :**
 > - **31 pages Blue Lock :** le meilleur resultat documente est maintenant **V12 multi-image + Qwen3.5-VL 4B** a **23/31 strict, 28/31 relaxed**
-> - **RealTest `BL/1` par defaut dans le repo :** **V12 historique + Qwen3-VL-4B-Thinking** a **46/70 strict, 59/70 relaxed (84.3%)**
+> - **RealTest `BL/1` par defaut dans le repo :** **V12 historique + Qwen3-VL-4B-Thinking** a **47/70 strict, 60/70 relaxed (85.7%)**
 > - Ce document reste utile pour comprendre le raisonnement qui a mene a V6, mais il n'est plus la reference benchmark actuelle.
 
 ## Architecture actuelle : Pipeline V6 (Describe + Classify with Context)
