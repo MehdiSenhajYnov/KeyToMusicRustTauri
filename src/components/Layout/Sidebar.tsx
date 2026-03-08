@@ -15,25 +15,29 @@ function MoodIndicator() {
   const committedMood = useMoodStore((s) => s.committedMood);
   const committedIntensity = useMoodStore((s) => s.committedIntensity);
   const serverStatus = useMoodStore((s) => s.serverStatus);
+  const apiStatus = useMoodStore((s) => s.apiStatus);
   const serverInstalled = useMoodStore((s) => s.serverInstalled);
   const modelInstalled = useMoodStore((s) => s.modelInstalled);
   const startServer = useMoodStore((s) => s.startServer);
   const stopServer = useMoodStore((s) => s.stopServer);
   const checkInstallation = useMoodStore((s) => s.checkInstallation);
-  const setServerStatus = useMoodStore((s) => s.setServerStatus);
+  const refreshServiceStatus = useMoodStore((s) => s.refreshServiceStatus);
   const moodAiEnabled = useSettingsStore((s) => s.config.moodAiEnabled);
 
   useEffect(() => {
     if (!moodAiEnabled) return;
     checkInstallation();
-    let cleanup: (() => void) | undefined;
+    let cleanups: (() => void)[] = [];
     import("@tauri-apps/api/event").then(({ listen }) => {
-      listen<{ status: string }>("mood_server_status", (e) => {
-        setServerStatus(e.payload.status as any);
-      }).then((u) => { cleanup = u; });
+      listen("mood_server_status", () => {
+        refreshServiceStatus();
+      }).then((u) => { cleanups.push(u); });
+      listen("mood_api_status", () => {
+        refreshServiceStatus();
+      }).then((u) => { cleanups.push(u); });
     });
-    return () => { cleanup?.(); };
-  }, [moodAiEnabled]);
+    return () => { cleanups.forEach((u) => u()); };
+  }, [checkInstallation, moodAiEnabled, refreshServiceStatus]);
 
   if (!moodAiEnabled) return null;
 
@@ -70,6 +74,11 @@ function MoodIndicator() {
           <span className="text-text-muted text-xs italic">Not installed</span>
         )}
       </div>
+      {serverStatus === "running" && apiStatus !== "running" && (
+        <div className="text-[11px] text-text-muted">
+          Extension API not ready
+        </div>
+      )}
       {committedMood && (() => {
         const colors = MOOD_COLORS[committedMood];
         return (

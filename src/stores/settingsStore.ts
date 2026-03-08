@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { AppConfig, MomentumModifier } from "../types";
 import * as commands from "../utils/tauriCommands";
 import { useToastStore } from "./toastStore";
+import { useMoodStore } from "./moodStore";
 
 interface SettingsState {
   config: AppConfig;
@@ -235,8 +236,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }));
     try {
       await commands.updateConfig({ moodAiEnabled: enabled });
+      await useMoodStore.getState().refreshServiceStatus();
     } catch (e) {
       set((state) => ({ config: { ...state.config, moodAiEnabled: prev } }));
+      await useMoodStore.getState().refreshServiceStatus();
       useToastStore.getState().addToast("Failed to toggle Mood AI", "error");
     }
   },
@@ -248,8 +251,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }));
     try {
       await commands.updateConfig({ moodApiPort: port });
+      await useMoodStore.getState().refreshServiceStatus();
     } catch (e) {
       set((state) => ({ config: { ...state.config, moodApiPort: prev } }));
+      await useMoodStore.getState().refreshServiceStatus();
       useToastStore.getState().addToast("Failed to set API port", "error");
     }
   },

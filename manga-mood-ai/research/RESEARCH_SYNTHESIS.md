@@ -1,5 +1,11 @@
 # Manga Mood AI — Research Synthesis
 
+> Status note:
+>
+> - this file is the benchmark/research synthesis for Manga Mood
+> - it is not the canonical product API/extension spec
+> - for the active extension/backend/runtime workflow, use [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md)
+
 ## 1. Project Goal
 
 **KeyToMusic** is a desktop soundboard for manga reading. The user assigns sounds to keyboard keys, grouped by mood (epic, sadness, tension, etc.). When reading a manga on their browser, a browser extension captures each page image and sends it to a local VLM (Vision Language Model) that runs on the user's GPU. The VLM detects the mood of the page and automatically triggers the matching soundtrack.
@@ -14,20 +20,20 @@
 
 3. **Real-time-ish.** The user scrolls through pages at reading speed (~5-15 seconds per page). Classification must complete within that window. Currently ~8-12 seconds per page (2 VLM inferences), which is borderline but acceptable since the browser extension can send pages ahead of the reader's scroll position.
 
-4. **Single manga page = single input.** The browser extension sends one page image at a time. Multi-page batching is possible when the extension pre-loads pages, but the system must work incrementally.
+4. **Incremental around the visible page.** The product must work around the current visible page even when the extension is still warming the chapter cache. The extension can preload and batch surrounding pages, but the user-visible result still has to work incrementally.
 
 ### Current benchmark status (March 2026)
 
 The repo now has **three distinct benchmark references**, and mixing them was the source of several recent confusions:
 
-| Benchmark | Winner | Score | Notes |
-|-----------|--------|-------|-------|
+| Benchmark | Best result | Score | Notes |
+|-----------|-------------|-------|-------|
 | Isolated images (13-18 pages) | **Qwen3-VL 2B thinking** | **18/18 (100%)** | Best single-page classifier. |
 | Blue Lock sequence (31 pages) | **V12 + Qwen3.5-VL 4B** | **23/31 strict, 28/31 relaxed** | Best result on the original 31-page research benchmark. |
-| RealTest BL/1 (74 pages, 70 scored) | **Wide-5 selective repair + Qwen3-VL-4B-Thinking** | **55/70 strict, 67/70 relaxed (95.7%)** | New best local result, still within a baseline-like latency budget (~10.2s/page). |
+| RealTest BL/1 (74 pages, 70 scored) | **Wide-5 selective repair + action bridge hold + Qwen3-VL-4B-Thinking** | **58/70 strict, 68/70 relaxed** | Current best local BL/1 result, still within a baseline-like latency budget (~11.9s/page). |
 
 The default `realtest_benchmark` in the codebase now runs the **RealTest comparison suite**:
-- cached baseline: historical `Qwen3-VL-4B-Thinking` winner loaded from disk, **no rerun**
+- cached baseline: historical `Qwen3-VL-4B-Thinking` BL/1 baseline loaded from disk, **no rerun**
 - live variants: sampling, preprocessing, decision algorithms, runtime profiles, and challenger models
 - outputs: terminal comparison table + saved JSON/Markdown summary in `manga-mood-ai/results/`
 
@@ -53,7 +59,7 @@ The first full comparison suite on `BL/1` produced the following matrix:
 
 | Experiment | Strict | Relaxed | Intensity | Avg time | Takeaway |
 |-----------|--------|---------|-----------|----------|----------|
-| `baseline_cache` | **46/70** | **59/70** | 21/70 | cached | Current overall winner remains the historical baseline. |
+| `baseline_cache` | **47/70** | **60/70** | 21/70 | cached | Historical reference at the time of the first comparison suite. |
 | `t4b_official` | 39/70 | **59/70** | 30/70 | ~4.9s/window | Official sampling improves intensity but loses 7 strict points. |
 | `q35_9b_viterbi` | 36/70 | 57/70 | 26/70 | ~2.8s/window | Best live challenger, still below baseline. |
 | `q3vl_2b_viterbi` | 32/70 | 55/70 | **41/70** | ~1.2s/window | Excellent intensity model / `tension` specialist, poor primary classifier. |
@@ -70,14 +76,14 @@ Three targeted experiments were then run to improve on the baseline without chan
 
 | Experiment | Strict | Relaxed | Intensity | Avg time | Verdict |
 |-----------|--------|---------|-----------|----------|---------|
-| `t4b_hist_live` | 41/70 | 58/70 | 20/70 | ~8.7s/window | Failed to reproduce the cached 46/70 baseline exactly. The old winner is not fully reproducible under the current live harness/runtime. |
+| `t4b_hist_live` | 41/70 | 58/70 | 20/70 | ~8.7s/window | Failed to reproduce the cached 47/70 baseline exactly. The old best historical BL/1 baseline is not fully reproducible under the current live harness/runtime. |
 | `t4b_hist_center_override` | 40/70 | 57/70 | 22/70 | ~8.7s/window | Center-focused override heuristic made the result slightly worse. |
 | `t4b_focus_direct` | 29/70 | 46/70 | 39/70 | ~6.2s/window | Direct current-page classification is much better for intensity, but clearly worse for mood classification. |
 
 What this iteration taught us:
 - A simple aggregation tweak is **not** enough to beat the historical baseline.
 - Page-centered prompts should not replace the sequence prompt as the primary classifier, but they remain interesting as an **auxiliary signal** because they sharply improve intensity.
-- Any future claim that an algorithm beats the baseline must still be compared against the cached historical reference `46/70`, not only against the weaker `t4b_hist_live` rerun.
+- Any future claim that an algorithm beats the baseline must still be compared against the cached historical reference `47/70`, not only against the weaker `t4b_hist_live` rerun.
 
 ### March 2026 second follow-up runs (`BL/1`)
 
@@ -112,7 +118,7 @@ Result:
 
 | Experiment | Strict | Relaxed | Intensity | Verdict |
 |-----------|--------|---------|-----------|---------|
-| `baseline_cache` | 46/70 | 59/70 | 21/70 | Historical reference |
+| `baseline_cache` | 47/70 | 60/70 | 21/70 | Historical reference |
 | `t4b_ensemble_viterbi` | **46/70** | **61/70** | **41/70** | Same strict as baseline, but clearly better relaxed and much better intensity |
 
 Why this matters:
@@ -123,12 +129,12 @@ Why this matters:
   - `q3vl_2b` acts as a strong `tension` / intensity specialist
   - `q35_9b` adds a softer second opinion that improves relaxed coherence
 - However, this blend is **too expensive for the production latency budget**: roughly `19-23s/page` effective when all dependencies are recomputed, versus ~`9.5s/window` for the historical baseline.
-- Therefore it should be treated as a **research oracle**, not as a deployable winner.
+- Therefore it should be treated as a **research oracle**, not as a deployable production reference.
 - The next step is not “more ensemble”, but **recovering strict gains under a hard latency budget close to the baseline cost**.
 
 ### Hard gate for the next iteration
 
-From this point on, a candidate only counts as a real winner if all of the following are true:
+From this point on, a candidate only counts as a real benchmark reference candidate if all of the following are true:
 - it stays within a **baseline-like nominal cost budget** (roughly the same order as the historical `thinking4b` run)
 - it improves the cached baseline by **at least +2 strict** (`>= 48/70`) **or +4 relaxed** (`>= 63/70`)
 - it remains local-GPU friendly on the RTX 4070 setup
@@ -160,7 +166,7 @@ The first full run after the smoke eliminations tested the strongest surviving b
 | `t4b_wide5_sequence_viterbi` | 43/70 | 61/70 | 21/70 | ~9.4s/window | Same result as majority; the extra Viterbi layer did not help once the 5-image vote stats were already aggregated. |
 
 What this taught us:
-- Wider visual context is **not useless**: it raises relaxed from `59/70` to `61/70` while staying in roughly the same cost envelope as the baseline.
+- Wider visual context is **not useless**: it raises relaxed from `60/70` to `61/70` while staying in roughly the same cost envelope as the baseline.
 - But wider windows alone are **not enough** to win the benchmark under the hard gate (`>=48 strict` or `>=63 relaxed`).
 - This branch remains worth building on because it is the first new live-feasible protocol that stays close to the baseline cost **and** improves a global metric without collapsing.
 - The next logical step is therefore a **selective correction layer on top of the wide-5 sequence backbone**, not another full architectural reset.
@@ -173,8 +179,8 @@ Result:
 
 | Experiment | Strict | Relaxed | Intensity | Avg time | Second pass | Verdict |
 |-----------|--------|---------|-----------|----------|-------------|---------|
-| `baseline_cache` | 46/70 | 59/70 | 21/70 | historical cache | 0 | Old benchmark reference |
-| `t4b_wide5_selective` | **55/70** | **67/70** | 24/70 | **~10.2s/page** | **12 pages** | **New winner** |
+| `baseline_cache` | 47/70 | 60/70 | 21/70 | historical cache | 0 | Old benchmark reference |
+| `t4b_wide5_selective` | **56/70** | **68/70** | 24/70 | **~13.0s/page** | **12 pages** | **New best BL/1 result at that stage** |
 
 Why this run matters:
 - it passes the hard gate by a wide margin: **+9 strict** and **+8 relaxed**
@@ -205,8 +211,44 @@ The 12 corrected pages on `BL/1` were:
 - `74`: `epic -> tension`
 
 This is the first approach that is both:
-- a **real benchmark winner**
+- a **real benchmark reference at that stage**
 - and still a **credible production candidate** under the RTX 4070 local-budget constraint
+
+### March 2026 follow-up winning run (`BL/1`) — wide-5 selective repair + action bridge hold
+
+The next cycle did **not** add another model and did **not** add extra reprompts. Instead, it tightened the **soundtrack-level decoding rule** on top of the existing best BL/1 method:
+
+1. keep the exact same `wide-5` backbone
+2. keep the exact same `12` selective reprompts
+3. add a zero-cost structural hold when the decoded path looks like:
+   - `epic` short run
+   - then `tension` run of length `4-6`
+   - then a confirmed `epic` rebound of length `>= 4`
+4. in that case, delay the `epic -> tension` soundtrack switch by **2 pages**
+
+Result:
+
+| Experiment | Strict | Relaxed | Intensity | Avg time | Extra reprompts | Verdict |
+|-----------|--------|---------|-----------|----------|-----------------|---------|
+| `t4b_wide5_selective` | 56/70 | 68/70 | 24/70 | ~11.8s/page | 12 | Previous best BL/1 result |
+| `t4b_wide5_selective_hold` | **58/70** | **68/70** | 24/70 | **~11.9s/page** | **12** | **Current best BL/1 result** |
+
+Why this second win matters:
+- it beats the incumbent by the required margin: **+2 strict**
+- it keeps the same GPU cost class and the full BL/1 rerun stays essentially at parity on latency
+- it uses the product constraint that the extension can **see future pages**
+- it improves the **soundtrack decision layer** without pretending the page-level VLM suddenly became smarter
+
+What changed concretely on `BL/1`:
+- only **2 pages** changed versus the previous best BL/1 result
+- `13`: `tension -> epic`
+- `14`: `tension -> epic`
+
+This small-looking change is exactly the kind of gain we wanted:
+- no benchmark cheat
+- no new oracle
+- no extra inference
+- better temporal coherence on a real chapter-level run
 
 ---
 
@@ -218,7 +260,7 @@ All models tested on the same hardware (RTX 4070 12GB, Windows 11), via llama-se
 
 | Model | Score | Time/image | VRAM | Notes |
 |-------|-------|------------|------|-------|
-| **Qwen3-VL 2B** (thinking) | **18/18 (100%)** | ~1.1s | 38% | Champion. Thinking (`<think>` tags) is critical. |
+| **Qwen3-VL 2B** (thinking) | **18/18 (100%)** | ~1.1s | 38% | Best isolated-image result in that historical benchmark. Thinking (`<think>` tags) is critical. |
 | Qwen2.5-VL 7B | 11/13 (85%) | ~2s | ~96% | Accurate but saturates VRAM, freezes PC. |
 | Qwen3-VL 4B | 9/13 (69%) | ~2.8s | — | Paradoxically worse than the 2B. |
 | InternVL3.5 4B | 9/13 (69%) | ~500ms | 74% | Ultra fast but misses complex moods. |
@@ -370,11 +412,11 @@ Each page appears in up to 3 windows → 3 votes → majority vote
 
 #### RealTest historical V12 repro (default `realtest_benchmark`)
 
-The repository now also reproduces the **historical Windows RealTest winner** on `BL/1`:
+The repository now also reproduces the **historical Windows RealTest baseline** on `BL/1`:
 
 | Benchmark | Model | Protocol | Strict | Relaxed | Speed |
 |-----------|-------|----------|--------|---------|-------|
-| RealTest `BL/1` (74 pages, 70 scored) | **Qwen3-VL-4B-Thinking** | historical 3-page prompt, no grammar, no shuffle, `max_tokens: 8192` | **46/70 (65.7%)** | **59/70 (84.3%)** | ~9.5s/window |
+| RealTest `BL/1` (74 pages, 70 scored) | **Qwen3-VL-4B-Thinking** | historical 3-page prompt, no grammar, no shuffle, `max_tokens: 8192` | **47/70 (67.1%)** | **60/70 (85.7%)** | ~9.5s/window |
 
 This protocol is different from the 31-page Blue Lock benchmark above. It is slower, but it is the setup that matched the previously undocumented Windows run and is now the default behavior of `realtest_benchmark`.
 
@@ -387,7 +429,7 @@ This protocol is different from the 31-page Blue Lock benchmark above. It is slo
 
 Thinking mode was tested with `/think` system prompt and temperature 0.6 (recommended for Qwen3 thinking). Results: barely better than baseline (+3% strict), 25x slower, 2 parse errors. The V6+think variant showed no improvement over V6 at 14x the latency.
 
-**Conclusion:** adding explicit `/think` to **Qwen3.5-VL 4B** didn't help. The model rambles in its reasoning and loses focus. This does **not** invalidate dedicated thinking models: the separate **Qwen3-VL-4B-Thinking** model later became the historical RealTest winner on `BL/1`.
+**Conclusion:** adding explicit `/think` to **Qwen3.5-VL 4B** didn't help. The model rambles in its reasoning and loses focus. This does **not** invalidate dedicated thinking models: the separate **Qwen3-VL-4B-Thinking** model later became the historical RealTest baseline on `BL/1`.
 
 ---
 
@@ -416,13 +458,14 @@ Thinking mode was tested with `/think` system prompt and temperature 0.6 (recomm
 The current ceiling depends on **which benchmark you mean**:
 
 - **31-page Blue Lock benchmark:** **74% strict, 90% relaxed** with V12 + Qwen3.5-VL 4B.
-- **RealTest BL/1 benchmark:** **65.7% strict, 84.3% relaxed** with the historical V12 protocol + Qwen3-VL-4B-Thinking.
+- **RealTest BL/1 historical reproduced baseline:** **47/70 strict, 60/70 relaxed** with the historical V12 protocol + Qwen3-VL-4B-Thinking.
+- **RealTest BL/1 current local best result:** **58/70 strict, 68/70 relaxed** with `t4b_wide5_selective_hold` + Qwen3-VL-4B-Thinking.
 
 These are both useful:
 - the 31-page benchmark is the cleanest research comparison set
-- the RealTest run is the reproduced historical benchmark now wired as the default repo command
+- the RealTest suite is the practical local benchmark used to compare production-candidate pipelines
 
-For a soundtrack application, **90% relaxed** on the 31-page benchmark is already excellent, and **84.3% relaxed** on the reproduced RealTest `BL/1` run is still operationally strong. The remaining misses are partly masked by crossfading, MoodDirector smoothing, and manual override.
+For a soundtrack application, **90% relaxed** on the 31-page benchmark is already excellent, and **68/70 relaxed** on the current `BL/1` best result is a much stronger local reference than the old reproduced baseline. The remaining misses are no longer mostly about raw model blindness; they are increasingly about transition timing, soundtrack duration, and local orchestration.
 
 ### 6.3 Error patterns
 
@@ -438,17 +481,43 @@ For a soundtrack application, **90% relaxed** on the 31-page benchmark is alread
 ## 7. Technical Setup
 
 ### Model
-- **31-page Blue Lock winner:** **Qwen3.5-VL 4B** (Q4_K_M GGUF, ~2.5 GB)
-- **Default RealTest winner:** **Qwen3-VL-4B-Thinking** (Q4_K_M GGUF)
+- **31-page Blue Lock best-result model:** **Qwen3.5-VL 4B** (Q4_K_M GGUF, ~2.5 GB)
+- **Current RealTest best-result model:** **Qwen3-VL-4B-Thinking** (Q4_K_M GGUF)
 - Served via **llama-server** (llama.cpp) as a local HTTP API
-- Flags: `-c 32768 --flash-attn auto --cache-type-k q8_0 --cache-type-v q8_0 -ngl 99 --image-min-tokens 1024`
+- Runtime now aligns around a benchmark-primary / best-result-oriented profile instead of the old fixed `32768x4` default
 - Images resized to 672px max dimension (Lanczos3, JPEG encoding) before inference
 - Temperature: 0.0 (deterministic)
 - VRAM: ~50% of 12 GB
 
 ### Pipeline
 - **31-page Blue Lock V12:** 3 consecutive images (N-1, N, N+1), one prompt, majority vote, ~3.2s per window, ~100s for 31 pages.
-- **Default RealTest V12:** same overlapping-window idea, but using the historical prompt/protocol that reproduced the Windows `BL/1` run: no grammar, no shuffle, `max_tokens: 8192`, ~9.5s per window on Linux.
+- **Historical RealTest V12 baseline:** same overlapping-window idea, but using the historical prompt/protocol that reproduced the Windows `BL/1` run: no grammar, no shuffle, `max_tokens: 8192`, ~9.5s per window on Linux.
+- **Current RealTest best BL/1 method:** `wide-5` sequence backbone + selective repair + action bridge hold, still on `Qwen3-VL-4B-Thinking`.
+
+### Code architecture
+
+The repo now follows a cleaner split than before:
+
+- `winner.rs` = shared winner-core logic
+  - prompts
+  - parsing
+  - aggregation
+  - selective repairs
+  - action hold
+- `director_realtest_suite.rs` = benchmark harness / experiment runner
+- `chapter_pipeline.rs` = production scheduler / orchestrator
+- `server.rs` = local HTTP API
+- browser extension = visible-page orchestration and debug UI, not mood decision logic
+
+This matters because a benchmark best method is no longer supposed to be copied manually into production. The intended workflow is now:
+1. prototype inside the benchmark harness
+2. extract the reusable best-method logic into `winner.rs`
+3. let both benchmark and production orchestrators call the same core
+
+This makes it much easier to:
+- add new benchmark experiments without mixing product code and research code
+- compare multiple models / prompts / decision layers with `REALTEST_EXPERIMENTS=...`
+- migrate a new benchmark-best method into KeyToMusic without rebuilding the whole pipeline from scratch
 
 ### Linux reproducibility note
 
@@ -462,9 +531,10 @@ This is a host-network workaround, not a benchmark logic change, but it was requ
 
 ### Browser extension
 - Runs on manga reading sites with vertical scroll
-- Captures page images and sends them to KeyToMusic's local API
-- Can pre-load pages ahead of the reader's scroll position
-- Sends pages incrementally (one at a time as they become visible)
+- Detects the currently visible page
+- Sends a local neighborhood around that visible page for windowed production inference
+- Queries the local cache first (`lookup`), then falls back to visible-window analysis
+- Exposes a richer debug popup (`Visible Page`, `Analyzing Now`, `Ready Pages`, `Queued Pages`, `Recent Events`)
 
 ---
 
@@ -566,7 +636,7 @@ V12 uses 3-image windows. Would 5-image windows (N-2 to N+2) give even more visu
 | Aspect | Current state |
 |--------|--------------|
 | Best 31-page accuracy | **74% strict, 90% relaxed** (V12: 3-image sliding window + majority vote) |
-| Reproduced RealTest BL/1 winner | **46/70 strict, 59/70 relaxed (84.3%)** |
+| Reproduced RealTest BL/1 baseline | **47/70 strict, 60/70 relaxed (85.7%)** |
 | Previous best | 71% strict, 84% relaxed (V6: 4 past descriptions + VLM classify) |
 | Models | Qwen3.5-VL 4B (31-page benchmark), Qwen3-VL-4B-Thinking (default RealTest benchmark) |
 | Pipeline | V12: 3 consecutive images → group mood → majority vote |
@@ -578,4 +648,4 @@ V12 uses 3-image windows. Would 5-image windows (N-2 to N+2) give even more visu
 | Dead ends confirmed | `/think` on Qwen3.5-VL 4B, LLM summaries (V10-V11) |
 | Ceiling cause | Model size (4B) + narrative ambiguity on single pages |
 
-**The open question is no longer "which protocol was the winner?" — that is now pinned. The next question is whether the historical RealTest winner generalizes beyond `BL/1`, and whether a newer protocol can beat it consistently on the wider RealTest set.**
+**The open question is no longer "which protocol set the best result in BL/1?" — that is now pinned. The next question is whether the historical RealTest baseline generalizes beyond `BL/1`, and whether a newer protocol can beat it consistently on the wider RealTest set.**

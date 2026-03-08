@@ -5,7 +5,7 @@ Comprehensive results from benchmarking local VLM models and prompts for manga p
 **Phase 1 test set:** 13-18 isolated manga pages covering all 10 mood categories.
 **Phase 2 test set:** 31 consecutive pages from Blue Lock Tome 1 (ch.1, pages 6-36) — tests narrative coherence, not just per-page accuracy.
 
-> Status update (March 2026): this file remains the historical write-up for the isolated-image benchmark and the original 31-page Blue Lock sequence benchmark. The reproduced default `realtest_benchmark` winner in the repo is now the **historical RealTest BL/1 protocol with Qwen3-VL-4B-Thinking**, scoring **46/70 strict and 59/70 relaxed (84.3%)**. See [RESEARCH_SYNTHESIS.md](./RESEARCH_SYNTHESIS.md) for the up-to-date benchmark matrix and commands.
+> Status update (March 2026): this file remains a historical write-up for earlier isolated-image and sequence benchmarks. It is not the canonical product spec. See [RESEARCH_SYNTHESIS.md](./RESEARCH_SYNTHESIS.md) for the benchmark overview and [../../docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md) for the active product workflow.
 
 ---
 
@@ -13,7 +13,7 @@ Comprehensive results from benchmarking local VLM models and prompts for manga p
 
 | Model | Score | Time/image | VRAM | Verdict |
 |-------|-------|------------|------|---------|
-| **Qwen3-VL 2B** (thinking) | **100%** (18/18) | ~2.8s | 38% (~4.7GB) | **Champion** — thinking model beats larger models |
+| **Qwen3-VL 2B** (thinking) | **100%** (18/18) | ~2.8s | 38% (~4.7GB) | **Best isolated-image result in this historical phase** — thinking model beats larger models |
 | Qwen2.5-VL 7B | 89% (16/18) | ~1.3s | 96% | Faster but less accurate, barely fits in VRAM |
 | InternVL3.5 4B | 69% | ~0.5s | 74% | Fast but imprecise |
 | Gemma 3 4B | 44% | - | - | Spams "tension" on everything |
@@ -67,7 +67,7 @@ Adding just "(calm daily life)" after "peaceful" in the category list fixed 18.p
 
 ---
 
-## 4. Champion Configuration
+## 4. Best Isolated-Image Configuration (Historical Phase 1)
 
 ```
 Model:        Qwen3-VL 2B (qwen3-vl:2b, Q4_K_M GGUF)
@@ -83,7 +83,7 @@ VRAM:         38% (~4.7 GB on 12GB GPU)
 
 ---
 
-## 5. Champion Prompt (GUIDED_V3)
+## 5. Best Historical Isolated-Image Prompt (GUIDED_V3)
 
 ```
 Analyze this manga page step by step:
@@ -130,7 +130,7 @@ The `</think>` tag is stripped in `parse_mood_response()` and the remaining text
 
 ## 6. Phase 2 — Blue Lock Sequence Benchmark (31 pages, Rust integration test)
 
-After Phase 1 established the champion model and prompt, Phase 2 tested on a real consecutive manga chapter to evaluate narrative coherence.
+After Phase 1 established the best isolated-image model and prompt for that historical phase, Phase 2 tested on a real consecutive manga chapter to evaluate narrative coherence.
 
 ### 6.1 Model upgrade: Qwen3-VL 2B → Qwen3.5-VL 4B
 
@@ -138,7 +138,7 @@ The Qwen3.5-VL 4B (Q4_K_M GGUF, ~2.5GB) was tested as a potential upgrade. Both 
 
 | Model | Strict | Relaxed | Avg time | Notes |
 |-------|--------|---------|----------|-------|
-| Qwen3-VL 2B (Phase 1, 13 imgs) | 100% | 100% | ~1.1s | Champion on isolated images |
+| Qwen3-VL 2B (Phase 1, 13 imgs) | 100% | 100% | ~1.1s | Best isolated-image result in that phase |
 | Qwen3.5-VL 4B (31-page sequence) | 65% (20/31) | 81% (25/31) | ~5.7s | More capable but over-predicts emotional_climax |
 
 The 4B model is better at understanding complex manga scenes but has a specific bias: it confuses **intense emotion** with **emotional_climax**. A page showing a character crying intensely → model sees "strong emotion" → outputs `emotional_climax` instead of `sadness`.
@@ -302,7 +302,7 @@ For each page N:
 - The VLM still sees the image during classification (unlike text-only approaches that got 19%)
 - The context helps the VLM understand narrative arc (consecutive crying scenes = sadness, not climax)
 
-**V6 Result: 22/31 strict (71%), 26/31 relaxed (84%) — BEST RESULT.**
+**V6 Result: 22/31 strict (71%), 26/31 relaxed (84%) — BEST RESULT IN THIS V6 FAMILY.**
 
 The sadness arc (pages 22-33) is almost entirely fixed. The model now sees 3-4 descriptions of crying/grief scenes before classifying the current page, so it correctly identifies "more sadness" instead of "climax."
 
@@ -312,7 +312,7 @@ After V6 proved context works, we systematically tested different window configu
 
 | Pass | Context Window | Strict | Relaxed | Notes |
 |------|---------------|--------|---------|-------|
-| V6 | 4 past, 0 future | **22/31 (71%)** | 26/31 (84%) | **Winner** |
+| V6 | 4 past, 0 future | **22/31 (71%)** | 26/31 (84%) | **Best result in this V6-V11 family** |
 | V7 | 2 past, 2 future | 21/31 (68%) | 27/31 (87%) | Fixes pages 7-8 but regresses 9,17,25 |
 | V8 | 4 past, 2 future | 19/31 (61%) | 27/31 (87%) | Too much context overwhelms model |
 | V9 | 3 past, 3 future | 22/31 (71%) | 26/31 (84%) | Ties V6 on numbers, different error profile |

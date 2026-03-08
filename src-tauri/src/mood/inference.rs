@@ -4,28 +4,10 @@ use std::path::Path;
 use std::process::Stdio;
 use tokio::process::{Child, Command};
 
-use crate::mood::director::{MoodScores, NarrativeRole};
+use crate::mood::director::MoodScores;
 use crate::types::{BaseMood, MoodCategory, MoodIntensity, MoodTag};
 
 use super::llama_manager;
-
-/// The GUIDED_V3 prompt for single-label mood classification (legacy, 10 moods).
-pub(crate) const GUIDED_V3_PROMPT: &str = "Analyze this manga page step by step:\n\
-    1. What are the characters expressing? (faces, posture, gestures)\n\
-    2. What feeling does the author want the reader to experience?\n\
-    3. Classify as ONE of the categories below.\n\
-    \n\
-    Key distinctions:\n\
-    - sadness vs emotional_climax: sorrow/regret/nostalgia = sadness, \
-    triumph/determination = emotional_climax\n\
-    - tension vs epic_battle: anxious anticipation = tension, \
-    active combat = epic_battle\n\
-    - chase_action: ONLY for active pursuit/escape, not flashbacks with movement\n\
-    \n\
-    Categories: epic_battle, tension, sadness, comedy, romance, horror, \
-    peaceful (calm daily life), emotional_climax, mystery, chase_action\n\
-    \n\
-    Reply with ONLY the category name after your reasoning.";
 
 /// Dimensional prompt: 8 base moods + 3 intensity levels.
 pub(crate) const MOOD_INTENSITY_PROMPT: &str = "\
@@ -39,6 +21,8 @@ Moods: epic, tension, sadness, comedy, romance, horror, peaceful, mystery
 
 Reply format: mood intensity
 Example: tension 2";
+
+pub const ACTIVE_MOOD_MODEL_NAME: &str = "Qwen3-VL-4B-Thinking";
 
 /// Structured features extracted from a manga page (Layer 1).
 /// Universal extraction — does NOT depend on any user-defined categories.
@@ -61,67 +45,6 @@ pub struct PageFeatures {
 pub struct HybridResult {
     pub mood: MoodCategory,
     pub features: PageFeatures,
-}
-
-/// Narrative context to enrich the VLM prompt with reading history.
-pub struct NarrativeContext {
-    /// Previous pages' dominant moods (oldest → newest)
-    pub previous_moods: Vec<String>,
-    /// Current committed soundtrack mood
-    pub current_soundtrack: Option<String>,
-    /// How many pages the current soundtrack has been playing
-    pub soundtrack_dwell: u32,
-    /// Pre-cached future pages' moods (look-ahead, ordered)
-    pub next_moods: Vec<String>,
-}
-
-impl NarrativeContext {
-    /// Build the context section of the prompt. Returns empty string if no useful context.
-    fn to_prompt_section(&self) -> String {
-        if self.previous_moods.is_empty()
-            && self.current_soundtrack.is_none()
-            && self.next_moods.is_empty()
-        {
-            return String::new();
-        }
-
-        let mut parts = Vec::new();
-
-        if !self.previous_moods.is_empty() {
-            parts.push(format!(
-                "- Previous pages: {}",
-                self.previous_moods.join(" → ")
-            ));
-        }
-
-        if let Some(ref soundtrack) = self.current_soundtrack {
-            if self.soundtrack_dwell > 1 {
-                parts.push(format!(
-                    "- Current soundtrack: {} (playing for {} pages)",
-                    soundtrack, self.soundtrack_dwell
-                ));
-            } else {
-                parts.push(format!("- Current soundtrack: {}", soundtrack));
-            }
-        }
-
-        if !self.next_moods.is_empty() {
-            parts.push(format!(
-                "- Next {} page(s) (pre-analyzed): {}",
-                self.next_moods.len(),
-                self.next_moods.join(" → ")
-            ));
-        }
-
-        format!(
-            "Reading context (narrative flow):\n\
-             {}\n\
-             \n\
-             Consider this narrative arc when analyzing. \
-             The visual content is primary, but use context to resolve ambiguous panels.\n\n",
-            parts.join("\n")
-        )
-    }
 }
 
 /// A running llama-server instance.
@@ -186,20 +109,14 @@ fn derive_runtime_intent(options: &LlamaServerStartOptions) -> LlamaRuntimeInten
     }
 }
 
-fn default_context_size(intent: LlamaRuntimeIntent, model_bytes: Option<u64>) -> u32 {
+fn default_context_size(intent: LlamaRuntimeIntent, _model_bytes: Option<u64>) -> u32 {
     if let Some(value) = parse_env_u32("KEYTOMUSIC_LLAMA_CONTEXT_SIZE") {
         return value;
     }
 
     match intent {
-        LlamaRuntimeIntent::AppDefault => {
-            if model_bytes.unwrap_or_default() > 3_500_000_000 {
-                12_288
-            } else {
-                8_192
-            }
-        }
-        LlamaRuntimeIntent::BenchmarkPrimary => 12_288,
+        LlamaRuntimeIntent::AppDefault => 8_192,
+        LlamaRuntimeIntent::BenchmarkPrimary => 8_192,
         LlamaRuntimeIntent::ResearchLarge => 32_768,
     }
 }
@@ -258,20 +175,22 @@ fn choose_gpu_layers(model_path: &str, explicit_layers: Option<u32>) -> Result<u
         }
 
         let layers = match total_vram {
-            v if v >= 12_288 => 99,
-            v if v >= 10_240 => 80,
-            v if v >= 8_192 => 64,
-            v if v >= 6_144 => 48,
-            _ => 32,
+            v if v >= 20_480 => 99,
+            v if v >= 16_384 => 80,
+            v if v >= 12_288 => 64,
+            v if v >= 10_240 => 48,
+            v if v >= 8_192 => 32,
+            v if v >= 6_144 => 24,
+            _ => 16,
         };
         return Ok(layers);
     }
 
     let conservative = match model_bytes.unwrap_or_default() {
-        0 => 48,
-        bytes if bytes <= 3_000_000_000 => 80,
-        bytes if bytes <= 6_000_000_000 => 64,
-        _ => 48,
+        0 => 32,
+        bytes if bytes <= 3_000_000_000 => 64,
+        bytes if bytes <= 6_000_000_000 => 48,
+        _ => 32,
     };
     Ok(conservative)
 }
@@ -626,7 +545,7 @@ impl LlamaServer {
         let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
 
         let body = serde_json::json!({
-            "model": "qwen3-vl-2b",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [
                 {
                     "role": "user",
@@ -692,123 +611,6 @@ impl LlamaServer {
         result
     }
 
-    /// Analyze a manga page, returning decimal scores for all 10 moods + narrative role.
-    /// Optional `NarrativeContext` enriches the prompt with reading history for better consistency.
-    pub async fn analyze_mood_scored(
-        &self,
-        image_base64: &str,
-        context: Option<&NarrativeContext>,
-    ) -> Result<(MoodScores, NarrativeRole), String> {
-        tracing::info!(
-            "analyze_mood_scored: sending image ({} bytes b64), has_context={}",
-            image_base64.len(),
-            context.is_some(),
-        );
-
-        let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
-
-        let context_section = context.map(|c| c.to_prompt_section()).unwrap_or_default();
-
-        let prompt_text = format!(
-            "{}\
-            Analyze this manga page.\n\
-            1. Characters' expressions, postures, gestures\n\
-            2. Visual storytelling: panel layout, shading, speed lines, effects\n\
-            \n\
-            Key distinctions:\n\
-            - sadness vs emotional_climax: sorrow/regret = sadness, triumph/determination = emotional_climax\n\
-            - tension vs epic_battle: anticipation = tension, active combat = epic_battle\n\
-            - chase_action: ONLY active pursuit/escape\n\
-            \n\
-            Rate each mood (0.0-1.0). After reasoning, output EXACTLY on the last line:\n\
-            SCORES: epic_battle=X.XX tension=X.XX sadness=X.XX comedy=X.XX romance=X.XX horror=X.XX peaceful=X.XX emotional_climax=X.XX mystery=X.XX chase_action=X.XX ROLE: <role>\n\
-            \n\
-            role = continuation | escalation | de_escalation | transition | climax",
-            context_section
-        );
-
-        let body = serde_json::json!({
-            "model": "qwen3-vl-2b",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": format!("data:image/jpeg;base64,{}", image_base64)
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": prompt_text
-                        }
-                    ]
-                }
-            ],
-            "max_tokens": 8192,
-            "temperature": 0.0
-        });
-
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .map_err(|e| format!("HTTP client error: {}", e))?;
-
-        let response = client.post(&url).json(&body).send().await.map_err(|e| {
-            tracing::error!("analyze_mood_scored: request failed: {}", e);
-            format!("Failed to send to llama-server: {}", e)
-        })?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            tracing::error!("analyze_mood_scored: HTTP {}: {}", status, text);
-            return Err(format!("llama-server returned HTTP {}: {}", status, text));
-        }
-
-        let json: serde_json::Value = response.json::<serde_json::Value>().await.map_err(|e| {
-            tracing::error!("analyze_mood_scored: failed to parse JSON: {}", e);
-            format!("Failed to parse response: {}", e)
-        })?;
-
-        tracing::debug!(
-            "analyze_mood_scored: raw response: {}",
-            serde_json::to_string(&json).unwrap_or_default()
-        );
-
-        let result = parse_scored_response(&json);
-        match &result {
-            Ok((scores, role)) => tracing::info!(
-                "analyze_mood_scored: dominant={:?}, role={:?}",
-                scores.dominant(),
-                role
-            ),
-            Err(e) => tracing::warn!(
-                "analyze_mood_scored: scored parse failed ({}), will try fallback",
-                e
-            ),
-        }
-
-        // If scored parsing fails, fallback to single-label parser
-        match result {
-            Ok(r) => Ok(r),
-            Err(scored_err) => {
-                tracing::info!("analyze_mood_scored: falling back to single-label parser");
-                match parse_mood_response(&json) {
-                    Ok(mood) => {
-                        tracing::info!("analyze_mood_scored: fallback detected {:?}", mood);
-                        Ok((MoodScores::from_single(mood), NarrativeRole::Continuation))
-                    }
-                    Err(fallback_err) => Err(format!(
-                        "Scored parse: {}. Fallback parse: {}",
-                        scored_err, fallback_err
-                    )),
-                }
-            }
-        }
-    }
-
     /// Pipeline V2 — Stage 1: VLM describes the page visually (no classification).
     ///
     /// Returns a 2-3 sentence textual description of the manga page.
@@ -823,7 +625,7 @@ impl LlamaServer {
         let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
 
         let body = serde_json::json!({
-            "model": "qwen3-vl",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [
                 {
                     "role": "user",
@@ -908,7 +710,7 @@ impl LlamaServer {
         );
 
         let body = serde_json::json!({
-            "model": "qwen3-vl",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [
                 {
                     "role": "user",
@@ -1013,7 +815,7 @@ impl LlamaServer {
         );
 
         let body = serde_json::json!({
-            "model": "qwen3-vl",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [
                 {
                     "role": "user",
@@ -1088,12 +890,11 @@ impl LlamaServer {
              \n\
              {}\
              \n\
-             Categories: epic_battle, tension, sadness, comedy, romance, horror, \
-             peaceful (calm daily life), emotional_climax (narrative turning point), \
-             mystery, chase_action\n\
+             Categories: epic, tension, sadness, comedy, romance, horror, \
+             peaceful (calm daily life), mystery\n\
              \n\
-             Key: emotional_climax = a TURNING POINT or revelation, not just intense emotion. \
-             Sadness remains sadness even when very intense.\n\
+             Keep the base mood even when the scene is very intense. \
+             Intensity is handled separately from the mood label.\n\
              \n\
              For each page, output: PAGE N: mood",
             page_lines
@@ -1101,7 +902,7 @@ impl LlamaServer {
 
         let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
         let body = serde_json::json!({
-            "model": "text",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [{ "role": "user", "content": prompt }],
             "max_tokens": 8192,
             "temperature": 0.0
@@ -1223,20 +1024,20 @@ impl LlamaServer {
              Guidelines:\n\
              - High confidence (dominant score > 0.55): keep the detected mood\n\
              - Low confidence (< 0.35): use surrounding context to resolve\n\
-             - Common manga arcs: mystery/peaceful → tension → chase_action/epic_battle → emotional_climax → sadness → peaceful\n\
+             - Common manga arcs: mystery/peaceful → tension → epic → sadness → peaceful\n\
              - Same mood typically persists for 3-8 consecutive pages\n\
              - Preserve genuine transitions — don't over-smooth\n\
              \n\
              Reply with EXACTLY one line per page:\n\
              PAGE [number]: [mood_name]\n\
              \n\
-             Available moods: epic_battle, tension, sadness, comedy, romance, horror, peaceful, emotional_climax, mystery, chase_action",
+             Available moods: epic, tension, sadness, comedy, romance, horror, peaceful, mystery",
             page_lines
         );
 
         let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
         let body = serde_json::json!({
-            "model": "text",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [{ "role": "user", "content": prompt }],
             "max_tokens": 8192,
             "temperature": 0.0
@@ -1344,7 +1145,7 @@ impl LlamaServer {
              Guidelines:\n\
              - The visual analysis is usually correct — only change if narrative context clearly suggests an error\n\
              - Isolated outliers (one different mood surrounded by 3+ pages of the same mood) are likely errors\n\
-             - Common manga arcs: mystery/peaceful → tension → chase_action/epic_battle → emotional_climax → sadness → peaceful\n\
+             - Common manga arcs: mystery/peaceful → tension → epic → sadness → peaceful\n\
              - Same mood typically persists for 3-8 consecutive pages\n\
              - Genuine transitions should be preserved — don't over-smooth\n\
              - When unsure, keep the original visual analysis result\n\
@@ -1352,13 +1153,13 @@ impl LlamaServer {
              Reply with EXACTLY one line per page:\n\
              PAGE [number]: [mood_name]\n\
              \n\
-             Available moods: epic_battle, tension, sadness, comedy, romance, horror, peaceful, emotional_climax, mystery, chase_action",
+             Available moods: epic, tension, sadness, comedy, romance, horror, peaceful, mystery",
             page_lines
         );
 
         let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
         let body = serde_json::json!({
-            "model": "text",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [{ "role": "user", "content": prompt }],
             "max_tokens": 8192,
             "temperature": 0.0
@@ -1459,8 +1260,7 @@ impl LlamaServer {
         let prompt = format!(
             "You are a music director for a manga reader app. A vision model analyzed each page \
              and proposed a mood for the soundtrack. It is usually correct, but it sometimes \
-             confuses visual intensity with the type of scene (e.g. an intense sadness scene \
-             classified as emotional_climax instead of sadness).\n\
+             confuses visual intensity with the type of scene.\n\
              \n\
              For each page you have:\n\
              - The mood proposed by the vision model\n\
@@ -1468,14 +1268,13 @@ impl LlamaServer {
              \n\
              Your task: confirm the mood if correct, or correct it based on narrative context.\n\
              \n\
-             Available moods: epic_battle, tension, sadness, comedy, romance, horror, \
-             peaceful, emotional_climax, mystery, chase_action\n\
+             Available moods: epic, tension, sadness, comedy, romance, horror, \
+             peaceful, mystery\n\
              \n\
              Key distinctions:\n\
-             - emotional_climax = a narrative TURNING POINT (triumph after defeat, revelation, \
-             dramatic resolve). NOT just intense emotion.\n\
-             - Intense crying/despair = sadness, not emotional_climax\n\
-             - Intense stare-down/confrontation = tension, not epic_battle\n\
+             - Intense crying/despair stays sadness\n\
+             - Intense confrontation or unresolved threat stays tension until there is real payoff\n\
+             - Clear payoff, triumph, or release belongs to epic\n\
              - A scene can be visually intense but emotionally sad — trust the description\n\
              - When unsure, keep the proposed mood\n\
              \n\
@@ -1488,7 +1287,7 @@ impl LlamaServer {
 
         let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
         let body = serde_json::json!({
-            "model": "text",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [{ "role": "user", "content": prompt }],
             "max_tokens": 8192,
             "temperature": 0.0
@@ -1573,7 +1372,7 @@ impl LlamaServer {
         let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
 
         let body = serde_json::json!({
-            "model": "qwen3-vl",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [{
                 "role": "user",
                 "content": [
@@ -1663,7 +1462,7 @@ impl LlamaServer {
         let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
 
         let body = serde_json::json!({
-            "model": "qwen3-vl",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [{
                 "role": "user",
                 "content": [
@@ -1744,7 +1543,7 @@ impl LlamaServer {
         let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
 
         let body = serde_json::json!({
-            "model": "text",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [{
                 "role": "user",
                 "content": [
@@ -1759,12 +1558,7 @@ impl LlamaServer {
                             2. What feeling does the author want the reader to experience?\n\
                             3. Classify as ONE mood category.\n\
                             \n\
-                            Key distinctions:\n\
-                            - sadness vs emotional_climax: sorrow/regret/nostalgia = sadness, triumph/determination = emotional_climax\n\
-                            - tension vs epic_battle: anxious anticipation = tension, active combat = epic_battle\n\
-                            - chase_action: ONLY for active pursuit/escape, not flashbacks with movement\n\
-                            \n\
-                            Categories: epic_battle, tension, sadness, comedy, romance, horror, peaceful (calm daily life), emotional_climax, mystery, chase_action\n\
+                            Categories: epic, tension, sadness, comedy, romance, horror, peaceful (calm daily life), mystery\n\
                             \n\
                             Then extract these features:\n\
                             EMOTION: (joy, sadness, anger, fear, determination, shock, nostalgia, neutral)\n\
@@ -1885,8 +1679,7 @@ impl LlamaServer {
              - Flashback/dream/thought pages: the MOOD comes from the emotional ARC, \
              not the literal visual content. A dream of victory within a sadness \
              arc = sadness, not triumph.\n\
-             - emotional_climax is RARE — it's a narrative turning point, not just \
-             intense emotion. Sustained intense emotion = the base emotion.\n\
+             - High intensity should reinforce the base mood, not create a separate category.\n\
              - Pages in the same scene usually share a mood.\n\
              - Consider the narrative flow across the full sequence.\n\
              \n\
@@ -1896,7 +1689,7 @@ impl LlamaServer {
 
         let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
         let body = serde_json::json!({
-            "model": "text",
+            "model": ACTIVE_MOOD_MODEL_NAME,
             "messages": [{ "role": "user", "content": prompt }],
             "max_tokens": 8192,
             "temperature": 0.0
@@ -1999,6 +1792,7 @@ impl Drop for LlamaServer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn research_runtime_defaults_to_parallel_four() {
@@ -2043,6 +1837,38 @@ mod tests {
             derive_runtime_intent(&options),
             LlamaRuntimeIntent::BenchmarkPrimary
         );
+    }
+
+    #[test]
+    fn extract_content_supports_segment_arrays() {
+        let json = json!({
+            "choices": [{
+                "message": {
+                    "content": [
+                        { "type": "text", "text": "epic 2" }
+                    ]
+                }
+            }]
+        });
+
+        assert_eq!(extract_content(&json).as_deref(), Some("epic 2"));
+    }
+
+    #[test]
+    fn parse_mood_intensity_response_supports_segment_arrays() {
+        let json = json!({
+            "choices": [{
+                "message": {
+                    "content": [
+                        { "type": "text", "text": "tension 3" }
+                    ]
+                }
+            }]
+        });
+
+        let parsed = parse_mood_intensity_response(&json).expect("segment array should parse");
+        assert_eq!(parsed.mood, BaseMood::Tension);
+        assert_eq!(parsed.intensity, MoodIntensity::High);
     }
 }
 
@@ -2092,63 +1918,45 @@ pub fn prepare_image(image_data: &[u8]) -> Result<String, String> {
 
 /// Extract raw content text from a llama-server chat completion response.
 pub(crate) fn extract_content(json: &serde_json::Value) -> Option<String> {
-    let content = json
-        .pointer("/choices/0/message/content")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
+    fn extract_text(value: &serde_json::Value) -> Option<String> {
+        match value {
+            serde_json::Value::String(text) => {
+                let trimmed = text.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_string())
+            }
+            serde_json::Value::Array(parts) => {
+                let joined = parts
+                    .iter()
+                    .filter_map(|part| match part {
+                        serde_json::Value::String(text) => Some(text.trim().to_string()),
+                        serde_json::Value::Object(map) => map
+                            .get("text")
+                            .and_then(|value| value.as_str())
+                            .map(|text| text.trim().to_string()),
+                        _ => None,
+                    })
+                    .filter(|text| !text.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                (!joined.is_empty()).then_some(joined)
+            }
+            _ => None,
+        }
+    }
 
-    if content.is_some() {
-        return content;
+    if let Some(content) = json
+        .pointer("/choices/0/message/content")
+        .and_then(extract_text)
+    {
+        return Some(content);
     }
 
     json.pointer("/choices/0/message/reasoning_content")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
+        .and_then(extract_text)
 }
 
 /// Parse the mood from the LLM response.
 /// Strategy: exact match on cleaned text → last mood keyword found (= conclusion, not reasoning).
-pub(crate) fn parse_mood_response(json: &serde_json::Value) -> Result<MoodCategory, String> {
-    let content = extract_content(json).ok_or_else(|| "No content in response".to_string())?;
-
-    let text = content.trim().to_lowercase();
-    // Remove any thinking tags if present
-    let cleaned = if let Some(pos) = text.find("</think>") {
-        text[pos + 8..].trim()
-    } else {
-        &text
-    };
-
-    // 1. Try exact match (model outputs just the mood name)
-    if let Some(mood) = MoodCategory::from_str_opt(cleaned) {
-        return Ok(mood);
-    }
-
-    // 2. Find the LAST mood keyword in post-think text (the conclusion, not reasoning)
-    //    Models often mention multiple moods while reasoning, the last one is the answer.
-    let mut best: Option<(MoodCategory, usize)> = None;
-    for &mood in MoodCategory::ALL.iter() {
-        if let Some(pos) = cleaned.rfind(mood.as_str()) {
-            if best.is_none() || pos > best.unwrap().1 {
-                best = Some((mood, pos));
-            }
-        }
-    }
-
-    if let Some((mood, _)) = best {
-        return Ok(mood);
-    }
-
-    Err(format!(
-        "No mood found in response: '{}'",
-        &cleaned[..cleaned.len().min(80)]
-    ))
-}
-
 /// Parse dimensional mood response: "mood intensity" (e.g. "sadness 3").
 /// Strategy: find the LAST occurrence of "mood intensity" pattern in the post-think text.
 /// Fallback: if only mood found without intensity → Medium (2).
@@ -2244,74 +2052,6 @@ pub(crate) fn parse_mood_intensity_response(json: &serde_json::Value) -> Result<
         "No mood found in response: '{}'",
         &cleaned[..cleaned.len().min(80)]
     ))
-}
-
-/// Parse the scored response format: "SCORES: mood=value ... ROLE: role"
-pub(crate) fn parse_scored_response(
-    json: &serde_json::Value,
-) -> Result<(MoodScores, NarrativeRole), String> {
-    let content = extract_content(json).ok_or_else(|| "No content in response".to_string())?;
-
-    // Remove thinking tags if present
-    let text = if let Some(pos) = content.find("</think>") {
-        &content[pos + 8..]
-    } else {
-        &content
-    };
-
-    // Find SCORES: line (case-insensitive)
-    let text_lower = text.to_lowercase();
-    let scores_pos = text_lower
-        .find("scores:")
-        .ok_or_else(|| "SCORES: not found in response".to_string())?;
-
-    let scores_section = &text[scores_pos..];
-
-    // Parse mood=value pairs with regex
-    let re = regex::Regex::new(r"(\w+)\s*=\s*([01]?\.\d+|\d+(?:\.\d+)?)")
-        .map_err(|e| format!("Regex error: {}", e))?;
-
-    let mut scores = MoodScores::new();
-    let mut found_any = false;
-
-    for cap in re.captures_iter(scores_section) {
-        let name = cap.get(1).unwrap().as_str();
-        let value: f32 = cap.get(2).unwrap().as_str().parse().unwrap_or(0.0);
-        let value = value.clamp(0.0, 1.0);
-
-        if let Some(mood) = MoodCategory::from_str_opt(name) {
-            scores.set(mood, value);
-            found_any = true;
-        }
-    }
-
-    if !found_any {
-        return Err("No valid mood scores parsed".to_string());
-    }
-
-    // Normalize scores to sum to 1.0
-    let sum: f32 = scores.scores.iter().sum();
-    if sum > 0.0 {
-        for s in scores.scores.iter_mut() {
-            *s /= sum;
-        }
-    }
-
-    // Parse ROLE: section
-    let role = if let Some(role_pos) = text_lower.find("role:") {
-        let role_text = text[role_pos + 5..].trim();
-        // Take first word
-        let role_word = role_text
-            .split_whitespace()
-            .next()
-            .unwrap_or("continuation")
-            .trim_end_matches(|c: char| !c.is_alphanumeric() && c != '_');
-        NarrativeRole::from_str_opt(role_word).unwrap_or(NarrativeRole::Continuation)
-    } else {
-        NarrativeRole::Continuation
-    };
-
-    Ok((scores, role))
 }
 
 /// Parse the structured extraction response from the VLM.

@@ -1,45 +1,34 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 
+use super::cache::CachedMoodSource;
 use super::cache::MoodCache;
-use super::director::{MoodDirector, MoodScores, NarrativeRole, PageAnalysis};
-use super::inference::{self, HybridResult, LlamaServer, NarrativeContext, PageFeatures};
+use super::chapter_pipeline::{
+    analyze_visible_window, execute_action, ActionPage, ChapterMoodPipeline, PipelineActivity,
+    PublishedPageUpdate,
+};
+use super::director::MoodScores;
+use super::inference::{self, LlamaServer, PageFeatures};
 use crate::types::MoodCategory;
-
-/// Buffer for incremental hybrid extraction results.
-/// Accumulates HybridResults as pages are scrolled, stores fused moods.
-pub struct DescriptionBuffer {
-    pub pages: std::collections::BTreeMap<u32, HybridResult>,
-    pub last_classify_at: u32,
-    pub moods: std::collections::BTreeMap<u32, String>,
-    pub fused_moods: std::collections::BTreeMap<u32, MoodCategory>,
-}
-
-impl DescriptionBuffer {
-    pub fn new() -> Self {
-        Self {
-            pages: std::collections::BTreeMap::new(),
-            last_classify_at: 0,
-            moods: std::collections::BTreeMap::new(),
-            fused_moods: std::collections::BTreeMap::new(),
-        }
-    }
-
-    pub fn clear(&mut self) {
-        self.pages.clear();
-        self.last_classify_at = 0;
-        self.moods.clear();
-        self.fused_moods.clear();
-    }
-}
 
 /// State shared with axum handlers.
 pub struct MoodApiState {
     pub llama_server: Arc<Mutex<Option<LlamaServer>>>,
     pub app_handle: tauri::AppHandle,
     pub mood_cache: Arc<std::sync::Mutex<MoodCache>>,
-    pub mood_director: Arc<std::sync::Mutex<MoodDirector>>,
-    pub description_buffer: std::sync::Mutex<DescriptionBuffer>,
+    pub chapter_pipeline: Arc<Mutex<ChapterMoodPipeline>>,
+    pub live_requests: Arc<AtomicUsize>,
+    pub active_live_cancel: Arc<Mutex<Option<LiveCancelHandle>>>,
+    pub live_cancel_seq: Arc<AtomicUsize>,
+}
+
+#[derive(Clone)]
+pub struct LiveCancelHandle {
+    pub id: usize,
+    pub request_id: usize,
+    pub token: CancellationToken,
 }
 
 /// Start the HTTP API server for external tools.
@@ -48,7 +37,6 @@ pub async fn start_api_server(
     llama_server: Arc<Mutex<Option<LlamaServer>>>,
     app_handle: tauri::AppHandle,
     mood_cache: Arc<std::sync::Mutex<MoodCache>>,
-    mood_director: Arc<std::sync::Mutex<MoodDirector>>,
 ) -> Result<(), String> {
     use axum::routing::{get, post};
     use axum::Router;
@@ -57,15 +45,17 @@ pub async fn start_api_server(
         llama_server,
         app_handle,
         mood_cache,
-        mood_director,
-        description_buffer: std::sync::Mutex::new(DescriptionBuffer::new()),
+        chapter_pipeline: Arc::new(Mutex::new(ChapterMoodPipeline::new())),
+        live_requests: Arc::new(AtomicUsize::new(0)),
+        active_live_cancel: Arc::new(Mutex::new(None)),
+        live_cancel_seq: Arc::new(AtomicUsize::new(0)),
     });
 
     let app = Router::new()
-        .route("/api/analyze", post(analyze_handler))
-        .route("/api/extract", post(extract_handler))
-        .route("/api/classify-batch", post(classify_batch_handler))
-        .route("/api/analyze-v2", post(analyze_v2_handler))
+        .route("/api/analyze-window", post(analyze_window_handler))
+        .route("/api/chapter/page", post(chapter_page_handler))
+        .route("/api/chapter/focus", post(chapter_focus_handler))
+        .route("/api/live/cancel", post(cancel_live_handler))
         .route("/api/trigger", post(trigger_handler))
         .route("/api/lookup", post(lookup_handler))
         .route("/api/cache/status", get(cache_status_handler))
@@ -91,17 +81,6 @@ pub async fn start_api_server(
     Ok(())
 }
 
-#[derive(serde::Deserialize)]
-struct AnalyzeRequest {
-    image: String, // base64-encoded image
-    #[serde(default)]
-    precalculate: bool, // true = cache only, no sound trigger
-    #[serde(default)]
-    chapter: Option<String>, // URL pathname of the chapter
-    #[serde(default)]
-    page: Option<u32>, // page index within the chapter
-}
-
 #[derive(serde::Serialize)]
 struct AnalyzeResponse {
     mood: String,
@@ -118,6 +97,21 @@ struct AnalyzeResponse {
     narrative_role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     dwell_count: Option<u32>,
+}
+
+#[derive(serde::Deserialize)]
+struct AnalyzeWindowMemberRequest {
+    page: u32,
+    image: String,
+}
+
+#[derive(serde::Deserialize)]
+struct AnalyzeWindowRequest {
+    request_id: usize,
+    chapter: String,
+    page: u32,
+    total_pages: u32,
+    members: Vec<AnalyzeWindowMemberRequest>,
 }
 
 #[derive(serde::Serialize)]
@@ -155,246 +149,383 @@ fn err_response(
     )
 }
 
-async fn analyze_handler(
-    axum::extract::State(state): axum::extract::State<Arc<MoodApiState>>,
-    axum::Json(payload): axum::Json<AnalyzeRequest>,
-) -> Result<axum::Json<AnalyzeResponse>, (axum::http::StatusCode, axum::Json<ErrorResponse>)> {
-    use base64::Engine;
-    use tauri::Emitter;
+fn publish_pipeline_updates(
+    cache: &std::sync::Mutex<MoodCache>,
+    updates: Vec<PublishedPageUpdate>,
+) {
+    if updates.is_empty() {
+        return;
+    }
+    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    for update in updates {
+        guard.insert(
+            &update.chapter,
+            update.page,
+            update.mood,
+            update.intensity,
+            update.scores,
+            update.narrative_role,
+            update.source,
+            update.finalized,
+        );
+    }
+}
 
-    tracing::info!(
-        "POST /api/analyze — received image ({} bytes base64), precalculate={}, chapter={:?}, page={:?}",
-        payload.image.len(),
-        payload.precalculate,
-        payload.chapter,
-        payload.page,
-    );
+async fn spawn_pipeline_worker_if_needed(state: Arc<MoodApiState>) {
+    let should_spawn = {
+        let mut pipeline = state.chapter_pipeline.lock().await;
+        pipeline.start_processing_if_idle()
+    };
+    if !should_spawn {
+        return;
+    }
 
-    // ─── Check cache first ──────────────────────────────────────────────────
+    tokio::spawn(async move {
+        loop {
+            while state.live_requests.load(Ordering::Relaxed) > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
 
-    let cached_result: Option<(MoodCategory, MoodScores, NarrativeRole)> =
-        if let (Some(chapter), Some(page)) = (&payload.chapter, payload.page) {
-            let cache = state.mood_cache.lock().unwrap_or_else(|e| e.into_inner());
-            cache.get(chapter, page).map(|entry| {
-                tracing::info!(
-                    "POST /api/analyze — cache hit for ({}, {}): {:?}",
-                    chapter,
-                    page,
-                    entry.mood
-                );
-                (entry.mood, entry.scores.clone(), entry.narrative_role)
-            })
-        } else {
-            None
-        };
+            let request = {
+                let mut pipeline = state.chapter_pipeline.lock().await;
+                pipeline.next_action()
+            };
 
-    let (mood, scores, narrative_role, was_cached) = if let Some((m, s, r)) = cached_result {
-        (m, s, r, true)
-    } else {
-        // ─── Run inference ──────────────────────────────────────────────────
+            let Some(request) = request else {
+                let mut pipeline = state.chapter_pipeline.lock().await;
+                pipeline.finish_processing();
+                break;
+            };
 
-        // Decode + resize image
-        let image_bytes = base64::engine::general_purpose::STANDARD
-            .decode(&payload.image)
-            .map_err(|e| {
-                tracing::error!("POST /api/analyze — invalid base64: {}", e);
-                err_response(
-                    axum::http::StatusCode::BAD_REQUEST,
-                    format!("Invalid base64 image: {}", e),
-                )
-            })?;
+            let result = {
+                let mut guard = state.llama_server.lock().await;
+                let Some(server) = guard.as_mut() else {
+                    let mut pipeline = state.chapter_pipeline.lock().await;
+                    pipeline.commit_failure(&request);
+                    pipeline.finish_processing();
+                    break;
+                };
+                execute_action(server, &request).await
+            };
 
-        let resized_b64 = inference::prepare_image(&image_bytes).map_err(|e| {
-            tracing::error!("POST /api/analyze — image processing failed: {}", e);
-            err_response(
-                axum::http::StatusCode::BAD_REQUEST,
-                format!("Image processing failed: {}", e),
-            )
-        })?;
-
-        tracing::info!("POST /api/analyze — sending to llama-server...");
-
-        // Build narrative context from director + cache
-        let narrative_context = {
-            let director = state
-                .mood_director
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            let previous_moods: Vec<String> = director
-                .window_moods()
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-            let current_soundtrack = director.committed_mood().map(|m| m.as_str().to_string());
-            let soundtrack_dwell = director.dwell_count();
-            drop(director);
-
-            // Look-ahead from cache
-            let mut next_moods = Vec::new();
-            if let (Some(chapter), Some(page)) = (&payload.chapter, payload.page) {
-                let cache = state.mood_cache.lock().unwrap_or_else(|e| e.into_inner());
-                for offset in 1..=3u32 {
-                    if let Some(entry) = cache.get(chapter, page + offset) {
-                        next_moods.push(entry.mood.as_str().to_string());
-                    } else {
-                        break;
-                    }
+            match result {
+                Ok(result) => {
+                    let updates = {
+                        let mut pipeline = state.chapter_pipeline.lock().await;
+                        pipeline.commit_success(&request, result)
+                    };
+                    publish_pipeline_updates(&state.mood_cache, updates);
+                }
+                Err(err) => {
+                    tracing::warn!("Chapter pipeline step failed: {}", err);
+                    let mut pipeline = state.chapter_pipeline.lock().await;
+                    pipeline.commit_failure(&request);
+                    pipeline.record_error(err.clone());
+                    pipeline.finish_processing();
+                    break;
                 }
             }
 
-            NarrativeContext {
-                previous_moods,
-                current_soundtrack,
-                soundtrack_dwell,
-                next_moods,
-            }
-        };
+            tokio::task::yield_now().await;
+        }
+    });
+}
 
-        let mut guard = state.llama_server.lock().await;
-        let server = guard.as_mut().ok_or_else(|| {
-            tracing::error!("POST /api/analyze — llama-server not running");
+async fn register_live_cancel(state: &Arc<MoodApiState>, request_id: usize) -> LiveCancelHandle {
+    let handle = LiveCancelHandle {
+        id: state.live_cancel_seq.fetch_add(1, Ordering::Relaxed) + 1,
+        request_id,
+        token: CancellationToken::new(),
+    };
+
+    let previous = {
+        let mut guard = state.active_live_cancel.lock().await;
+        guard.replace(handle.clone())
+    };
+    if let Some(previous) = previous {
+        previous.token.cancel();
+    }
+
+    handle
+}
+
+async fn clear_live_cancel_if_current(state: &Arc<MoodApiState>, id: usize) {
+    let mut guard = state.active_live_cancel.lock().await;
+    if guard.as_ref().map(|handle| handle.id) == Some(id) {
+        *guard = None;
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct CancelLiveRequest {
+    request_id: usize,
+}
+
+struct LiveRequestGuard {
+    counter: Arc<AtomicUsize>,
+}
+
+impl LiveRequestGuard {
+    fn new(counter: Arc<AtomicUsize>) -> Self {
+        counter.fetch_add(1, Ordering::Relaxed);
+        Self { counter }
+    }
+}
+
+impl Drop for LiveRequestGuard {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+#[derive(serde::Serialize)]
+struct CancelLiveResponse {
+    status: String,
+    cancelled: bool,
+}
+
+async fn cancel_live_handler(
+    axum::extract::State(state): axum::extract::State<Arc<MoodApiState>>,
+    axum::Json(payload): axum::Json<CancelLiveRequest>,
+) -> axum::Json<CancelLiveResponse> {
+    let cancelled = {
+        let guard = state.active_live_cancel.lock().await;
+        if let Some(handle) = guard.as_ref() {
+            if handle.request_id == payload.request_id {
+                handle.token.cancel();
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    };
+
+    axum::Json(CancelLiveResponse {
+        status: "ok".to_string(),
+        cancelled,
+    })
+}
+
+#[derive(serde::Deserialize)]
+struct ChapterPageRequest {
+    chapter: String,
+    page: u32,
+    image: String,
+    #[serde(default)]
+    total_pages: Option<u32>,
+}
+
+#[derive(serde::Serialize)]
+struct ChapterPageResponse {
+    status: String,
+    queued: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mood: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct ChapterFocusRequest {
+    chapter: String,
+    page: u32,
+    #[serde(default)]
+    direction: i8,
+    #[serde(default)]
+    total_pages: Option<u32>,
+}
+
+#[derive(serde::Serialize)]
+struct ChapterFocusResponse {
+    status: String,
+}
+
+async fn chapter_page_handler(
+    axum::extract::State(state): axum::extract::State<Arc<MoodApiState>>,
+    axum::Json(payload): axum::Json<ChapterPageRequest>,
+) -> Result<axum::Json<ChapterPageResponse>, (axum::http::StatusCode, axum::Json<ErrorResponse>)> {
+    use base64::Engine;
+
+    tracing::debug!(
+        "POST /api/chapter/page — chapter={}, page={}, total_pages={:?}",
+        payload.chapter,
+        payload.page,
+        payload.total_pages
+    );
+
+    let image_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&payload.image)
+        .map_err(|e| {
             err_response(
-                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                "llama-server not running".to_string(),
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("Invalid base64 image: {}", e),
             )
         })?;
 
-        let (inferred_scores, role) = server
-            .analyze_mood_scored(&resized_b64, Some(&narrative_context))
-            .await
-            .map_err(|e| {
-                tracing::error!("POST /api/analyze — inference failed: {}", e);
-                err_response(
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Analysis failed: {}", e),
-                )
-            })?;
-
-        // Drop the llama_server lock before continuing
-        drop(guard);
-
-        let dominant = inferred_scores.dominant();
-        tracing::info!(
-            "POST /api/analyze — scored result: dominant={:?}, role={:?}",
-            dominant,
-            role
+    {
+        let mut pipeline = state.chapter_pipeline.lock().await;
+        pipeline.register_page(
+            &payload.chapter,
+            payload.page,
+            payload.total_pages,
+            image_bytes,
         );
+    }
 
-        // Store in cache if chapter + page provided
-        if let (Some(chapter), Some(page)) = (&payload.chapter, payload.page) {
-            let mut cache = state.mood_cache.lock().unwrap_or_else(|e| e.into_inner());
-            cache.insert(
-                chapter,
-                page,
-                dominant,
-                crate::types::MoodIntensity::Medium,
-                inferred_scores.clone(),
-                role,
-            );
-            tracing::debug!(
-                "POST /api/analyze — cached for ({}, {}), cache size: {}",
-                chapter,
-                page,
-                cache.len()
-            );
-        }
+    spawn_pipeline_worker_if_needed(state.clone()).await;
 
-        (dominant, inferred_scores, role, false)
+    let mood = {
+        let cache = state.mood_cache.lock().unwrap_or_else(|e| e.into_inner());
+        cache
+            .get(&payload.chapter, payload.page)
+            .map(|entry| entry.mood.as_str().to_string())
     };
 
-    let mood_str = mood.as_str().to_string();
+    Ok(axum::Json(ChapterPageResponse {
+        status: "queued".to_string(),
+        queued: true,
+        mood,
+    }))
+}
 
-    // ─── Precalculate: cache only, no director, no events ────────────────────
-    if payload.precalculate {
-        tracing::info!(
-            "POST /api/analyze — precalculate done: {} (cached={})",
-            mood_str,
-            was_cached
+async fn chapter_focus_handler(
+    axum::extract::State(state): axum::extract::State<Arc<MoodApiState>>,
+    axum::Json(payload): axum::Json<ChapterFocusRequest>,
+) -> Result<axum::Json<ChapterFocusResponse>, (axum::http::StatusCode, axum::Json<ErrorResponse>)> {
+    tracing::debug!(
+        "POST /api/chapter/focus — chapter={}, page={}, direction={}, total_pages={:?}",
+        payload.chapter,
+        payload.page,
+        payload.direction,
+        payload.total_pages
+    );
+
+    {
+        let mut pipeline = state.chapter_pipeline.lock().await;
+        pipeline.update_focus(
+            &payload.chapter,
+            payload.page,
+            payload.direction,
+            payload.total_pages,
         );
+    }
+
+    spawn_pipeline_worker_if_needed(state.clone()).await;
+
+    Ok(axum::Json(ChapterFocusResponse {
+        status: "queued".to_string(),
+    }))
+}
+
+async fn analyze_window_handler(
+    axum::extract::State(state): axum::extract::State<Arc<MoodApiState>>,
+    axum::Json(payload): axum::Json<AnalyzeWindowRequest>,
+) -> Result<axum::Json<AnalyzeResponse>, (axum::http::StatusCode, axum::Json<ErrorResponse>)> {
+    use base64::Engine;
+
+    tracing::info!(
+        "POST /api/analyze-window — chapter={}, page={}, members={}",
+        payload.chapter,
+        payload.page,
+        payload.members.len()
+    );
+
+    if payload.members.is_empty() {
+        return Err(err_response(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Visible window members are required".to_string(),
+        ));
+    }
+
+    if let Some(entry) = {
+        let cache = state.mood_cache.lock().unwrap_or_else(|e| e.into_inner());
+        cache.get(&payload.chapter, payload.page).cloned()
+    } {
         return Ok(axum::Json(AnalyzeResponse {
-            mood: mood_str,
+            mood: entry.mood.as_str().to_string(),
             status: "ok".to_string(),
-            cached: Some(was_cached),
-            committed_mood: None,
-            mood_changed: None,
-            scores: Some(scores_to_map(&scores)),
-            narrative_role: Some(narrative_role.as_str().to_string()),
+            cached: Some(true),
+            committed_mood: Some(entry.mood.as_str().to_string()),
+            mood_changed: Some(true),
+            scores: Some(scores_to_map(&entry.scores)),
+            narrative_role: Some(entry.narrative_role.as_str().to_string()),
             dwell_count: None,
         }));
     }
 
-    // ─── Feed into MoodDirector ─────────────────────────────────────────────
+    let mut members = payload
+        .members
+        .iter()
+        .map(|member| {
+            let raw_bytes = base64::engine::general_purpose::STANDARD
+                .decode(&member.image)
+                .map_err(|e| format!("Invalid base64 for page {}: {}", member.page, e))?;
+            Ok(ActionPage {
+                page: member.page,
+                raw_bytes,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()
+        .map_err(|e| err_response(axum::http::StatusCode::BAD_REQUEST, e))?;
 
-    let analysis = PageAnalysis {
-        scores: scores.clone(),
-        intensity: crate::types::MoodIntensity::Medium, // TODO: use real intensity from VLM
-        narrative_role,
-        dominant_mood: mood,
+    members.sort_by_key(|member| member.page);
+
+    let _live_request = LiveRequestGuard::new(state.live_requests.clone());
+    let live_cancel = register_live_cancel(&state, payload.request_id).await;
+    let prediction = tokio::select! {
+        _ = live_cancel.token.cancelled() => Err(err_response(
+            axum::http::StatusCode::CONFLICT,
+            "live request cancelled".to_string(),
+        )),
+        prediction = async {
+            let mut guard = state.llama_server.lock().await;
+            let server = guard.as_mut().ok_or_else(|| {
+                err_response(
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    "llama-server not running".to_string(),
+                )
+            })?;
+            analyze_visible_window(
+                server,
+                payload.page,
+                payload.total_pages.max(payload.page + 1),
+                members,
+            )
+            .await
+            .map_err(|e| err_response(axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))
+        } => prediction,
     };
+    clear_live_cancel_if_current(&state, live_cancel.id).await;
+    let prediction = prediction?;
 
-    let decision = {
-        let mut director = state
-            .mood_director
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        director.process(analysis, payload.chapter.as_deref())
-    };
-
-    // ─── Emit events ────────────────────────────────────────────────────────
-
-    // Always emit mood_detected (raw mood for UI display)
-    let _ = state.app_handle.emit(
-        "mood_detected",
-        serde_json::json!({
-            "mood": mood_str,
-            "source": "api",
-            "scores": scores_to_map(&decision.raw_scores),
-            "narrative_role": narrative_role.as_str(),
-        }),
-    );
-
-    // Only emit mood_committed if mood actually changed
-    if decision.mood_changed {
-        let committed_str = decision.committed_mood.as_str().to_string();
-        tracing::info!(
-            "POST /api/analyze — mood_committed: {} (dwell={})",
-            committed_str,
-            decision.dwell_count
-        );
-        let _ = state.app_handle.emit(
-            "mood_committed",
-            serde_json::json!({
-                "mood": committed_str,
-                "source": "api",
-                "previous_mood": decision.raw_mood.as_str(),
-                "dwell_count": decision.dwell_count,
-            }),
+    {
+        let mut cache = state.mood_cache.lock().unwrap_or_else(|e| e.into_inner());
+        cache.insert(
+            &payload.chapter,
+            payload.page,
+            prediction.mood,
+            prediction.intensity,
+            prediction.scores.clone(),
+            prediction.narrative_role,
+            CachedMoodSource::VisibleWindowAnalyze,
+            true,
         );
     }
 
     Ok(axum::Json(AnalyzeResponse {
-        mood: mood_str,
+        mood: prediction.mood.as_str().to_string(),
         status: "ok".to_string(),
-        cached: Some(was_cached),
-        committed_mood: Some(decision.committed_mood.as_str().to_string()),
-        mood_changed: Some(decision.mood_changed),
-        scores: Some(scores_to_map(&decision.raw_scores)),
-        narrative_role: Some(narrative_role.as_str().to_string()),
-        dwell_count: Some(decision.dwell_count),
+        cached: Some(false),
+        committed_mood: Some(prediction.mood.as_str().to_string()),
+        mood_changed: Some(true),
+        scores: Some(scores_to_map(&prediction.scores)),
+        narrative_role: Some(prediction.narrative_role.as_str().to_string()),
+        dwell_count: None,
     }))
 }
 
 const VALID_MOODS: &[&str] = &[
-    "epic_battle",
-    "tension",
-    "sadness",
-    "comedy",
-    "romance",
-    "horror",
-    "peaceful",
-    "emotional_climax",
-    "mystery",
-    "chase_action",
+    "epic", "tension", "sadness", "comedy", "romance", "horror", "peaceful", "mystery",
 ];
 
 #[derive(serde::Deserialize)]
@@ -455,22 +586,26 @@ struct LookupResponse {
     hit: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     mood: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    finalized: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
 }
 
-/// Look up a pre-calculated mood from the cache.
-/// On cache hit, feeds through the director and emits appropriate events.
+/// Look up a cached mood from the local chapter/page cache.
+/// This endpoint is side-effect free; the caller decides whether to trigger playback.
 async fn lookup_handler(
     axum::extract::State(state): axum::extract::State<Arc<MoodApiState>>,
     axum::Json(payload): axum::Json<LookupRequest>,
 ) -> axum::Json<LookupResponse> {
-    use tauri::Emitter;
-
     let cache = state.mood_cache.lock().unwrap_or_else(|e| e.into_inner());
     let cached = cache.get(&payload.chapter, payload.page).cloned();
     drop(cache);
 
     if let Some(entry) = cached {
         let mood_str = entry.mood.as_str().to_string();
+        let source = entry.source;
+        let finalized = entry.finalized;
 
         tracing::info!(
             "POST /api/lookup — cache hit ({}, {}): {}",
@@ -479,40 +614,14 @@ async fn lookup_handler(
             mood_str
         );
 
-        // Feed through director
-        let analysis = PageAnalysis {
-            scores: entry.scores,
-            intensity: entry.intensity,
-            narrative_role: entry.narrative_role,
-            dominant_mood: entry.mood,
-        };
-
-        let decision = {
-            let mut director = state
-                .mood_director
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            director.process(analysis, Some(&payload.chapter))
-        };
-
-        // Always emit raw mood
-        let _ = state.app_handle.emit(
-            "mood_detected",
-            serde_json::json!({ "mood": mood_str, "source": "api" }),
-        );
-
-        // Only emit committed if changed
-        if decision.mood_changed {
-            let committed_str = decision.committed_mood.as_str().to_string();
-            let _ = state.app_handle.emit(
-                "mood_committed",
-                serde_json::json!({ "mood": committed_str, "source": "api" }),
-            );
-        }
-
         axum::Json(LookupResponse {
             hit: true,
             mood: Some(mood_str),
+            finalized: Some(finalized),
+            source: Some(match source {
+                CachedMoodSource::VisibleWindowAnalyze => "visible_window".to_string(),
+                CachedMoodSource::ChapterPipeline => "chapter_pipeline".to_string(),
+            }),
         })
     } else {
         tracing::debug!(
@@ -524,6 +633,8 @@ async fn lookup_handler(
         axum::Json(LookupResponse {
             hit: false,
             mood: None,
+            finalized: None,
+            source: None,
         })
     }
 }
@@ -534,15 +645,53 @@ async fn lookup_handler(
 struct CacheStatusResponse {
     entries: usize,
     chapter: Option<String>,
+    pages: Vec<u32>,
+    pipeline_pages: Vec<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    focus_page: Option<u32>,
+    pipeline_processing: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_page: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_started_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_error: Option<String>,
 }
 
 async fn cache_status_handler(
     axum::extract::State(state): axum::extract::State<Arc<MoodApiState>>,
 ) -> axum::Json<CacheStatusResponse> {
-    let cache = state.mood_cache.lock().unwrap_or_else(|e| e.into_inner());
-    let entries = cache.len();
-    let chapter = cache.current_chapter().map(|s| s.to_string());
-    drop(cache);
+    let (entries, chapter, pages) = {
+        let cache = state.mood_cache.lock().unwrap_or_else(|e| e.into_inner());
+        (
+            cache.len(),
+            cache.current_chapter().map(|s| s.to_string()),
+            cache.pages(),
+        )
+    };
+
+    let (pipeline_pages, focus_page, pipeline_processing, active_activity, last_error) = {
+        let pipeline = state.chapter_pipeline.lock().await;
+        (
+            pipeline.registered_pages(),
+            pipeline.focus_page(),
+            pipeline.is_processing(),
+            pipeline.active_activity(),
+            pipeline.last_error(),
+        )
+    };
+
+    let (active_phase, active_page, active_started_at) = active_activity
+        .map(|activity: PipelineActivity| {
+            (
+                Some(activity.phase.to_string()),
+                Some(activity.page),
+                Some(activity.started_at_ms),
+            )
+        })
+        .unwrap_or((None, None, None));
 
     tracing::debug!(
         "GET /api/cache/status — entries={}, chapter={:?}",
@@ -550,7 +699,18 @@ async fn cache_status_handler(
         chapter
     );
 
-    axum::Json(CacheStatusResponse { entries, chapter })
+    axum::Json(CacheStatusResponse {
+        entries,
+        chapter,
+        pages,
+        pipeline_pages,
+        focus_page,
+        pipeline_processing,
+        active_phase,
+        active_page,
+        active_started_at,
+        last_error,
+    })
 }
 
 // ─── Status & moods ──────────────────────────────────────────────────────────
@@ -560,10 +720,21 @@ async fn status_handler(
 ) -> axum::Json<StatusResponse> {
     tracing::debug!("GET /api/status");
 
-    let guard = state.llama_server.lock().await;
-    let (server_status, model_status, port) = match guard.as_ref() {
-        Some(server) => ("running".to_string(), "loaded".to_string(), server.port),
-        None => ("stopped".to_string(), "not_loaded".to_string(), 0),
+    let (server_status, model_status, port) = match state.llama_server.try_lock() {
+        Ok(mut guard) => {
+            if let Some(server) = guard.as_mut() {
+                let port = server.port;
+                if server.is_running() {
+                    ("running".to_string(), "loaded".to_string(), port)
+                } else {
+                    *guard = None;
+                    ("stopped".to_string(), "not_loaded".to_string(), 0)
+                }
+            } else {
+                ("stopped".to_string(), "not_loaded".to_string(), 0)
+            }
+        }
+        Err(_) => ("running".to_string(), "loaded".to_string(), 0),
     };
 
     tracing::debug!(
@@ -584,16 +755,7 @@ async fn moods_handler() -> axum::Json<Vec<&'static str>> {
     tracing::debug!("GET /api/moods");
 
     axum::Json(vec![
-        "epic_battle",
-        "tension",
-        "sadness",
-        "comedy",
-        "romance",
-        "horror",
-        "peaceful",
-        "emotional_climax",
-        "mystery",
-        "chase_action",
+        "epic", "tension", "sadness", "comedy", "romance", "horror", "peaceful", "mystery",
     ])
 }
 
@@ -764,234 +926,5 @@ async fn classify_batch_handler(
     Ok(axum::Json(ClassifyBatchResponse {
         status: "ok".to_string(),
         moods,
-    }))
-}
-
-#[derive(serde::Deserialize)]
-struct AnalyzeV2Request {
-    images: Vec<AnalyzeV2Image>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    categories: Option<Vec<CategoryDef>>,
-    #[serde(default)]
-    chapter: Option<String>,
-}
-
-#[derive(serde::Deserialize)]
-struct AnalyzeV2Image {
-    page: u32,
-    image: String, // base64
-}
-
-#[derive(serde::Serialize)]
-struct AnalyzeV2Response {
-    status: String,
-    moods: Vec<AnalyzeV2PageResult>,
-}
-
-#[derive(serde::Serialize)]
-struct AnalyzeV2PageResult {
-    page: u32,
-    mood: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    corrected_mood: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    committed_mood: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mood_changed: Option<bool>,
-}
-
-/// POST /api/analyze-v2 — V5 pipeline: VLM mood + VLM describe + LLM text correction.
-///
-/// Takes multiple images, runs VLM mood classification and description per page,
-/// then corrects moods via text-only LLM batch, then feeds through MoodDirector.
-async fn analyze_v2_handler(
-    axum::extract::State(state): axum::extract::State<Arc<MoodApiState>>,
-    axum::Json(payload): axum::Json<AnalyzeV2Request>,
-) -> Result<axum::Json<AnalyzeV2Response>, (axum::http::StatusCode, axum::Json<ErrorResponse>)> {
-    use base64::Engine;
-    use tauri::Emitter;
-
-    tracing::info!(
-        "POST /api/analyze-v2 — {} images, chapter={:?}",
-        payload.images.len(),
-        payload.chapter
-    );
-
-    if payload.images.is_empty() {
-        return Ok(axum::Json(AnalyzeV2Response {
-            status: "ok".to_string(),
-            moods: Vec::new(),
-        }));
-    }
-
-    // Stage 1: Per-page VLM inference (mood + description)
-    let mut page_results: Vec<(u32, MoodCategory, String)> = Vec::new(); // (page, mood, description)
-
-    {
-        let mut guard = state.llama_server.lock().await;
-        let server = guard.as_mut().ok_or_else(|| {
-            err_response(
-                axum::http::StatusCode::SERVICE_UNAVAILABLE,
-                "llama-server not running".to_string(),
-            )
-        })?;
-
-        for img in &payload.images {
-            let image_bytes = base64::engine::general_purpose::STANDARD
-                .decode(&img.image)
-                .map_err(|e| {
-                    err_response(
-                        axum::http::StatusCode::BAD_REQUEST,
-                        format!("Invalid base64 for page {}: {}", img.page, e),
-                    )
-                })?;
-
-            let resized_b64 = inference::prepare_image(&image_bytes).map_err(|e| {
-                err_response(
-                    axum::http::StatusCode::BAD_REQUEST,
-                    format!("Image processing failed for page {}: {}", img.page, e),
-                )
-            })?;
-
-            // Inference 1: dimensional mood classification
-            let mood_tag = match server.analyze_mood(&resized_b64).await {
-                Ok(m) => m,
-                Err(e) => {
-                    tracing::error!(
-                        "POST /api/analyze-v2 — page {} mood inference failed: {}",
-                        img.page,
-                        e
-                    );
-                    continue;
-                }
-            };
-            let mood = mood_tag.mood;
-
-            // Inference 2: VLM page description
-            let description = match server.describe_page(&resized_b64).await {
-                Ok(d) => d,
-                Err(e) => {
-                    tracing::error!(
-                        "POST /api/analyze-v2 — page {} description failed: {}",
-                        img.page,
-                        e
-                    );
-                    continue;
-                }
-            };
-
-            tracing::info!(
-                "POST /api/analyze-v2 — page {}: mood={:?}, desc={}...",
-                img.page,
-                mood,
-                &description[..description.len().min(80)]
-            );
-            page_results.push((img.page, mood, description));
-        }
-
-        // Stage 2: LLM text correction (batch, still holding server lock)
-        if page_results.len() >= 2 {
-            let correction_input: Vec<(u32, &str, &str)> = page_results
-                .iter()
-                .map(|(p, m, d)| (*p, m.as_str(), d.as_str()))
-                .collect();
-
-            match server.correct_moods_batch(&correction_input).await {
-                Ok(corrected) => {
-                    let corrected_map: std::collections::HashMap<u32, MoodCategory> =
-                        corrected.into_iter().collect();
-                    // Apply corrections
-                    for (page, mood, _) in page_results.iter_mut() {
-                        if let Some(&corrected_mood) = corrected_map.get(page) {
-                            if corrected_mood != *mood {
-                                tracing::info!(
-                                    "POST /api/analyze-v2 — page {} corrected: {:?} -> {:?}",
-                                    page,
-                                    mood,
-                                    corrected_mood
-                                );
-                                *mood = corrected_mood;
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "POST /api/analyze-v2 — batch correction failed, using raw moods: {}",
-                        e
-                    );
-                }
-            }
-        }
-
-        drop(guard);
-    }
-
-    if page_results.is_empty() {
-        return Err(err_response(
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            "All image analyses failed".to_string(),
-        ));
-    }
-
-    // Stage 3: Feed corrected moods through MoodDirector (in page order)
-    page_results.sort_by_key(|(p, _, _)| *p);
-
-    let mut results: Vec<AnalyzeV2PageResult> = Vec::new();
-
-    for (page_num, mood, description) in &page_results {
-        let analysis = PageAnalysis {
-            scores: MoodScores::from_single(*mood),
-            intensity: crate::types::MoodIntensity::Medium, // TODO: use real intensity
-            narrative_role: super::director::NarrativeRole::Continuation,
-            dominant_mood: *mood,
-        };
-
-        let decision = {
-            let mut director = state
-                .mood_director
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            director.process(analysis, payload.chapter.as_deref())
-        };
-
-        let mood_str = mood.as_str().to_string();
-
-        // Emit events
-        let _ = state.app_handle.emit(
-            "mood_detected",
-            serde_json::json!({ "mood": mood_str, "source": "api" }),
-        );
-
-        if decision.mood_changed {
-            let committed_str = decision.committed_mood.as_str().to_string();
-            let _ = state.app_handle.emit(
-                "mood_committed",
-                serde_json::json!({
-                    "mood": committed_str,
-                    "source": "api",
-                    "dwell_count": decision.dwell_count,
-                }),
-            );
-        }
-
-        results.push(AnalyzeV2PageResult {
-            page: *page_num,
-            mood: mood_str,
-            description: Some(description.clone()),
-            corrected_mood: None, // Already applied inline
-            committed_mood: Some(decision.committed_mood.as_str().to_string()),
-            mood_changed: Some(decision.mood_changed),
-        });
-    }
-
-    tracing::info!("POST /api/analyze-v2 — processed {} pages", results.len());
-
-    Ok(axum::Json(AnalyzeV2Response {
-        status: "ok".to_string(),
-        moods: results,
     }))
 }

@@ -1,5 +1,12 @@
 # KeyToMusic - Document Technique Complet
 
+> Statut documentaire:
+>
+> - ce document reste la specification technique large de l'application
+> - pour le sous-systeme Manga Mood actuel, la source de verite n'est plus ce fichier
+> - utiliser d'abord [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md)
+> - voir aussi [docs/DOCUMENTATION_AUDIT.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/DOCUMENTATION_AUDIT.md) pour savoir quelles docs sont canoniques, historiques ou archivees
+
 ## Table des Matières
 
 1. [Vue d'ensemble](#1-vue-densemble)

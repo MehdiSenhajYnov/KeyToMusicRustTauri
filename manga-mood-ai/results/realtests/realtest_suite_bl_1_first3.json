@@ -17,7 +17,7 @@
       "max_window_s": 0.0,
       "min_window_s": 0.0,
       "model": "Qwen3-VL-4B-Thinking",
-      "notes": "Historical BL/1 winner loaded from cache, no rerun.",
+      "notes": "Historical BL/1 baseline loaded from cache, no rerun.",
       "per_mood": {
         "epic": {
           "relaxed": 1,

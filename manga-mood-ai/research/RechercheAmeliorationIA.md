@@ -1,7 +1,7 @@
 # Recherche exhaustive — Classification de mood narratif en manga
 ## KeyToMusic : résoudre le problème de la dépendance contextuelle
 
-> **Mise a jour (mars 2026) :** cette revue de litterature reste utile pour les pistes futures, mais elle a ete ecrite avant la reproduction Linux du winner historique RealTest `BL/1` (`Qwen3-VL-4B-Thinking`, 46/70 strict, 59/70 relaxed). Consulter `RESEARCH_SYNTHESIS.md` pour l'etat benchmark courant avant de prioriser de nouvelles pistes.
+> **Mise a jour (mars 2026) :** cette revue de litterature reste utile pour les pistes futures, mais elle n'est ni la source de verite benchmark ni la spec produit. Consulter [RESEARCH_SYNTHESIS.md](./RESEARCH_SYNTHESIS.md) pour l'etat benchmark courant et [../../docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md) pour le flux actuel.
 
 ---
 

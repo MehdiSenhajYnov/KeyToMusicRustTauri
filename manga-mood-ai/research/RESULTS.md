@@ -1,6 +1,6 @@
 # Manga Mood AI — Résultats des tests
 
-> Statut (mars 2026) : ce fichier documente surtout les **benchmarks Phase 1 sur images isolées**. Le winner actuel du benchmark `realtest_benchmark` dans le repo est maintenant le **protocole historique RealTest + Qwen3-VL-4B-Thinking**, reproduit à **46/70 strict et 59/70 relaxed (84.3%)** sur `BL/1`. Pour la vue d'ensemble à jour, voir [RESEARCH_SYNTHESIS.md](./RESEARCH_SYNTHESIS.md).
+> Statut (mars 2026) : ce fichier documente surtout les **benchmarks Phase 1 sur images isolées** et ne doit pas etre lu comme spec produit actuelle. Pour la vue d'ensemble benchmark, voir [RESEARCH_SYNTHESIS.md](./RESEARCH_SYNTHESIS.md). Pour le flux actif extension/backend/runtime, voir [../../docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md).
 
 ## Images de test
 
@@ -24,7 +24,9 @@
 
 ## En compétition
 
-### Qwen3-VL 2B — Short 5k ⭐ CHAMPION
+> Les classements et libelles de cette section sont **historiques** et scopes aux benchmarks d'images isolees de cette phase. Ils ne decrivent pas la reference produit actuelle.
+
+### Qwen3-VL 2B — Short 5k ⭐ BEST HISTORICAL ISOLATED-IMAGE RESULT
 
 Modèle : `qwen3-vl:2b` (1.9 GB) | Ollama
 Prompt : `"What is the mood of this manga page? Pick ONE: [moods]. Reply with just the mood word."`
@@ -61,7 +63,7 @@ Note : 5.png classée "emotional_climax" au lieu de "tension" — acceptable, le
 
 ---
 
-### InternVL3.5 4B — SECOND, ULTRA RAPIDE
+### InternVL3.5 4B — HISTORICAL RUNNER-UP, ULTRA RAPIDE
 
 Modèle : `blaifa/InternVL3_5:4B` (~3 GB) | Ollama
 Config : `temperature: 0.1, num_predict: 300`, prompt JSON standard
@@ -185,7 +187,7 @@ Config : `temperature: 0.1, num_predict: 300`, prompt JSON standard
 
 | Modèle | Config | Score | Vitesse moy. | VRAM peak | VRAM % | GPU avg | Statut |
 |---|---|---|---|---|---|---|---|
-| **Qwen3-VL 2B** | **optimisé** ⭐ | **13/13 (100%)** | **~1.1s** | **4700 MB** | **38%** | **~70%** | **Champion optimisé** |
+| **Qwen3-VL 2B** | **optimisé** ⭐ | **13/13 (100%)** | **~1.1s** | **4700 MB** | **38%** | **~70%** | **Best historical isolated-image config** |
 | Qwen3-VL 2B | baseline (non optimisé) | 12/13 (92%) | ~1.4s | 4976 MB | 41% | 64% | Avant optis |
 | InternVL3.5 4B | standard | 9/13 (69%) | **~500ms** | 9117 MB | 74% ⚠️ | 45% | Second (rapide mais VRAM) |
 | Qwen2.5-VL 7B | full GPU | 11/13 (85%) | ~2s | — | — | — | Bon mais freeze PC |

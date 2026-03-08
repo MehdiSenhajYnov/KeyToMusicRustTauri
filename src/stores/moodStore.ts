@@ -5,6 +5,8 @@ import { useToastStore } from "./toastStore";
 
 interface MoodState {
   serverStatus: "stopped" | "starting" | "running" | "error";
+  apiStatus: "disabled" | "stopped" | "running" | "error";
+  apiPort: number;
   serverInstalled: boolean;
   modelInstalled: boolean;
   modelDownloadProgress: { downloaded: number; total: number } | null;
@@ -15,11 +17,13 @@ interface MoodState {
   isAnalyzing: boolean;
 
   checkInstallation: () => Promise<void>;
+  refreshServiceStatus: () => Promise<void>;
   installServer: () => Promise<void>;
   installModel: () => Promise<void>;
   startServer: () => Promise<void>;
   stopServer: () => Promise<void>;
   setServerStatus: (status: MoodState["serverStatus"]) => void;
+  setApiStatus: (status: MoodState["apiStatus"], port?: number) => void;
   setModelDownloadProgress: (progress: { downloaded: number; total: number } | null) => void;
   setLastDetectedMood: (mood: BaseMood | null, intensity?: MoodIntensity | null) => void;
   setCommittedMood: (mood: BaseMood | null, intensity?: MoodIntensity | null) => void;
@@ -27,6 +31,8 @@ interface MoodState {
 
 export const useMoodStore = create<MoodState>((set) => ({
   serverStatus: "stopped",
+  apiStatus: "disabled",
+  apiPort: 8765,
   serverInstalled: false,
   modelInstalled: false,
   modelDownloadProgress: null,
@@ -43,12 +49,23 @@ export const useMoodStore = create<MoodState>((set) => ({
         commands.checkMoodModelInstalled(),
       ]);
       set({ serverInstalled, modelInstalled });
-
-      // Also check server status
-      const status = await commands.getMoodServerStatus();
-      set({ serverStatus: status as MoodState["serverStatus"] });
+      await useMoodStore.getState().refreshServiceStatus();
     } catch (e) {
       console.error("Failed to check mood AI installation:", e);
+    }
+  },
+
+  refreshServiceStatus: async () => {
+    try {
+      const status = await commands.getMoodServiceStatus();
+      set({
+        serverStatus: status.runtime as MoodState["serverStatus"],
+        apiStatus: status.api as MoodState["apiStatus"],
+        apiPort: status.port,
+      });
+    } catch (e) {
+      console.error("Failed to refresh mood AI service status:", e);
+      set({ serverStatus: "stopped", apiStatus: "stopped" });
     }
   },
 
@@ -78,8 +95,8 @@ export const useMoodStore = create<MoodState>((set) => ({
     try {
       set({ serverStatus: "starting" });
       await commands.startMoodServer();
-      set({ serverStatus: "running" });
-      useToastStore.getState().addToast("Mood AI server started", "success");
+      await useMoodStore.getState().refreshServiceStatus();
+      useToastStore.getState().addToast("Mood AI runtime and extension API started", "success");
     } catch (e) {
       set({ serverStatus: "error" });
       useToastStore.getState().addToast(`Failed to start server: ${e}`, "error");
@@ -89,14 +106,15 @@ export const useMoodStore = create<MoodState>((set) => ({
   stopServer: async () => {
     try {
       await commands.stopMoodServer();
-      set({ serverStatus: "stopped" });
-      useToastStore.getState().addToast("Mood AI server stopped", "info");
+      await useMoodStore.getState().refreshServiceStatus();
+      useToastStore.getState().addToast("Mood AI runtime stopped", "info");
     } catch (e) {
       useToastStore.getState().addToast(`Failed to stop server: ${e}`, "error");
     }
   },
 
   setServerStatus: (status) => set({ serverStatus: status }),
+  setApiStatus: (status, port) => set((state) => ({ apiStatus: status, apiPort: port ?? state.apiPort })),
   setModelDownloadProgress: (progress) => set({ modelDownloadProgress: progress }),
   setLastDetectedMood: (mood, intensity) => set({ lastDetectedMood: mood, lastDetectedIntensity: intensity ?? null }),
   setCommittedMood: (mood, intensity) => set({ committedMood: mood, committedIntensity: intensity ?? null }),

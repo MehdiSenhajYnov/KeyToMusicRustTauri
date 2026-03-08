@@ -108,27 +108,35 @@ Seeds (YouTube + local sounds) → YouTube Mix per seed → Cross-seed aggregati
 
 ### Manga Mood AI
 
-Detects manga page mood via local VLM and auto-triggers sounds tagged with that mood. Architecture uses 2 local servers:
-1. **KeyToMusic HTTP API** (axum, port configurable, default 8765) — receives images from external tools
-2. **llama-server** (llama.cpp, auto port) — runs Qwen3-VL 2B inference
+Detects manga page mood via a local VLM pipeline and auto-triggers sounds tagged with that mood. The canonical product flow is documented in [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md).
+
+Current runtime path:
 
 ```
-External tool → POST /api/analyze (base64 image) → KeyToMusic API → resize 672px → llama-server → parse mood → trigger playback
+Reader page in browser
+  → extension preloads/captures page images in base64
+  → POST /api/chapter/page + POST /api/chapter/focus
+  → POST /api/lookup for visible page
+  → fallback POST /api/analyze-window if cache miss
+  → mood cache + mood trigger + committed playback
 ```
 
-- **MoodCategory:** 10 values — `epic_battle`, `tension`, `sadness`, `comedy`, `romance`, `horror`, `peaceful`, `emotional_climax`, `mystery`, `chase_action`
-- **Mood Tagging:** Manual per-binding via dropdown in SoundDetails. `KeyBinding.mood: Option<MoodCategory>`. Mood badge (colored pill) in KeyGrid. Filter with `m:` prefix in SearchFilterBar.
+- **Base moods:** 8 values — `epic`, `tension`, `sadness`, `comedy`, `romance`, `horror`, `peaceful`, `mystery`
+- **Intensity:** `1..3`
+- **Mood Tagging:** Manual per-binding via dropdown in SoundDetails. `KeyBinding.mood: Option<BaseMood>` and `KeyBinding.moodIntensity: Option<MoodIntensity>`. Mood badge (colored pill) in KeyGrid. Filter with `m:` prefix in SearchFilterBar.
 - **Backend (`mood/`):**
-  - `llama_manager.rs` — Download + manage llama-server binary (ZIP/tar.gz from GitHub releases) + GGUF model (streaming download from HuggingFace, ~1.9GB, with progress events). Stored in `data/bin/` and `data/models/`.
-  - `inference.rs` — `LlamaServer` struct wraps subprocess. Start with optimized flags (`-c 2048 --flash-attn --cache-type-k q8_0 --cache-type-v q8_0 -ngl 99`). Windows: `CREATE_NO_WINDOW | BELOW_NORMAL_PRIORITY_CLASS`. `prepare_image()` resizes to 672px max via `image` crate, encodes base64 JPEG. `analyze_mood()` POSTs to `/v1/chat/completions`, parses response (handles `</think>` tags). `impl Drop` auto-kills process.
-  - `server.rs` — Axum HTTP server. `POST /api/analyze` (base64 image → mood + Tauri event), `GET /api/status`, `GET /api/moods`. Starts in `tokio::spawn` when mood server starts with `moodAiEnabled=true`.
+  - `llama_manager.rs` — Download + manage llama-server binary + `Qwen3-VL-4B-Thinking` model assets (`GGUF` + `mmproj`) in `data/bin/` and `data/models/`.
+  - `inference.rs` — `LlamaServer` lifecycle, image preparation, runtime sizing/fallbacks, local helper analysis methods.
+  - `winner.rs` — Shared production/benchmark winner core (window prompts, aggregation, repairs, hold logic).
+  - `chapter_pipeline.rs` — Hot-zone chapter scheduler centered on the visible page rather than page `0`.
+  - `server.rs` — Axum HTTP server. Active routes: `POST /api/analyze-window`, `POST /api/chapter/page`, `POST /api/chapter/focus`, `POST /api/live/cancel`, `POST /api/lookup`, `POST /api/trigger`, `GET /api/cache/status`, `GET /api/status`, `GET /api/moods`.
 - **Frontend:**
-  - `moodStore.ts` — Server status, install state, download progress, last detected mood. Actions: checkInstallation, installServer, installModel, startServer, stopServer.
-  - `useMoodPlayback.ts` — Listens to `mood_detected` event. Finds all bindings with matching mood tag. Selects sound per loop mode. Triggers all via `Promise.allSettled` (multi-track). Toast notification.
+  - `moodStore.ts` — Runtime/API status, install state, download progress, last detected and committed moods. Actions: checkInstallation, refreshServiceStatus, installServer, installModel, startServer, stopServer.
+  - `useMoodPlayback.ts` — Uses `mood_detected` for UI state and `mood_committed` for actual playback. Finds all bindings with matching mood tag/intensity. Triggers all via `Promise.allSettled` (multi-track). Toast notification.
   - `MoodAiSection` in SettingsModal — Toggle, install status (green/red dots), download progress bar, start/stop server, API port config.
   - Sidebar `MoodIndicator` — Shows last detected mood as colored pill.
 - **AppConfig:** `moodAiEnabled: bool`, `moodApiPort: u16` (default 8765)
-- **AppState:** `llama_server: Arc<tokio::sync::Mutex<Option<LlamaServer>>>`, `mood_api_server: Arc<Mutex<Option<JoinHandle>>>`
+- **AppState:** `llama_server`, `mood_api_server`, `mood_cache`, `mood_director`
 
 ### Key Detection
 
@@ -168,7 +176,7 @@ Configurable key (Shift/Ctrl/Alt/None) that triggers momentum playback. Exact bi
 Binding uniqueness = `(keyCode, trackId)`. One key can have multiple bindings on different tracks — pressing a key triggers all its bindings simultaneously (`Promise.allSettled` for concurrent playback). Each binding has its own sound IDs list, loop mode, currentIndex, and mood tag.
 - Key reassignment: move all bindings to new key (merges by track) or move individual sound.
 - Loop modes: `off` (random, stop), `single` (loop same), `random` (avoid repeat, auto-next), `sequential` (cycle, auto-next)
-- **Mood tagging:** Each binding can be tagged with a `MoodCategory` (10 values). Tagged bindings auto-trigger when Mood AI detects matching mood. Mood changes are undoable.
+- **Mood tagging:** Each binding can be tagged with an 8-value base mood plus optional minimum intensity. Tagged bindings auto-trigger when Mood AI detects a compatible committed mood. Mood changes are undoable.
 - KeyGrid groups bindings by keyCode (one cell per key, shows track count indicator when >1 track, colored mood badge pill).
 - SoundDetails renders each binding separately with per-binding track selector, loop mode, mood dropdown, and delete.
 
@@ -223,6 +231,8 @@ pub struct AppState {
     pub config_dirty: Arc<AtomicBool>,
     pub llama_server: Arc<tokio::sync::Mutex<Option<LlamaServer>>>,  // Mood AI inference server
     pub mood_api_server: Arc<Mutex<Option<JoinHandle<()>>>>,          // HTTP API for external tools
+    pub mood_cache: Arc<Mutex<MoodCache>>,                            // Per-chapter in-memory mood cache
+    pub mood_director: Arc<Mutex<MoodDirector>>,                      // Playback smoothing / commit logic
 }
 ```
 
@@ -248,7 +258,7 @@ pub struct AppState {
 **YouTube:** `add_sound_from_youtube(url, download_id)`, `search_youtube`, `fetch_playlist`, `get_youtube_stream_url(video_id)`, `check_yt_dlp_installed`, `install_yt_dlp`, `check_ffmpeg_installed`, `install_ffmpeg`
 **Discovery:** `start_discovery(profile_id, exclude_ids, background)`, `get_discovery_suggestions`, `save_discovery_cursor`, `update_discovery_pool`, `dismiss_discovery`, `dislike_discovery`, `undislike_discovery`, `list_disliked_videos`, `cancel_discovery`, `predownload_suggestion`
 **Import/Export:** `export_profile`, `import_profile`, `pick_save_location`, `cleanup_export_temp`, `cancel_export`, `pick_ktm_file`, `pick_legacy_file`, `import_legacy_save`
-**Mood AI:** `check_llama_server_installed`, `install_llama_server`, `check_mood_model_installed`, `install_mood_model`, `start_mood_server`, `stop_mood_server`, `get_mood_server_status`, `analyze_mood(image_path)`
+**Mood AI:** `check_llama_server_installed`, `install_llama_server`, `check_mood_model_installed`, `install_mood_model`, `start_mood_server`, `stop_mood_server`, `get_mood_server_status`, `get_mood_service_status`, `analyze_mood(image_path)`
 **Utility:** `verify_profile_sounds`, `pick_audio_file`, `pick_audio_files`, `get_logs_folder`, `get_data_folder`, `open_folder`
 
 ## Backend → Frontend Events
@@ -271,13 +281,14 @@ pub struct AppState {
 | `mood_model_download_progress` | `{ downloaded, total }` (bytes) |
 | `mood_server_status` | `{ status: "starting" \| "running" \| "stopped" \| "error" }` |
 | `mood_detected` | `{ mood, source }` (source: "api" or "local") |
+| `mood_committed` | `{ mood, source, previous_mood?, dwell_count? }` |
 
 ## Technical Notes
 
 - **Thread safety:** Audio engine in separate thread. Use Tokio channels or `Arc<Mutex<>>`. CPU-bound work uses shared `Arc<rayon::ThreadPool>` (4 threads, `Send + Sync` natively, no Mutex needed). Each `SymphoniaSource` spawns its own decode thread (bounded channel, stopped on Drop).
 - **Logging:** `tracing` + `tracing-appender`. Daily rolling logs in `data/logs/`. `RUST_LOG` env var (default: info).
 - **Data paths:** Windows `AppData/Roaming/KeyToMusic/`, macOS `Library/Application Support/KeyToMusic/`, Linux `.local/share/keytomusic/`
-- **External tools:** yt-dlp and ffmpeg auto-downloaded to `data/bin/`. llama-server auto-downloaded from llama.cpp GitHub releases. Qwen3-VL 2B GGUF model auto-downloaded from HuggingFace to `data/models/`. No user install needed.
+- **External tools:** yt-dlp and ffmpeg auto-downloaded to `data/bin/`. llama-server auto-downloaded from llama.cpp GitHub releases. `Qwen3-VL-4B-Thinking` model assets auto-downloaded to `data/models/`. No user install needed.
 
 ## Technical Limits
 
@@ -285,13 +296,13 @@ pub struct AppState {
 - Cooldown: 0-5000ms. Crossfade: 100-2000ms. Waveform cache: 50 entries (LRU).
 - Discovery: max 15 seeds, top 30 suggestions, 10 concurrent mix fetches.
 - Audio thread: dynamic timeout (200ms idle, 16ms playing).
-- Mood AI: 10 mood categories. Image resize 672px max. llama-server context 2048 tokens. Model ~1.9GB (Q4_K_M).
+- Mood AI: 8 base moods + intensity `1..3`. Visible-window fallback uses local context, chapter prefetch targets `X-10 .. X+20` and loads up to `X-14 .. X+24`. Runtime model assets are ~3.3GB plus mmproj overhead depending on package.
 
 ## Known Limitations
 
 - **Numpad+Shift:** OS sends alternate key (ArrowLeft, End) instead of "Shift+Numpad4". Workaround: use Ctrl/Alt as momentum modifier.
 - **Discovery:** Some videos have no Mix. Momentum detection imprecise for spoken word.
-- **Mood AI:** Requires GPU for reasonable speed (~1.1s per image with VRAM). Mood tagging is manual. Model download is ~1.9GB.
+- **Mood AI:** Requires a capable GPU for good UX. The visible-page fallback is much slower than the old 2B experiments, so the extension relies on chapter prefetch and cache warming. Mood tagging remains manual. Model assets are several GB.
 
 ## UI Notes
 

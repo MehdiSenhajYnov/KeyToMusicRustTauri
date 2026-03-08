@@ -352,6 +352,7 @@ fn main() {
             start_mood_server,
             stop_mood_server,
             get_mood_server_status,
+            get_mood_service_status,
             analyze_mood,
         ])
         .run(tauri::generate_context!())

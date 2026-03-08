@@ -18,169 +18,413 @@ pub fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
     Ok(state.get_config())
 }
 
-#[tauri::command]
-pub fn update_config(state: State<'_, AppState>, updates: serde_json::Value) -> Result<(), String> {
-    let config = state.update_config(|config| {
-        if let Some(v) = updates.get("masterVolume").and_then(|v| v.as_f64()) {
-            config.master_volume = v as f32;
+#[derive(serde::Serialize)]
+pub struct MoodServiceStatus {
+    runtime: String,
+    api: String,
+    enabled: bool,
+    port: u16,
+}
+
+fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
+    if let Some(v) = updates.get("masterVolume").and_then(|v| v.as_f64()) {
+        config.master_volume = v as f32;
+    }
+    if let Some(v) = updates.get("autoMomentum").and_then(|v| v.as_bool()) {
+        config.auto_momentum = v;
+    }
+    if let Some(v) = updates.get("keyDetectionEnabled").and_then(|v| v.as_bool()) {
+        config.key_detection_enabled = v;
+    }
+    if let Some(v) = updates.get("crossfadeDuration").and_then(|v| v.as_u64()) {
+        config.crossfade_duration = v as u32;
+    }
+    if let Some(v) = updates.get("keyCooldown").and_then(|v| v.as_u64()) {
+        config.key_cooldown = v as u32;
+    }
+    if let Some(v) = updates.get("stopAllShortcut").and_then(|v| v.as_array()) {
+        let keys: Vec<String> = v
+            .iter()
+            .filter_map(|k| k.as_str().map(|s| s.to_string()))
+            .collect();
+        if !keys.is_empty() {
+            config.stop_all_shortcut = keys;
         }
-        if let Some(v) = updates.get("autoMomentum").and_then(|v| v.as_bool()) {
-            config.auto_momentum = v;
-        }
-        if let Some(v) = updates.get("keyDetectionEnabled").and_then(|v| v.as_bool()) {
-            config.key_detection_enabled = v;
-        }
-        if let Some(v) = updates.get("crossfadeDuration").and_then(|v| v.as_u64()) {
-            config.crossfade_duration = v as u32;
-        }
-        if let Some(v) = updates.get("keyCooldown").and_then(|v| v.as_u64()) {
-            config.key_cooldown = v as u32;
-        }
-        if let Some(v) = updates.get("stopAllShortcut").and_then(|v| v.as_array()) {
-            let keys: Vec<String> = v
-                .iter()
-                .filter_map(|k| k.as_str().map(|s| s.to_string()))
-                .collect();
-            if !keys.is_empty() {
-                config.stop_all_shortcut = keys;
+    }
+    if let Some(v) = updates
+        .get("autoMomentumShortcut")
+        .and_then(|v| v.as_array())
+    {
+        config.auto_momentum_shortcut = v
+            .iter()
+            .filter_map(|k| k.as_str().map(|s| s.to_string()))
+            .collect();
+    }
+    if let Some(v) = updates
+        .get("keyDetectionShortcut")
+        .and_then(|v| v.as_array())
+    {
+        config.key_detection_shortcut = v
+            .iter()
+            .filter_map(|k| k.as_str().map(|s| s.to_string()))
+            .collect();
+    }
+    if updates.get("currentProfileId").is_some() {
+        config.current_profile_id = updates
+            .get("currentProfileId")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+    }
+    if updates.get("audioDevice").is_some() {
+        config.audio_device = updates.get("audioDevice").and_then(|v| {
+            if v.is_null() {
+                None
+            } else {
+                v.as_str().map(|s| s.to_string())
             }
-        }
-        if let Some(v) = updates
-            .get("autoMomentumShortcut")
-            .and_then(|v| v.as_array())
-        {
-            config.auto_momentum_shortcut = v
-                .iter()
-                .filter_map(|k| k.as_str().map(|s| s.to_string()))
-                .collect();
-        }
-        if let Some(v) = updates
-            .get("keyDetectionShortcut")
-            .and_then(|v| v.as_array())
-        {
-            config.key_detection_shortcut = v
-                .iter()
-                .filter_map(|k| k.as_str().map(|s| s.to_string()))
-                .collect();
-        }
-        if updates.get("currentProfileId").is_some() {
-            config.current_profile_id = updates
-                .get("currentProfileId")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-        }
-        if updates.get("audioDevice").is_some() {
-            config.audio_device = updates.get("audioDevice").and_then(|v| {
-                if v.is_null() {
-                    None
-                } else {
-                    v.as_str().map(|s| s.to_string())
-                }
-            });
-        }
-        if let Some(v) = updates.get("chordWindowMs").and_then(|v| v.as_u64()) {
-            config.chord_window_ms = v as u32;
-        }
-        if let Some(v) = updates.get("momentumModifier").and_then(|v| v.as_str()) {
-            config.momentum_modifier = match v {
-                "Shift" => MomentumModifier::Shift,
-                "Ctrl" => MomentumModifier::Ctrl,
-                "Alt" => MomentumModifier::Alt,
-                "None" => MomentumModifier::None,
-                _ => MomentumModifier::Shift, // default fallback
-            };
-        }
-        if let Some(v) = updates
-            .get("playlistImportEnabled")
-            .and_then(|v| v.as_bool())
-        {
-            config.playlist_import_enabled = v;
-        }
-        if let Some(v) = updates.get("moodAiEnabled").and_then(|v| v.as_bool()) {
-            config.mood_ai_enabled = v;
-        }
-        if let Some(v) = updates.get("moodApiPort").and_then(|v| v.as_u64()) {
-            config.mood_api_port = v as u16;
-        }
-        if let Some(v) = updates.get("moodEntryThreshold").and_then(|v| v.as_f64()) {
-            config.mood_entry_threshold = v as f32;
-        }
-        if let Some(v) = updates.get("moodExitThreshold").and_then(|v| v.as_f64()) {
-            config.mood_exit_threshold = v as f32;
-        }
-        if let Some(v) = updates.get("moodDwellPages").and_then(|v| v.as_u64()) {
-            config.mood_dwell_pages = v as u32;
-        }
-        if let Some(v) = updates.get("moodWindowSize").and_then(|v| v.as_u64()) {
-            config.mood_window_size = v as usize;
+        });
+    }
+    if let Some(v) = updates.get("chordWindowMs").and_then(|v| v.as_u64()) {
+        config.chord_window_ms = v as u32;
+    }
+    if let Some(v) = updates.get("momentumModifier").and_then(|v| v.as_str()) {
+        config.momentum_modifier = match v {
+            "Shift" => MomentumModifier::Shift,
+            "Ctrl" => MomentumModifier::Ctrl,
+            "Alt" => MomentumModifier::Alt,
+            "None" => MomentumModifier::None,
+            _ => MomentumModifier::Shift,
+        };
+    }
+    if let Some(v) = updates
+        .get("playlistImportEnabled")
+        .and_then(|v| v.as_bool())
+    {
+        config.playlist_import_enabled = v;
+    }
+    if let Some(v) = updates.get("moodAiEnabled").and_then(|v| v.as_bool()) {
+        config.mood_ai_enabled = v;
+    }
+    if let Some(v) = updates.get("moodApiPort").and_then(|v| v.as_u64()) {
+        config.mood_api_port = v as u16;
+    }
+    if let Some(v) = updates.get("moodEntryThreshold").and_then(|v| v.as_f64()) {
+        config.mood_entry_threshold = v as f32;
+    }
+    if let Some(v) = updates.get("moodExitThreshold").and_then(|v| v.as_f64()) {
+        config.mood_exit_threshold = v as f32;
+    }
+    if let Some(v) = updates.get("moodDwellPages").and_then(|v| v.as_u64()) {
+        config.mood_dwell_pages = v as u32;
+    }
+    if let Some(v) = updates.get("moodWindowSize").and_then(|v| v.as_u64()) {
+        config.mood_window_size = v as usize;
+    }
+}
+
+fn sync_runtime_dependent_config(state: &AppState, config: &AppConfig, reset_director: bool) {
+    if let Ok(engine) = state.get_audio_engine() {
+        let _ = engine.set_audio_device(config.audio_device.clone());
+        let _ = engine.set_master_volume(config.master_volume);
+    }
+
+    state.key_detector.set_enabled(config.key_detection_enabled);
+    state.key_detector.set_cooldown(config.key_cooldown);
+    state
+        .key_detector
+        .set_stop_all_shortcut(config.stop_all_shortcut.clone());
+    state
+        .key_detector
+        .set_auto_momentum_shortcut(config.auto_momentum_shortcut.clone());
+    state
+        .key_detector
+        .set_key_detection_shortcut(config.key_detection_shortcut.clone());
+    state.key_detector.set_chord_window(config.chord_window_ms);
+
+    let mut director = state
+        .mood_director
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if reset_director {
+        director.reset();
+    }
+    director.update_config(mood::director::DirectorConfig {
+        entry_threshold: config.mood_entry_threshold,
+        exit_threshold: config.mood_exit_threshold,
+        min_dwell_pages: config.mood_dwell_pages,
+        window_size: config.mood_window_size,
+    });
+}
+
+fn emit_mood_server_status(app_handle: &tauri::AppHandle, status: &str) {
+    let _ = app_handle.emit(
+        "mood_server_status",
+        serde_json::json!({ "status": status }),
+    );
+}
+
+fn api_task_status(state: &AppState, enabled: bool) -> String {
+    let mut guard = state
+        .mood_api_server
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let finished = guard.as_ref().map(|h| h.is_finished()).unwrap_or(false);
+    if finished {
+        guard.take();
+    }
+    if !enabled {
+        "disabled".to_string()
+    } else if guard.is_some() {
+        "running".to_string()
+    } else {
+        "stopped".to_string()
+    }
+}
+
+fn emit_mood_api_status(app_handle: &tauri::AppHandle, state: &AppState) {
+    let config = state.get_config();
+    let status = api_task_status(state, config.mood_ai_enabled);
+    let _ = app_handle.emit(
+        "mood_api_status",
+        serde_json::json!({
+            "status": status,
+            "enabled": config.mood_ai_enabled,
+            "port": config.mood_api_port,
+        }),
+    );
+}
+
+async fn runtime_status(state: &AppState) -> String {
+    let mut guard = state.llama_server.lock().await;
+    let is_running = guard.as_mut().map(|s| s.is_running()).unwrap_or(false);
+    if guard.is_some() && !is_running {
+        *guard = None;
+        "stopped".to_string()
+    } else if is_running {
+        "running".to_string()
+    } else {
+        "stopped".to_string()
+    }
+}
+
+async fn stop_mood_api_server_inner(state: &AppState, app_handle: &tauri::AppHandle) {
+    let mut api_guard = state
+        .mood_api_server
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if let Some(handle) = api_guard.take() {
+        handle.abort();
+    }
+    drop(api_guard);
+    emit_mood_api_status(app_handle, state);
+}
+
+async fn start_mood_api_server_inner(
+    state: &AppState,
+    app_handle: &tauri::AppHandle,
+    port: u16,
+) -> Result<(), String> {
+    if runtime_status(state).await != "running" {
+        return Err("Mood AI runtime is not running".to_string());
+    }
+
+    stop_mood_api_server_inner(state, app_handle).await;
+
+    let bind_probe = std::net::TcpListener::bind(("127.0.0.1", port))
+        .map_err(|e| format!("Failed to bind Mood API port {}: {}", port, e))?;
+    drop(bind_probe);
+
+    let llama_ref = state.llama_server.clone();
+    let handle = app_handle.clone();
+    let cache_ref = state.mood_cache.clone();
+
+    let api_handle = tokio::spawn(async move {
+        if let Err(e) = mood::server::start_api_server(port, llama_ref, handle, cache_ref).await {
+            tracing::error!("Mood API server error: {}", e);
         }
     });
 
-    // Sync audio device to audio engine
-    if updates.get("audioDevice").is_some() {
-        if let Ok(engine) = state.get_audio_engine() {
-            let _ = engine.set_audio_device(config.audio_device.clone());
-        }
-    }
-
-    // Sync master volume to audio engine
-    if updates.get("masterVolume").is_some() {
-        if let Ok(engine) = state.get_audio_engine() {
-            let _ = engine.set_master_volume(config.master_volume);
-        }
-    }
-
-    // Sync key detection settings
-    if updates.get("keyDetectionEnabled").is_some() {
-        state.key_detector.set_enabled(config.key_detection_enabled);
-    }
-    if updates.get("keyCooldown").is_some() {
-        state.key_detector.set_cooldown(config.key_cooldown);
-    }
-    if updates.get("stopAllShortcut").is_some() {
-        state
-            .key_detector
-            .set_stop_all_shortcut(config.stop_all_shortcut.clone());
-    }
-    if updates.get("autoMomentumShortcut").is_some() {
-        state
-            .key_detector
-            .set_auto_momentum_shortcut(config.auto_momentum_shortcut.clone());
-    }
-    if updates.get("keyDetectionShortcut").is_some() {
-        state
-            .key_detector
-            .set_key_detection_shortcut(config.key_detection_shortcut.clone());
-    }
-    if updates.get("chordWindowMs").is_some() {
-        state.key_detector.set_chord_window(config.chord_window_ms);
-    }
-
-    // Reset mood director on profile switch (different narrative context)
-    if updates.get("currentProfileId").is_some() {
-        let mut director = state
-            .mood_director
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        director.reset();
-    }
-
-    // Sync mood director config if any mood field changed
-    if updates.get("moodEntryThreshold").is_some()
-        || updates.get("moodExitThreshold").is_some()
-        || updates.get("moodDwellPages").is_some()
-        || updates.get("moodWindowSize").is_some()
     {
-        let mut director = state
-            .mood_director
+        let mut api_guard = state
+            .mood_api_server
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        director.update_config(mood::director::DirectorConfig {
-            entry_threshold: config.mood_entry_threshold,
-            exit_threshold: config.mood_exit_threshold,
-            min_dwell_pages: config.mood_dwell_pages,
-            window_size: config.mood_window_size,
-        });
+        *api_guard = Some(api_handle);
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(400))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client for Mood API check: {}", e))?;
+    let status_url = format!("http://127.0.0.1:{}/api/status", port);
+
+    for _ in 0..20 {
+        if client
+            .get(&status_url)
+            .send()
+            .await
+            .map(|resp| resp.status().is_success())
+            .unwrap_or(false)
+        {
+            emit_mood_api_status(app_handle, state);
+            return Ok(());
+        }
+
+        let finished = {
+            let mut api_guard = state
+                .mood_api_server
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            let finished = api_guard.as_ref().map(|h| h.is_finished()).unwrap_or(false);
+            if finished {
+                api_guard.take();
+            }
+            finished
+        };
+
+        if finished {
+            break;
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+
+    stop_mood_api_server_inner(state, app_handle).await;
+    Err(format!(
+        "Mood API failed to start on port {}. Check if the port is already in use.",
+        port
+    ))
+}
+
+async fn start_mood_runtime_inner(
+    state: &AppState,
+    app_handle: &tauri::AppHandle,
+) -> Result<(), String> {
+    if runtime_status(state).await == "running" {
+        emit_mood_server_status(app_handle, "running");
+        return Ok(());
+    }
+
+    let model_path = mood::llama_manager::get_model_path();
+    let mmproj_path = mood::llama_manager::get_mmproj_path();
+    if !model_path.exists() {
+        return Err("LLM model not downloaded".to_string());
+    }
+    if !mmproj_path.exists() {
+        return Err("Vision encoder (mmproj) not downloaded".to_string());
+    }
+
+    emit_mood_server_status(app_handle, "starting");
+
+    let model_str = model_path.to_string_lossy().to_string();
+    let mmproj_str = mmproj_path.to_string_lossy().to_string();
+    let server = match mood::inference::LlamaServer::start_with_options(
+        &model_str,
+        &mmproj_str,
+        mood::inference::LlamaServerStartOptions {
+            reasoning_format: mood::inference::reasoning_format_from_env(),
+            context_size: None,
+            parallel_slots: None,
+            gpu_layers: None,
+            runtime_intent: Some(mood::winner::winner_runtime_intent()),
+        },
+    )
+    .await
+    {
+        Ok(server) => server,
+        Err(err) => {
+            emit_mood_server_status(app_handle, "error");
+            return Err(err);
+        }
+    };
+
+    let mut guard = state.llama_server.lock().await;
+    *guard = Some(server);
+    drop(guard);
+
+    emit_mood_server_status(app_handle, "running");
+    Ok(())
+}
+
+async fn stop_mood_runtime_inner(state: &AppState, app_handle: &tauri::AppHandle) {
+    stop_mood_api_server_inner(state, app_handle).await;
+
+    let mut guard = state.llama_server.lock().await;
+    if let Some(mut server) = guard.take() {
+        server.stop();
+    }
+    drop(guard);
+
+    let mut director = state
+        .mood_director
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    director.reset();
+    drop(director);
+
+    emit_mood_server_status(app_handle, "stopped");
+}
+
+async fn sync_mood_service_config(
+    state: &AppState,
+    app_handle: &tauri::AppHandle,
+    previous: &AppConfig,
+    current: &AppConfig,
+) -> Result<(), String> {
+    if !current.mood_ai_enabled {
+        stop_mood_runtime_inner(state, app_handle).await;
+        return Ok(());
+    }
+
+    let has_runtime_assets = mood::llama_manager::is_llama_server_installed()
+        && mood::llama_manager::is_model_downloaded();
+    if !has_runtime_assets {
+        emit_mood_server_status(app_handle, &runtime_status(state).await);
+        emit_mood_api_status(app_handle, state);
+        return Ok(());
+    }
+
+    start_mood_runtime_inner(state, app_handle).await?;
+
+    let needs_api_restart = !previous.mood_ai_enabled
+        || previous.mood_api_port != current.mood_api_port
+        || api_task_status(state, true) != "running";
+    if needs_api_restart {
+        start_mood_api_server_inner(state, app_handle, current.mood_api_port).await?;
+    } else {
+        emit_mood_api_status(app_handle, state);
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_config(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+    updates: serde_json::Value,
+) -> Result<(), String> {
+    let previous = state.get_config();
+    let reset_director = updates.get("currentProfileId").is_some();
+    let touches_mood_service =
+        updates.get("moodAiEnabled").is_some() || updates.get("moodApiPort").is_some();
+
+    let config = state.update_config(|config| {
+        apply_config_updates(config, &updates);
+    });
+    sync_runtime_dependent_config(&state, &config, reset_director);
+
+    if touches_mood_service {
+        if let Err(err) = sync_mood_service_config(&state, &app_handle, &previous, &config).await {
+            let restored = state.update_config(|config| {
+                *config = previous.clone();
+            });
+            sync_runtime_dependent_config(&state, &restored, reset_director);
+            let _ = sync_mood_service_config(&state, &app_handle, &config, &restored).await;
+            return Err(err);
+        }
+    } else {
+        emit_mood_api_status(&app_handle, &state);
     }
 
     storage::save_config(&config)
@@ -1903,66 +2147,13 @@ pub async fn start_mood_server(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    let model_path = mood::llama_manager::get_model_path();
-    let mmproj_path = mood::llama_manager::get_mmproj_path();
-    if !model_path.exists() {
-        return Err("LLM model not downloaded".to_string());
-    }
-    if !mmproj_path.exists() {
-        return Err("Vision encoder (mmproj) not downloaded".to_string());
-    }
-
-    let _ = app_handle.emit(
-        "mood_server_status",
-        serde_json::json!({ "status": "starting" }),
-    );
-
-    let model_str = model_path.to_string_lossy().to_string();
-    let mmproj_str = mmproj_path.to_string_lossy().to_string();
-    let server = mood::inference::LlamaServer::start_with_options(
-        &model_str,
-        &mmproj_str,
-        mood::inference::LlamaServerStartOptions {
-            reasoning_format: mood::inference::reasoning_format_from_env(),
-            context_size: None,
-            parallel_slots: None,
-            gpu_layers: None,
-            runtime_intent: Some(mood::inference::LlamaRuntimeIntent::AppDefault),
-        },
-    )
-    .await?;
-
-    let _ = app_handle.emit(
-        "mood_server_status",
-        serde_json::json!({ "status": "running" }),
-    );
-
-    let mut guard = state.llama_server.lock().await;
-    *guard = Some(server);
-
-    // Start the HTTP API server if mood AI is enabled
     let config = state.get_config();
-    if config.mood_ai_enabled {
-        let llama_ref = state.llama_server.clone();
-        let port = config.mood_api_port;
-        let handle = app_handle.clone();
-        let cache_ref = state.mood_cache.clone();
-        let director_ref = state.mood_director.clone();
-        let api_handle = tokio::spawn(async move {
-            if let Err(e) =
-                mood::server::start_api_server(port, llama_ref, handle, cache_ref, director_ref)
-                    .await
-            {
-                tracing::error!("Mood API server error: {}", e);
-            }
-        });
-        let mut api_guard = state
-            .mood_api_server
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        *api_guard = Some(api_handle);
+    if !config.mood_ai_enabled {
+        return Err("Enable Mood AI first to expose the browser extension API.".to_string());
     }
 
+    start_mood_runtime_inner(&state, &app_handle).await?;
+    start_mood_api_server_inner(&state, &app_handle, config.mood_api_port).await?;
     Ok(())
 }
 
@@ -1971,54 +2162,26 @@ pub async fn stop_mood_server(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    // Stop API server
-    {
-        let mut api_guard = state
-            .mood_api_server
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if let Some(handle) = api_guard.take() {
-            handle.abort();
-        }
-    }
-
-    // Stop llama-server
-    {
-        let mut guard = state.llama_server.lock().await;
-        if let Some(mut server) = guard.take() {
-            server.stop();
-        }
-    }
-
-    // Reset director state
-    {
-        let mut director = state
-            .mood_director
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        director.reset();
-    }
-
-    let _ = app_handle.emit(
-        "mood_server_status",
-        serde_json::json!({ "status": "stopped" }),
-    );
-
+    stop_mood_runtime_inner(&state, &app_handle).await;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn get_mood_server_status(state: State<'_, AppState>) -> Result<String, String> {
-    let mut guard = state.llama_server.lock().await;
-    let is_running = guard.as_mut().map(|s| s.is_running()).unwrap_or(false);
-    if guard.is_some() && !is_running {
-        *guard = None;
-        Ok("stopped".to_string())
-    } else if is_running {
-        Ok("running".to_string())
-    } else {
-        Ok("stopped".to_string())
-    }
+    Ok(runtime_status(&state).await)
+}
+
+#[tauri::command]
+pub async fn get_mood_service_status(
+    state: State<'_, AppState>,
+) -> Result<MoodServiceStatus, String> {
+    let config = state.get_config();
+    Ok(MoodServiceStatus {
+        runtime: runtime_status(&state).await,
+        api: api_task_status(&state, config.mood_ai_enabled),
+        enabled: config.mood_ai_enabled,
+        port: config.mood_api_port,
+    })
 }
 
 #[tauri::command]
@@ -2032,45 +2195,21 @@ pub async fn analyze_mood(
 
     let image_b64 = mood::inference::prepare_image(&image_data)?;
 
-    // Build narrative context from director
-    let narrative_context = {
-        let director = state
-            .mood_director
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let previous_moods: Vec<String> = director
-            .window_moods()
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        let current_soundtrack = director.committed_mood().map(|m| m.as_str().to_string());
-        let soundtrack_dwell = director.dwell_count();
-        mood::inference::NarrativeContext {
-            previous_moods,
-            current_soundtrack,
-            soundtrack_dwell,
-            next_moods: Vec::new(), // No cache look-ahead for local analysis
-        }
-    };
-
     let mut guard = state.llama_server.lock().await;
     let server = guard
         .as_mut()
         .ok_or_else(|| "Mood server not running".to_string())?;
 
-    let (scores, narrative_role) = server
-        .analyze_mood_scored(&image_b64, Some(&narrative_context))
-        .await?;
-
-    let dominant_mood = scores.dominant();
+    let detected = server.analyze_mood(&image_b64).await?;
+    let dominant_mood = detected.mood;
     let mood_str = dominant_mood.as_str().to_string();
 
     // Feed into director
     let decision = {
         let analysis = mood::director::PageAnalysis {
-            scores,
-            intensity: crate::types::MoodIntensity::Medium, // TODO: use real intensity
-            narrative_role,
+            scores: mood::director::MoodScores::from_single(dominant_mood),
+            intensity: detected.intensity,
+            narrative_role: mood::director::NarrativeRole::Continuation,
             dominant_mood,
         };
         let mut director = state

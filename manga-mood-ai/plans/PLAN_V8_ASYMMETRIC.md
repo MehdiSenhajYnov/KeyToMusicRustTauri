@@ -1,8 +1,8 @@
 # Plan: Pass V8 — Contexte asymetrique 4+2
 
 > **Mise a jour (mars 2026) :** ce plan est historique. Il compare des variantes de contexte textuel autour de V6. La reference benchmark actuelle n'est plus V6/V8, mais :
-> - **V12 multi-image + Qwen3.5-VL 4B** sur le 31 pages Blue Lock
-> - **V12 historique + Qwen3-VL-4B-Thinking** sur `realtest_benchmark` / `BL/1`
+> - les winners benchmark documentes dans [manga-mood-ai/research/RESEARCH_SYNTHESIS.md](/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/research/RESEARCH_SYNTHESIS.md)
+> - le flux produit actif decrit dans [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md)
 
 ## Contexte
 

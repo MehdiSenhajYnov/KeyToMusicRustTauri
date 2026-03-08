@@ -37,10 +37,10 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 
 function MoodAiSection({ config }: { config: import("../../types").AppConfig }) {
   const {
-    serverStatus, serverInstalled, modelInstalled,
+    serverStatus, apiStatus, apiPort, serverInstalled, modelInstalled,
     modelDownloadProgress, checkInstallation,
-    installServer, installModel, startServer, stopServer,
-    setModelDownloadProgress, setServerStatus,
+    installServer, installModel, startServer, stopServer, refreshServiceStatus,
+    setModelDownloadProgress,
   } = useMoodStore();
 
   useEffect(() => { checkInstallation(); }, []);
@@ -52,12 +52,24 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
       listen<{ downloaded: number; total: number }>("mood_model_download_progress", (e) => {
         setModelDownloadProgress(e.payload);
       }).then((u) => cleanups.push(u));
-      listen<{ status: string }>("mood_server_status", (e) => {
-        setServerStatus(e.payload.status as any);
+      listen("mood_server_status", () => {
+        refreshServiceStatus();
+      }).then((u) => cleanups.push(u));
+      listen("mood_api_status", () => {
+        refreshServiceStatus();
       }).then((u) => cleanups.push(u));
     });
     return () => { cleanups.forEach((u) => u()); };
-  }, []);
+  }, [refreshServiceStatus, setModelDownloadProgress]);
+
+  const apiStatusLabel =
+    apiStatus === "running"
+      ? `Running on 127.0.0.1:${apiPort}`
+      : apiStatus === "disabled"
+        ? "Disabled by the Mood AI toggle"
+        : apiStatus === "stopped"
+          ? "Stopped"
+          : "Error";
 
   return (
     <section>
@@ -94,10 +106,10 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
           </div>
           <div className="flex items-center gap-2">
             <span className={`w-2 h-2 rounded-full ${modelInstalled ? "bg-accent-success" : "bg-accent-error"}`} />
-            <span className="text-text-secondary text-sm">Qwen3-VL 2B model</span>
+            <span className="text-text-secondary text-sm">Qwen3-VL-4B-Thinking model</span>
             {!modelInstalled && (
               <button onClick={installModel} className="text-xs text-accent-primary hover:underline">
-                Download (~1.9 GB)
+                Download
               </button>
             )}
           </div>
@@ -116,30 +128,87 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
           )}
         </div>
 
+        {!config.moodAiEnabled && (
+          <div className="rounded border border-border-color bg-bg-tertiary/40 p-3">
+            <p className="text-text-secondary text-sm font-medium">Browser extension access is off</p>
+            <p className="text-text-muted text-xs mt-1">
+              Turning on Mood AI now starts and stops the local runtime and the extension API together, so the browser popup cannot end up "connected to nothing".
+            </p>
+          </div>
+        )}
+
+        {/* Runtime + API status */}
+        <div className="space-y-2 rounded border border-border-color bg-bg-tertiary/40 p-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-text-secondary text-sm font-medium">AI Runtime</p>
+              <p className="text-text-muted text-xs">
+                {serverStatus === "running"
+                  ? "Ready to analyze manga pages locally."
+                  : serverStatus === "starting"
+                    ? "Starting llama-server and loading the model..."
+                    : "Stopped"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className={`w-2 h-2 rounded-full ${
+                serverStatus === "running" ? "bg-accent-success" :
+                serverStatus === "starting" ? "bg-yellow-400 animate-pulse" :
+                serverStatus === "error" ? "bg-accent-error" :
+                "bg-text-muted"
+              }`} />
+              <span className="text-text-secondary text-sm capitalize">{serverStatus}</span>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-text-secondary text-sm font-medium">Extension API</p>
+              <p className="text-text-muted text-xs">
+                {apiStatus === "running"
+                  ? "Browser extensions can connect right away."
+                  : apiStatus === "disabled"
+                    ? "Disabled until Mood AI is enabled."
+                    : "The browser extension will show Unreachable until this API is running."}
+              </p>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="flex items-center justify-end gap-2">
+                <span className={`w-2 h-2 rounded-full ${
+                  apiStatus === "running" ? "bg-accent-success" :
+                  apiStatus === "error" ? "bg-accent-error" :
+                  apiStatus === "disabled" ? "bg-text-muted" :
+                  "bg-yellow-400"
+                }`} />
+                <span className="text-text-secondary text-sm">{apiStatusLabel}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Server controls */}
-        {serverInstalled && modelInstalled && (
+        {config.moodAiEnabled && serverInstalled && modelInstalled && (
           <div className="flex items-center gap-3">
-            <span className={`w-2 h-2 rounded-full ${
-              serverStatus === "running" ? "bg-accent-success" :
-              serverStatus === "starting" ? "bg-yellow-400 animate-pulse" :
-              "bg-text-muted"
-            }`} />
-            <span className="text-text-secondary text-sm capitalize">{serverStatus}</span>
             {serverStatus === "stopped" || serverStatus === "error" ? (
               <button
                 onClick={startServer}
                 className="px-2 py-1 text-xs bg-accent-primary/20 text-accent-primary rounded hover:bg-accent-primary/30"
               >
-                Start Server
+                Start Runtime
               </button>
             ) : serverStatus === "running" ? (
               <button
                 onClick={stopServer}
                 className="px-2 py-1 text-xs bg-accent-error/20 text-accent-error rounded hover:bg-accent-error/30"
               >
-                Stop Server
+                Stop Runtime
               </button>
             ) : null}
+            <span className="text-text-muted text-xs">
+              {apiStatus === "running"
+                ? "Extension can reach KeyToMusic."
+                : "Extension access is not ready yet."}
+            </span>
           </div>
         )}
 
@@ -160,7 +229,7 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
             className="w-24 bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary focus:border-border-focus outline-none"
           />
           <p className="text-text-muted text-xs">
-            HTTP port for external tools (browser extensions, scripts).
+            HTTP port for external tools. If Mood AI is already enabled, the extension API is restarted automatically on the new port.
           </p>
         </div>
       </div>

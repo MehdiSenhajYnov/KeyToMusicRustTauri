@@ -1,11 +1,9 @@
 use super::super::*;
 use crate::mood::inference::{
-    self, extract_content, parse_mood_intensity_response, LlamaRuntimeIntent, LlamaServer,
-    LlamaServerStartOptions,
+    self, extract_content, LlamaRuntimeIntent, LlamaServer, LlamaServerStartOptions,
 };
+use crate::mood::winner;
 use crate::types::BaseMood;
-use base64::Engine;
-use image::GenericImageView;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -124,6 +122,7 @@ enum DecisionStrategy {
     CenterOverride,
     Direct,
     Wide5SelectiveRepair,
+    Wide5SelectiveRepairHold,
     FocusedReprompt,
     OcrReprompt,
     SemanticReprompt,
@@ -137,6 +136,7 @@ impl DecisionStrategy {
             Self::CenterOverride => "center_override",
             Self::Direct => "direct",
             Self::Wide5SelectiveRepair => "wide5_selective_repair",
+            Self::Wide5SelectiveRepairHold => "wide5_selective_repair_hold",
             Self::FocusedReprompt => "focused_reprompt",
             Self::OcrReprompt => "ocr_reprompt",
             Self::SemanticReprompt => "semantic_reprompt",
@@ -215,17 +215,7 @@ struct WindowPrediction {
     elapsed_s: f64,
 }
 
-#[derive(Clone, Debug)]
-struct PageVoteStats {
-    counts: [u32; 8],
-    weighted: [f64; 8],
-    intensity_sum: [u32; 8],
-    intensity_count: [u32; 8],
-    center_vote: Option<BaseMood>,
-    center_intensity: Option<u8>,
-    winner_score: f64,
-    runner_up_score: f64,
-}
+type PageVoteStats = winner::VoteStats;
 
 #[derive(Clone, Debug)]
 struct PagePrediction {
@@ -293,6 +283,7 @@ pub async fn run() {
         .ok()
         .map(|v| matches!(v.as_str(), "1" | "true" | "yes"))
         .unwrap_or(false);
+    let strict_prod_timing = strict_prod_timing_enabled();
 
     println!("\n  {BOLD}RealTest Benchmark Suite{RESET}\n");
     if let Some(ref filters) = filter {
@@ -310,6 +301,11 @@ pub async fn run() {
     println!(
         "  {DIM}Default mode now runs the comparison suite. Use REALTEST_EXPERIMENTS=id1,id2 to narrow it or REALTEST_PAGE_LIMIT=N for a smoke run.{RESET}\n"
     );
+    if strict_prod_timing {
+        println!(
+            "  {YELLOW}Strict prod timing:{RESET} {DIM}image prep + request path measured, benchmark image/reprompt caches disabled.{RESET}\n"
+        );
+    }
 
     let models_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -455,6 +451,17 @@ fn load_realtest_dataset() -> (BTreeMap<String, Vec<PageEntry>>, u32, Option<usi
 
     chapters.retain(|_, pages| !pages.is_empty());
     (chapters, skipped, page_limit)
+}
+
+fn env_truthy(key: &str) -> bool {
+    std::env::var(key)
+        .ok()
+        .map(|value| matches!(value.trim(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
+fn strict_prod_timing_enabled() -> bool {
+    env_truthy("REALTEST_STRICT_PROD_TIMING")
 }
 
 fn build_suite() -> Vec<ExperimentSpec> {
@@ -700,6 +707,21 @@ fn build_suite() -> Vec<ExperimentSpec> {
                 runtime: RUNTIME_DEFAULT,
                 grammar: false,
                 decision: DecisionStrategy::Wide5SelectiveRepair,
+            }),
+        },
+        ExperimentSpec {
+            id: "t4b_wide5_selective_hold",
+            label: "Qwen3-VL-4B-Thinking wide-5 selective repair + action hold",
+            notes: "Wide-5 selective repairs plus a zero-cost delayed epic->tension switch when a short tension bridge is sandwiched between confirmed epic runs.",
+            mode: ExperimentMode::Live(LiveExperiment {
+                model_key: "thinking4b",
+                prep: ImagePrepMode::Legacy672Jpeg,
+                context: ContextWindow::Wide5,
+                prompt_style: PromptStyle::WideSequenceWindow,
+                sampling: GREEDY_HIST,
+                runtime: RUNTIME_DEFAULT,
+                grammar: false,
+                decision: DecisionStrategy::Wide5SelectiveRepairHold,
             }),
         },
         ExperimentSpec {
@@ -995,6 +1017,10 @@ fn discover_models(models_dir: &Path) -> HashMap<&'static str, ModelCandidate> {
         }
     }
 
+    if let Some(thinking4b) = models.get("thinking4b").cloned() {
+        models.insert(winner::WINNER_MODEL_KEY, thinking4b);
+    }
+
     maybe_insert_env_model(
         &mut models,
         "glm41v_9b",
@@ -1165,23 +1191,30 @@ async fn run_live_experiment(
         .await;
         total_errors += window_errors;
         window_durations.extend(window_results.iter().map(|w| w.elapsed_s));
+        let winner_window_results = to_winner_window_predictions(&window_results);
 
         let vote_stats: Vec<PageVoteStats> = (0..pages.len())
-            .map(|idx| build_vote_stats(&window_results, idx))
+            .map(|idx| winner::build_vote_stats(&winner_window_results, idx as u32))
             .collect();
 
         let mut predictions = match live.decision {
             DecisionStrategy::Majority => aggregate_majority(pages, &vote_stats),
             DecisionStrategy::CenterOverride => aggregate_center_override(pages, &vote_stats),
             DecisionStrategy::Direct => aggregate_direct(&window_results, pages.len()),
-            DecisionStrategy::Wide5SelectiveRepair => aggregate_majority(pages, &vote_stats),
+            DecisionStrategy::Wide5SelectiveRepair
+            | DecisionStrategy::Wide5SelectiveRepairHold => {
+                aggregate_majority(pages, &vote_stats)
+            }
             DecisionStrategy::Viterbi
             | DecisionStrategy::FocusedReprompt
             | DecisionStrategy::OcrReprompt
             | DecisionStrategy::SemanticReprompt => aggregate_viterbi(&vote_stats),
         };
 
-        if matches!(live.decision, DecisionStrategy::Wide5SelectiveRepair) {
+        if matches!(
+            live.decision,
+            DecisionStrategy::Wide5SelectiveRepair | DecisionStrategy::Wide5SelectiveRepairHold
+        ) {
             let (repaired, extra_pages, extra_time) = apply_wide5_selective_repairs(
                 &http,
                 &server_url,
@@ -1189,6 +1222,7 @@ async fn run_live_experiment(
                 predictions,
                 live,
                 &mut encoding_cache,
+                matches!(live.decision, DecisionStrategy::Wide5SelectiveRepairHold),
             )
             .await;
             predictions = repaired;
@@ -1508,6 +1542,8 @@ async fn run_window_pass(
     let mut errors = 0u32;
 
     for center in 0..pages.len() {
+        let strict_prod_timing = strict_prod_timing_enabled();
+        let total_start = std::time::Instant::now();
         let left = center.saturating_sub(1);
         let right = if center + 1 < pages.len() {
             center + 1
@@ -1545,7 +1581,11 @@ async fn run_window_pass(
 
         let start = std::time::Instant::now();
         let json = post_json_with_retry(http, server_url, &body).await;
-        let elapsed = start.elapsed().as_secs_f64();
+        let elapsed = if strict_prod_timing {
+            total_start.elapsed().as_secs_f64()
+        } else {
+            start.elapsed().as_secs_f64()
+        };
         let (mood, intensity) = match json.as_ref().and_then(parse_mood_response_with_fallback) {
             Some(v) => v,
             None => {
@@ -1591,41 +1631,23 @@ fn build_window_body(
     images: &[EncodedImage],
     grammar_enabled: bool,
 ) -> serde_json::Value {
-    let mut content = images
+    let winner_images = images
         .iter()
-        .map(|image| {
-            serde_json::json!({
-                "type": "image_url",
-                "image_url": { "url": format!("data:{};base64,{}", image.mime, image.b64) }
-            })
+        .map(|image| winner::EncodedImage {
+            mime: image.mime,
+            b64: image.b64.clone(),
         })
         .collect::<Vec<_>>();
-    content.push(serde_json::json!({ "type": "text", "text": prompt }));
-
-    let mut body = serde_json::json!({
-        "model": "test",
-        "messages": [{
-            "role": "user",
-            "content": content
-        }],
-        "max_tokens": live.sampling.max_tokens,
-        "temperature": live.sampling.temperature
-    });
-
-    if let Some(top_p) = live.sampling.top_p {
-        body["top_p"] = serde_json::json!(top_p);
-    }
-    if let Some(top_k) = live.sampling.top_k {
-        body["top_k"] = serde_json::json!(top_k);
-    }
-    if let Some(seed) = live.sampling.seed {
-        body["seed"] = serde_json::json!(seed);
-    }
-    if grammar_enabled {
-        body["grammar"] = serde_json::json!(MOOD_GRAMMAR);
-    }
-
-    body
+    winner::build_request_body(
+        prompt,
+        &winner_images,
+        live.sampling.max_tokens,
+        live.sampling.temperature,
+        live.sampling.top_p,
+        live.sampling.top_k,
+        live.sampling.seed,
+        grammar_enabled.then_some(MOOD_GRAMMAR),
+    )
 }
 
 fn build_historical_prompt(
@@ -1659,85 +1681,16 @@ fn build_historical_prompt(
 }
 
 fn build_focus_prompt(page_idx: usize, total_pages: usize) -> String {
-    format!(
-        "These are 3 consecutive manga pages from the same chapter.\n\
-        Image 1 is the PREVIOUS page, Image 2 is the CURRENT page, Image 3 is the NEXT page.\n\
-        \n\
-        Classify the CURRENT page only (Image 2) for soundtrack purposes.\n\
-        Use the neighboring pages only to disambiguate the current page.\n\
-        \n\
-        Current page number: {} out of {}.\n\
-        \n\
-        Reply format: mood intensity\n\
-        Allowed moods: epic, tension, sadness, comedy, romance, horror, peaceful, mystery",
-        page_idx + 1,
-        total_pages
-    )
+    winner::build_focus_prompt(page_idx as u32, total_pages as u32)
 }
 
 fn build_wide_sequence_prompt(context_indices: &[usize], total_pages: usize) -> String {
-    let page_numbers = context_indices
-        .iter()
-        .map(|idx| (idx + 1).to_string())
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    format!(
-        "These are 5 consecutive manga pages from the same chapter (pages {} out of {}).\n\
-        They are shown in reading order from earliest to latest.\n\
-        \n\
-        Considering the short narrative flow across all 5 pages, what is the dominant mood of this sequence for soundtrack purposes?\n\
-        \n\
-        Classify as ONE mood that best represents the 5-page segment:\n\
-        - epic: climactic moments, declarations of resolve, power unleashed, clear payoff or triumph\n\
-        - tension: buildup, uncertainty, standoffs, unresolved threats, pressure without release\n\
-        - sadness: grief, defeat, crying, emotional pain, aftermath\n\
-        - comedy: comic relief, gags, slapstick, funny reactions\n\
-        - romance: intimacy, affection, tender moments\n\
-        - horror: fear, monsters, gore, nightmare imagery\n\
-        - peaceful: calm pause, daily life, quiet contemplation, friendly conversation\n\
-        - mystery: secrets, scheming, ominous reveal, hidden motives, foreshadowing\n\
-        \n\
-        Rate the intensity from 1 (low) to 3 (high).\n\
-        \n\
-        Reply format: mood intensity\n\
-        Example: tension 2",
-        page_numbers,
-        total_pages
-    )
+    let as_u32 = context_indices.iter().map(|idx| *idx as u32).collect::<Vec<_>>();
+    winner::build_wide_sequence_prompt(&as_u32, total_pages as u32)
 }
 
 fn build_narrative_focus_prompt(page_idx: usize, total_pages: usize) -> String {
-    format!(
-        "These are 3 consecutive manga pages from the same chapter.\n\
-        Image 1 is the PREVIOUS page, Image 2 is the CURRENT page, Image 3 is the NEXT page.\n\
-        \n\
-        Classify the CURRENT page only (Image 2) for soundtrack purposes.\n\
-        Use neighboring pages only to understand the narrative function of the CURRENT page.\n\
-        \n\
-        First decide whether the CURRENT page is mainly:\n\
-        - payoff / climax / release -> epic\n\
-        - buildup / standoff / unresolved threat / evaluation -> tension\n\
-        - grief / loss / crying / aftermath -> sadness\n\
-        - comic relief / gag / silly reaction -> comedy\n\
-        - tenderness / intimacy / affection -> romance\n\
-        - fear / monster / nightmare / shock -> horror\n\
-        - quiet pause / daily life / calm reflection -> peaceful\n\
-        - reveal / secret / foreshadowing / scheming -> mystery\n\
-        \n\
-        Critical rules:\n\
-        - action without release or payoff is tension, not epic\n\
-        - hidden motives, reveals, and ominous setup are mystery, not epic\n\
-        - a single quiet page can still be peaceful even between intense pages\n\
-        - crying, regret, or aftermath are sadness, not epic\n\
-        \n\
-        Current page number: {} out of {}.\n\
-        \n\
-        Reply with ONLY: mood intensity\n\
-        Example: tension 2",
-        page_idx + 1,
-        total_pages
-    )
+    winner::build_narrative_focus_prompt(page_idx as u32, total_pages as u32)
 }
 
 fn build_wide_narrative_focus_prompt(
@@ -1803,60 +1756,34 @@ fn encode_page(
     role: ImageRole,
     cache: &mut HashMap<String, EncodedImage>,
 ) -> EncodedImage {
+    let allow_cache = !strict_prod_timing_enabled();
     let cache_key = format!("{}::{}::{:?}", page.rel_path, prep.as_str(), role);
-    if let Some(existing) = cache.get(&cache_key) {
-        return existing.clone();
+    if allow_cache {
+        if let Some(existing) = cache.get(&cache_key) {
+            return existing.clone();
+        }
     }
 
-    let encoded = match prep {
-        ImagePrepMode::Legacy672Jpeg => EncodedImage {
-            mime: "image/jpeg",
-            b64: inference::prepare_image(&page.raw_bytes)
-                .unwrap_or_else(|e| panic!("Failed to prepare {}: {}", page.rel_path, e)),
-        },
-        ImagePrepMode::CenterPng1024 => {
-            if matches!(role, ImageRole::Center) {
-                encode_custom_image(&page.raw_bytes, 1024, image::ImageFormat::Png, "image/png")
-            } else {
-                EncodedImage {
-                    mime: "image/jpeg",
-                    b64: inference::prepare_image(&page.raw_bytes)
-                        .unwrap_or_else(|e| panic!("Failed to prepare {}: {}", page.rel_path, e)),
-                }
-            }
-        }
-        ImagePrepMode::AllPng1024 => {
-            encode_custom_image(&page.raw_bytes, 1024, image::ImageFormat::Png, "image/png")
-        }
+    let winner_prep = match prep {
+        ImagePrepMode::Legacy672Jpeg => winner::PrepMode::Legacy672Jpeg,
+        ImagePrepMode::CenterPng1024 => winner::PrepMode::CenterPng1024,
+        ImagePrepMode::AllPng1024 => winner::PrepMode::AllPng1024,
+    };
+    let winner_role = match role {
+        ImageRole::Context => winner::ImageRole::Context,
+        ImageRole::Center => winner::ImageRole::Center,
+    };
+    let winner_encoded = winner::encode_image(&page.raw_bytes, winner_prep, winner_role)
+        .unwrap_or_else(|e| panic!("Failed to prepare {}: {}", page.rel_path, e));
+    let encoded = EncodedImage {
+        mime: winner_encoded.mime,
+        b64: winner_encoded.b64,
     };
 
-    cache.insert(cache_key, encoded.clone());
+    if allow_cache {
+        cache.insert(cache_key, encoded.clone());
+    }
     encoded
-}
-
-fn encode_custom_image(
-    raw_bytes: &[u8],
-    max_dim: u32,
-    format: image::ImageFormat,
-    mime: &'static str,
-) -> EncodedImage {
-    let img = image::load_from_memory(raw_bytes).expect("Failed to decode source image");
-    let (w, h) = img.dimensions();
-    let resized = if w > max_dim || h > max_dim {
-        let scale = max_dim as f64 / w.max(h) as f64;
-        let new_w = (w as f64 * scale).round() as u32;
-        let new_h = (h as f64 * scale).round() as u32;
-        img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3)
-    } else {
-        img
-    };
-
-    let mut cursor = std::io::Cursor::new(Vec::new());
-    resized.write_to(&mut cursor, format).unwrap();
-    EncodedImage {
-        mime,
-        b64: base64::engine::general_purpose::STANDARD.encode(cursor.into_inner()),
-    }
 }
 
 async fn post_json_with_retry(
@@ -1880,110 +1807,54 @@ async fn post_json_with_retry(
 }
 
 fn parse_mood_response_with_fallback(json: &serde_json::Value) -> Option<(String, u8)> {
-    match parse_mood_intensity_response(json) {
-        Ok(tag) => Some((tag.mood.as_str().to_string(), tag.intensity.as_u8())),
-        Err(_) => {
-            let raw_content = extract_content(json).unwrap_or_default().to_lowercase();
-            let cleaned = if let Some(pos) = raw_content.find("</think>") {
-                &raw_content[pos + 8..]
-            } else {
-                raw_content.as_str()
-            };
-            let mut best: Option<(BaseMood, usize)> = None;
-            for &mood in BaseMood::ALL.iter() {
-                if let Some(pos) = cleaned.rfind(mood.as_str()) {
-                    if best.is_none() || pos > best.unwrap().1 {
-                        best = Some((mood, pos));
-                    }
-                }
-            }
-            best.map(|(mood, _)| (mood.as_str().to_string(), 2))
-        }
-    }
+    winner::parse_prediction(json)
+        .ok()
+        .map(|(mood, intensity)| (mood.as_str().to_string(), intensity.as_u8()))
 }
 
-fn build_vote_stats(window_results: &[WindowPrediction], page_idx: usize) -> PageVoteStats {
-    let mut counts = [0u32; 8];
-    let mut weighted = [0.0f64; 8];
-    let mut intensity_sum = [0u32; 8];
-    let mut intensity_count = [0u32; 8];
-    let mut center_vote = None;
-    let mut center_intensity = None;
-
-    for vote in window_results
+fn to_winner_window_predictions(window_results: &[WindowPrediction]) -> Vec<winner::WindowPrediction> {
+    window_results
         .iter()
-        .filter(|vote| vote.members.iter().any(|member| *member == page_idx))
-    {
-        let Some(mood) = BaseMood::from_str_opt(&vote.mood) else {
-            continue;
-        };
-        let idx = mood.index();
-        counts[idx] += 1;
-        let role_weight = if vote.center == page_idx { 1.35 } else { 1.0 };
-        weighted[idx] += role_weight;
-        intensity_sum[idx] += vote.intensity as u32;
-        intensity_count[idx] += 1;
-        if vote.center == page_idx {
-            center_vote = Some(mood);
-            center_intensity = Some(vote.intensity);
-        }
-    }
+        .filter_map(|window| {
+            let mood = BaseMood::from_str_opt(&window.mood)?;
+            Some(winner::WindowPrediction {
+                members: window.members.iter().map(|idx| *idx as u32).collect(),
+                center: window.center as u32,
+                mood,
+                intensity: MoodIntensity::from_u8(window.intensity.max(1)),
+            })
+        })
+        .collect()
+}
 
-    let mut sorted_scores = weighted
-        .iter()
-        .enumerate()
-        .map(|(idx, score)| (idx, *score))
-        .collect::<Vec<_>>();
-    sorted_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    let winner_score = sorted_scores.first().map(|(_, score)| *score).unwrap_or(0.0);
-    let runner_up_score = sorted_scores.get(1).map(|(_, score)| *score).unwrap_or(0.0);
+fn to_winner_prediction(prediction: &PagePrediction) -> Option<winner::AggregatedPrediction> {
+    let mood = BaseMood::from_str_opt(&prediction.mood)?;
+    let intensity = MoodIntensity::from_u8(prediction.intensity.max(1));
+    Some(winner::AggregatedPrediction {
+        mood,
+        intensity,
+        winner_score: prediction.winner_score,
+        runner_up_score: prediction.runner_up_score,
+        scores: MoodScores::from_single(mood),
+        narrative_role: winner::infer_narrative_role(mood, intensity),
+        note: prediction.note.clone(),
+    })
+}
 
-    PageVoteStats {
-        counts,
-        weighted,
-        intensity_sum,
-        intensity_count,
-        center_vote,
-        center_intensity,
-        winner_score,
-        runner_up_score,
+fn from_winner_prediction(prediction: &winner::AggregatedPrediction) -> PagePrediction {
+    PagePrediction {
+        mood: prediction.mood.as_str().to_string(),
+        intensity: prediction.intensity.as_u8(),
+        winner_score: prediction.winner_score,
+        runner_up_score: prediction.runner_up_score,
+        note: prediction.note.clone(),
     }
 }
 
 fn aggregate_majority(pages: &[PageEntry], stats: &[PageVoteStats]) -> Vec<PagePrediction> {
     pages.iter()
         .enumerate()
-        .map(|(idx, _)| {
-            let page_stats = &stats[idx];
-            let mut sorted = page_stats
-                .counts
-                .iter()
-                .enumerate()
-                .map(|(mood_idx, count)| (mood_idx, *count))
-                .collect::<Vec<_>>();
-            sorted.sort_by(|a, b| b.1.cmp(&a.1));
-
-            let winner_idx = if sorted.first().map(|(_, c)| *c).unwrap_or(0) == 0 {
-                BaseMood::Tension.index()
-            } else if sorted.len() > 1 && sorted[0].1 == sorted[1].1 {
-                page_stats
-                    .center_vote
-                    .map(|mood| mood.index())
-                    .unwrap_or(sorted[0].0)
-            } else {
-                sorted[0].0
-            };
-
-            let mood = BaseMood::ALL[winner_idx].as_str().to_string();
-            let intensity = average_intensity(page_stats, winner_idx).unwrap_or(2);
-            PagePrediction {
-                mood,
-                intensity,
-                winner_score: page_stats.winner_score,
-                runner_up_score: page_stats.runner_up_score,
-                note: None,
-            }
-        })
+        .map(|(idx, _)| from_winner_prediction(&winner::aggregate_prediction(&stats[idx])))
         .collect()
 }
 
@@ -2020,7 +1891,10 @@ fn aggregate_center_override(pages: &[PageEntry], stats: &[PageVoteStats]) -> Ve
                 if center_idx != majority_idx {
                     let majority_count = page_stats.counts[majority_idx];
                     let center_count = page_stats.counts[center_idx];
-                    let center_intensity = page_stats.center_intensity.unwrap_or(2);
+                    let center_intensity = page_stats
+                        .center_intensity
+                        .map(|intensity| intensity.as_u8())
+                        .unwrap_or(2);
                     let fragile_majority = majority_count <= center_count + 1;
                     let center_is_specific = matches!(
                         center_mood,
@@ -2054,9 +1928,16 @@ fn aggregate_center_override(pages: &[PageEntry], stats: &[PageVoteStats]) -> Ve
             let intensity = if final_idx == page_stats.center_vote.map(|m| m.index()).unwrap_or(99) {
                 page_stats
                     .center_intensity
-                    .unwrap_or_else(|| average_intensity(page_stats, final_idx).unwrap_or(2))
+                    .map(|intensity| intensity.as_u8())
+                    .unwrap_or_else(|| {
+                        winner::average_intensity(page_stats, final_idx)
+                            .map(|intensity| intensity.as_u8())
+                            .unwrap_or(2)
+                    })
             } else {
-                average_intensity(page_stats, final_idx).unwrap_or(2)
+                winner::average_intensity(page_stats, final_idx)
+                    .map(|intensity| intensity.as_u8())
+                    .unwrap_or(2)
             };
 
             PagePrediction {
@@ -2144,7 +2025,9 @@ fn aggregate_viterbi(stats: &[PageVoteStats]) -> Vec<PagePrediction> {
         .enumerate()
         .map(|(idx, state)| {
             let mood = BaseMood::ALL[*state].as_str().to_string();
-            let intensity = average_intensity(&stats[idx], *state).unwrap_or(2);
+            let intensity = winner::average_intensity(&stats[idx], *state)
+                .map(|value| value.as_u8())
+                .unwrap_or(2);
             PagePrediction {
                 mood,
                 intensity,
@@ -2171,18 +2054,6 @@ impl SelectivePrompt {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct MoodRun {
-    start: usize,
-    end: usize,
-}
-
-impl MoodRun {
-    fn len(self) -> usize {
-        self.end - self.start + 1
-    }
-}
-
 async fn apply_wide5_selective_repairs(
     http: &reqwest::Client,
     server_url: &str,
@@ -2190,29 +2061,38 @@ async fn apply_wide5_selective_repairs(
     mut predictions: Vec<PagePrediction>,
     live: &LiveExperiment,
     cache: &mut HashMap<String, EncodedImage>,
+    apply_action_hold: bool,
 ) -> (Vec<PagePrediction>, u32, f64) {
-    let base_moods = predictions
+    let page_order = (0..pages.len()).map(|idx| idx as u32).collect::<Vec<_>>();
+    let base_predictions = page_order
         .iter()
-        .map(|prediction| prediction.mood.clone())
-        .collect::<Vec<_>>();
-    let runs = build_mood_runs(&base_moods);
+        .zip(predictions.iter())
+        .filter_map(|(&page, prediction)| Some((page, to_winner_prediction(prediction)?)))
+        .collect::<BTreeMap<_, _>>();
     let mut reprompt_cache: HashMap<(usize, SelectivePrompt), Option<(PagePrediction, f64)>> =
         HashMap::new();
     let mut touched_pages = HashSet::new();
     let mut extra_time = 0.0f64;
 
-    for (run_idx, run) in runs.iter().copied().enumerate() {
-        let mood = base_moods[run.start].as_str();
-        let next_run = runs.get(run_idx + 1).copied();
-
-        if mood == "comedy" && run.len() >= 4 {
-            for idx in [run.start, run.end] {
+    for plan in winner::plan_selective_repairs(&page_order, &base_predictions) {
+        match plan {
+            winner::RepairPlan::Single {
+                page,
+                prompt_kind,
+                reason,
+                accept,
+                ..
+            } => {
+                let idx = page as usize;
                 if let Some(prediction) = get_selective_prediction(
                     http,
                     server_url,
                     pages,
                     idx,
-                    SelectivePrompt::Focus,
+                    match prompt_kind {
+                        winner::SelectivePrompt::Focus => SelectivePrompt::Focus,
+                        winner::SelectivePrompt::Narrative => SelectivePrompt::Narrative,
+                    },
                     live,
                     cache,
                     &mut reprompt_cache,
@@ -2221,258 +2101,89 @@ async fn apply_wide5_selective_repairs(
                 )
                 .await
                 {
-                    if matches!(prediction.mood.as_str(), "tension" | "mystery") {
-                        apply_selective_override(&mut predictions[idx], prediction, "comedy_edge");
+                    let should_apply = match accept {
+                        winner::RepairAcceptSingle::Tension => prediction.mood == "tension",
+                        winner::RepairAcceptSingle::Mystery => prediction.mood == "mystery",
+                        winner::RepairAcceptSingle::MysteryOrTension => {
+                            matches!(prediction.mood.as_str(), "mystery" | "tension")
+                        }
+                    };
+                    if should_apply {
+                        apply_selective_override(&mut predictions[idx], prediction, reason);
+                    }
+                }
+            }
+            winner::RepairPlan::Pair {
+                first_page,
+                second_page,
+                prompt_kind,
+                reason,
+                accept,
+                ..
+            } => {
+                let first_idx = first_page as usize;
+                let second_idx = second_page as usize;
+                let mapped_prompt = match prompt_kind {
+                    winner::SelectivePrompt::Focus => SelectivePrompt::Focus,
+                    winner::SelectivePrompt::Narrative => SelectivePrompt::Narrative,
+                };
+                let first = get_selective_prediction(
+                    http,
+                    server_url,
+                    pages,
+                    first_idx,
+                    mapped_prompt,
+                    live,
+                    cache,
+                    &mut reprompt_cache,
+                    &mut touched_pages,
+                    &mut extra_time,
+                )
+                .await;
+                let second = get_selective_prediction(
+                    http,
+                    server_url,
+                    pages,
+                    second_idx,
+                    mapped_prompt,
+                    live,
+                    cache,
+                    &mut reprompt_cache,
+                    &mut touched_pages,
+                    &mut extra_time,
+                )
+                .await;
+                let should_apply = match (&first, &second, accept) {
+                    (
+                        Some(first),
+                        Some(second),
+                        winner::RepairAcceptPair::BothMystery,
+                    ) => first.mood == "mystery" && second.mood == "mystery",
+                    (Some(first), Some(second), winner::RepairAcceptPair::BothEpic) => {
+                        first.mood == "epic" && second.mood == "epic"
+                    }
+                    (Some(first), Some(second), winner::RepairAcceptPair::BothTension) => {
+                        first.mood == "tension" && second.mood == "tension"
+                    }
+                    _ => false,
+                };
+                if should_apply {
+                    if let Some(prediction) = first {
+                        apply_selective_override(&mut predictions[first_idx], prediction, reason);
+                    }
+                    if let Some(prediction) = second {
+                        apply_selective_override(&mut predictions[second_idx], prediction, reason);
                     }
                 }
             }
         }
+    }
 
-        if mood == "tension" && run.len() >= 10 {
-            let first_a = run.start;
-            let first_b = run.start + 1;
-            let last_a = run.end - 1;
-            let last_b = run.end;
-
-            let first_left = get_selective_prediction(
-                http,
-                server_url,
-                pages,
-                first_a,
-                SelectivePrompt::Narrative,
-                live,
-                cache,
-                &mut reprompt_cache,
-                &mut touched_pages,
-                &mut extra_time,
-            )
-            .await;
-            let first_right = get_selective_prediction(
-                http,
-                server_url,
-                pages,
-                first_b,
-                SelectivePrompt::Narrative,
-                live,
-                cache,
-                &mut reprompt_cache,
-                &mut touched_pages,
-                &mut extra_time,
-            )
-            .await;
-            if first_left.as_ref().map(|p| p.mood.as_str()) == Some("mystery")
-                && first_right.as_ref().map(|p| p.mood.as_str()) == Some("mystery")
-            {
-                if let Some(prediction) = first_left {
-                    apply_selective_override(
-                        &mut predictions[first_a],
-                        prediction,
-                        "tension_run_open_mystery",
-                    );
-                }
-                if let Some(prediction) = first_right {
-                    apply_selective_override(
-                        &mut predictions[first_b],
-                        prediction,
-                        "tension_run_open_mystery",
-                    );
-                }
-            }
-
-            let last_left = get_selective_prediction(
-                http,
-                server_url,
-                pages,
-                last_a,
-                SelectivePrompt::Narrative,
-                live,
-                cache,
-                &mut reprompt_cache,
-                &mut touched_pages,
-                &mut extra_time,
-            )
-            .await;
-            let last_right = get_selective_prediction(
-                http,
-                server_url,
-                pages,
-                last_b,
-                SelectivePrompt::Narrative,
-                live,
-                cache,
-                &mut reprompt_cache,
-                &mut touched_pages,
-                &mut extra_time,
-            )
-            .await;
-            if last_left.as_ref().map(|p| p.mood.as_str()) == Some("epic")
-                && last_right.as_ref().map(|p| p.mood.as_str()) == Some("epic")
-            {
-                if let Some(prediction) = last_left {
-                    apply_selective_override(
-                        &mut predictions[last_a],
-                        prediction,
-                        "tension_run_close_epic",
-                    );
-                }
-                if let Some(prediction) = last_right {
-                    apply_selective_override(
-                        &mut predictions[last_b],
-                        prediction,
-                        "tension_run_close_epic",
-                    );
-                }
-            }
-        }
-
-        if mood == "epic" && run.len() <= 4 && run.start > 0 {
-            if let Some(prediction) = get_selective_prediction(
-                http,
-                server_url,
-                pages,
-                run.start,
-                SelectivePrompt::Narrative,
-                live,
-                cache,
-                &mut reprompt_cache,
-                &mut touched_pages,
-                &mut extra_time,
-            )
-            .await
-            {
-                if prediction.mood == "tension" {
-                    apply_selective_override(
-                        &mut predictions[run.start],
-                        prediction,
-                        "short_epic_open_tension",
-                    );
-                }
-            }
-        }
-
-        if mood == "epic"
-            && run.len() >= 4
-            && next_run
-                .map(|next| base_moods[next.start].as_str() == "tension" && next.len() >= 10)
-                .unwrap_or(false)
-        {
-            let penultimate = run.end.saturating_sub(1);
-            if let Some(prediction) = get_selective_prediction(
-                http,
-                server_url,
-                pages,
-                penultimate,
-                SelectivePrompt::Focus,
-                live,
-                cache,
-                &mut reprompt_cache,
-                &mut touched_pages,
-                &mut extra_time,
-            )
-            .await
-            {
-                if prediction.mood == "mystery" {
-                    apply_selective_override(
-                        &mut predictions[penultimate],
-                        prediction,
-                        "epic_bridge_penultimate_mystery",
-                    );
-                }
-            }
-
-            if let Some(prediction) = get_selective_prediction(
-                http,
-                server_url,
-                pages,
-                run.end,
-                SelectivePrompt::Narrative,
-                live,
-                cache,
-                &mut reprompt_cache,
-                &mut touched_pages,
-                &mut extra_time,
-            )
-            .await
-            {
-                if prediction.mood == "mystery" {
-                    apply_selective_override(
-                        &mut predictions[run.end],
-                        prediction,
-                        "epic_bridge_final_mystery",
-                    );
-                }
-            }
-        }
-
-        if mood == "epic" && run.len() >= 8 {
-            let left_idx = run.end.saturating_sub(1);
-            let right_idx = run.end;
-            let left = get_selective_prediction(
-                http,
-                server_url,
-                pages,
-                left_idx,
-                SelectivePrompt::Focus,
-                live,
-                cache,
-                &mut reprompt_cache,
-                &mut touched_pages,
-                &mut extra_time,
-            )
-            .await;
-            let right = get_selective_prediction(
-                http,
-                server_url,
-                pages,
-                right_idx,
-                SelectivePrompt::Focus,
-                live,
-                cache,
-                &mut reprompt_cache,
-                &mut touched_pages,
-                &mut extra_time,
-            )
-            .await;
-            if left.as_ref().map(|p| p.mood.as_str()) == Some("tension")
-                && right.as_ref().map(|p| p.mood.as_str()) == Some("tension")
-            {
-                if let Some(prediction) = left {
-                    apply_selective_override(
-                        &mut predictions[left_idx],
-                        prediction,
-                        "long_epic_tail_tension",
-                    );
-                }
-                if let Some(prediction) = right {
-                    apply_selective_override(
-                        &mut predictions[right_idx],
-                        prediction,
-                        "long_epic_tail_tension",
-                    );
-                }
-            }
-        }
+    if apply_action_hold {
+        apply_action_bridge_holds(&page_order, &base_predictions, &mut predictions);
     }
 
     (predictions, touched_pages.len() as u32, extra_time)
-}
-
-fn build_mood_runs(moods: &[String]) -> Vec<MoodRun> {
-    if moods.is_empty() {
-        return Vec::new();
-    }
-
-    let mut runs = Vec::new();
-    let mut start = 0usize;
-    while start < moods.len() {
-        let mut end = start;
-        while end + 1 < moods.len() && moods[end + 1] == moods[start] {
-            end += 1;
-        }
-        runs.push(MoodRun { start, end });
-        start = end + 1;
-    }
-    runs
 }
 
 fn apply_selective_override(
@@ -2484,6 +2195,33 @@ fn apply_selective_override(
         note: Some(reason.to_string()),
         ..replacement
     };
+}
+
+fn apply_action_bridge_holds(
+    page_order: &[u32],
+    base_predictions: &BTreeMap<u32, winner::AggregatedPrediction>,
+    predictions: &mut [PagePrediction],
+) {
+    let mut effective_predictions = page_order
+        .iter()
+        .filter_map(|&page| {
+            predictions
+                .get(page as usize)
+                .and_then(to_winner_prediction)
+                .map(|prediction| (page, prediction))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    winner::apply_action_bridge_holds(page_order, base_predictions, &mut effective_predictions);
+
+    for &page in page_order {
+        let Some(replacement) = effective_predictions.get(&page) else {
+            continue;
+        };
+        if let Some(target) = predictions.get_mut(page as usize) {
+            *target = from_winner_prediction(replacement);
+        }
+    }
 }
 
 async fn get_selective_prediction(
@@ -2499,12 +2237,17 @@ async fn get_selective_prediction(
     extra_time: &mut f64,
 ) -> Option<PagePrediction> {
     let key = (idx, prompt_kind);
-    if let Some(cached) = reprompt_cache.get(&key) {
-        return cached.as_ref().map(|(prediction, _)| prediction.clone());
+    let allow_cache = !strict_prod_timing_enabled();
+    if allow_cache {
+        if let Some(cached) = reprompt_cache.get(&key) {
+            return cached.as_ref().map(|(prediction, _)| prediction.clone());
+        }
     }
 
     let result = selective_reprompt_page(http, server_url, pages, idx, prompt_kind, live, cache).await;
-    reprompt_cache.insert(key, result.clone());
+    if allow_cache {
+        reprompt_cache.insert(key, result.clone());
+    }
 
     if let Some((prediction, elapsed_s)) = result {
         touched_pages.insert(idx);
@@ -2524,6 +2267,8 @@ async fn selective_reprompt_page(
     live: &LiveExperiment,
     cache: &mut HashMap<String, EncodedImage>,
 ) -> Option<(PagePrediction, f64)> {
+    let strict_prod_timing = strict_prod_timing_enabled();
+    let total_start = std::time::Instant::now();
     let left = idx.saturating_sub(1);
     let right = if idx + 1 < pages.len() { idx + 1 } else { idx };
     let images = vec![
@@ -2576,7 +2321,11 @@ async fn selective_reprompt_page(
     let body = build_window_body(&request_live, &prompt, &images, false);
     let start = std::time::Instant::now();
     let json = post_json_with_retry(http, server_url, &body).await?;
-    let elapsed = start.elapsed().as_secs_f64();
+    let elapsed = if strict_prod_timing {
+        total_start.elapsed().as_secs_f64()
+    } else {
+        start.elapsed().as_secs_f64()
+    };
     let (mood, intensity) = parse_mood_response_with_fallback(&json)?;
 
     Some((
@@ -2593,17 +2342,6 @@ async fn selective_reprompt_page(
 
 fn unary_score(stats: &PageVoteStats, mood: BaseMood) -> f64 {
     stats.weighted[mood.index()].max(0.05)
-}
-
-fn average_intensity(stats: &PageVoteStats, mood_idx: usize) -> Option<u8> {
-    let count = stats.intensity_count[mood_idx];
-    if count == 0 {
-        return None;
-    }
-    Some(
-        ((stats.intensity_sum[mood_idx] as f64 / count as f64).round() as u8)
-            .clamp(1, 3),
-    )
 }
 
 fn is_ambiguous_prediction(prediction: &PagePrediction, stats: &PageVoteStats) -> bool {
@@ -3010,7 +2748,13 @@ fn print_comparison_table(summaries: &[ExperimentSummary], baseline: &Experiment
         );
     }
 
-    println!("\n  {BOLD}Baseline loaded from cache:{RESET} {}", baseline.id);
+    let baseline_label = match baseline.source.as_str() {
+        "cache" => "Baseline loaded from cache",
+        "live" => "Baseline from live run",
+        "derived" => "Baseline from derived run",
+        _ => "Baseline",
+    };
+    println!("\n  {BOLD}{baseline_label}:{RESET} {}", baseline.id);
 }
 
 fn save_suite_summary(
@@ -3107,4 +2851,86 @@ fn query_gpu_memory_used_mib() -> Option<u32> {
     }
     let text = String::from_utf8_lossy(&output.stdout);
     text.lines().next()?.trim().parse::<u32>().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::{apply_action_bridge_holds, to_winner_prediction, PagePrediction};
+
+    fn prediction(mood: &str) -> PagePrediction {
+        PagePrediction {
+            mood: mood.to_string(),
+            intensity: 3,
+            winner_score: 0.0,
+            runner_up_score: 0.0,
+            note: None,
+        }
+    }
+
+    #[test]
+    fn action_bridge_hold_promotes_first_two_tension_pages() {
+        let base = [
+            "epic", "epic", "tension", "tension", "tension", "tension", "tension", "epic",
+            "epic", "epic", "epic",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+        let mut predictions = base
+            .iter()
+            .map(|mood| prediction(mood))
+            .collect::<Vec<_>>();
+        let page_order = (0..base.len() as u32).collect::<Vec<_>>();
+        let base_predictions = page_order
+            .iter()
+            .filter_map(|&page| {
+                predictions
+                    .get(page as usize)
+                    .and_then(to_winner_prediction)
+                    .map(|prediction| (page, prediction))
+            })
+            .collect::<BTreeMap<_, _>>();
+
+        apply_action_bridge_holds(&page_order, &base_predictions, &mut predictions);
+
+        assert_eq!(predictions[2].mood, "epic");
+        assert_eq!(predictions[3].mood, "epic");
+        assert_eq!(predictions[4].mood, "tension");
+        assert_eq!(
+            predictions[2].note.as_deref(),
+            Some("action_bridge_hold_epic")
+        );
+    }
+
+    #[test]
+    fn action_bridge_hold_ignores_long_tension_runs() {
+        let base = [
+            "epic", "epic", "tension", "tension", "tension", "tension", "tension", "tension",
+            "tension", "epic", "epic", "epic", "epic",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+        let mut predictions = base
+            .iter()
+            .map(|mood| prediction(mood))
+            .collect::<Vec<_>>();
+        let page_order = (0..base.len() as u32).collect::<Vec<_>>();
+        let base_predictions = page_order
+            .iter()
+            .filter_map(|&page| {
+                predictions
+                    .get(page as usize)
+                    .and_then(to_winner_prediction)
+                    .map(|prediction| (page, prediction))
+            })
+            .collect::<BTreeMap<_, _>>();
+
+        apply_action_bridge_holds(&page_order, &base_predictions, &mut predictions);
+
+        assert_eq!(predictions[2].mood, "tension");
+        assert_eq!(predictions[3].mood, "tension");
+    }
 }

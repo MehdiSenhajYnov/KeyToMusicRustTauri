@@ -42,13 +42,40 @@
       <span id="serverStatus" class="stat-value">--</span>
     </div>
     <div class="stat-row">
+      <span class="stat-label">Visible Page</span>
+      <span id="visiblePage" class="stat-value">--</span>
+    </div>
+    <div class="stat-row">
       <span class="stat-label">Last Mood</span>
       <span id="lastMood" class="stat-value">--</span>
     </div>
     <div class="stat-row">
-      <span class="stat-label">Pages Analyzed</span>
+      <span class="stat-label">Analyzed Count</span>
       <span id="pagesAnalyzed" class="stat-value">0</span>
     </div>
+    <div class="stat-row">
+      <span class="stat-label">Current Work</span>
+      <span id="currentAnalyzing" class="stat-value">--</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Current Note</span>
+      <span id="analysisNote" class="stat-list">--</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Already Analyzed</span>
+      <span id="analyzedPagesList" class="stat-list">--</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Next Pages</span>
+      <span id="remainingPagesList" class="stat-list">--</span>
+    </div>
+    <div class="stat-block">
+      <span class="stat-label">Recent Events</span>
+      <span id="recentEvents" class="stat-list">--</span>
+    </div>
+    <p class="hint hint-left">
+      `Already Analyzed` = pages with a ready mood in cache. `Current Work` = what the system is doing right now. `Next Pages` = pages still waiting to be processed next around your current reading position.
+    </p>
   </div>
 
   <div class="divider"></div>

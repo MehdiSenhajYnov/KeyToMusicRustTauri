@@ -34,14 +34,14 @@ pub fn get_models_dir() -> PathBuf {
     get_app_data_dir().join("models")
 }
 
-/// Get the path for the Qwen3-VL 2B LLM model.
+/// Get the path for the production Qwen3-VL 4B Thinking LLM model.
 pub fn get_model_path() -> PathBuf {
-    get_models_dir().join("Qwen3VL-2B-Instruct-Q4_K_M.gguf")
+    get_models_dir().join("Qwen3VL-4B-Thinking-Q4_K_M.gguf")
 }
 
-/// Get the path for the Qwen3-VL 2B vision encoder (mmproj).
+/// Get the path for the production Qwen3-VL 4B Thinking vision encoder (mmproj).
 pub fn get_mmproj_path() -> PathBuf {
-    get_models_dir().join("mmproj-Qwen3VL-2B-Instruct-F16.gguf")
+    get_models_dir().join("mmproj-Qwen3VL-4B-Thinking-F16.gguf")
 }
 
 /// Check if the managed llama-server binary exists locally.
@@ -77,13 +77,13 @@ pub fn is_llama_server_installed() -> bool {
 /// Check if both model GGUF files are downloaded (LLM + mmproj).
 pub fn is_model_downloaded() -> bool {
     let llm_ok = if let Ok(meta) = std::fs::metadata(get_model_path()) {
-        meta.len() > 500_000_000 // Q4_K_M ~1.1GB
+        meta.len() > 2_000_000_000 // Q4_K_M ~2.5GB
     } else {
         false
     };
 
     let mmproj_ok = if let Ok(meta) = std::fs::metadata(get_mmproj_path()) {
-        meta.len() > 100_000_000 // mmproj F16 ~780MB
+        meta.len() > 600_000_000 // mmproj F16 ~836MB
     } else {
         false
     };
@@ -534,11 +534,11 @@ where
             .map_err(|e| format!("Failed to create models directory: {}", e))?;
     }
 
-    // Estimated total: LLM Q4_K_M ~1.1GB + mmproj F16 ~780MB = ~1.88GB
-    let estimated_total: u64 = 1_100_000_000 + 780_000_000;
+    // Estimated total: LLM Q4_K_M ~2.5GB + mmproj F16 ~836MB = ~3.33GB
+    let estimated_total: u64 = 2_500_000_000 + 836_000_000;
 
     // Download LLM model
-    let llm_url = "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3VL-2B-Instruct-Q4_K_M.gguf";
+    let llm_url = "https://huggingface.co/Qwen/Qwen3-VL-4B-Thinking-GGUF/resolve/main/Qwen3VL-4B-Thinking-Q4_K_M.gguf";
     tracing::info!("Downloading LLM model from {}", llm_url);
     let llm_size =
         download_file_with_progress(llm_url, &model_path, 0, estimated_total, &progress_cb)
@@ -546,7 +546,7 @@ where
             .map_err(|e| format!("Failed to download model: {}", e))?;
 
     // Download mmproj vision encoder
-    let mmproj_url = "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-2B-Instruct-F16.gguf";
+    let mmproj_url = "https://huggingface.co/Qwen/Qwen3-VL-4B-Thinking-GGUF/resolve/main/mmproj-Qwen3VL-4B-Thinking-F16.gguf";
     tracing::info!("Downloading mmproj vision encoder from {}", mmproj_url);
     download_file_with_progress(
         mmproj_url,

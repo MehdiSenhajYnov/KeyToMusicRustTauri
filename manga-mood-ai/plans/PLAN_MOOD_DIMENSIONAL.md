@@ -1,6 +1,6 @@
 # Plan d'action : Mood dimensionnel (Mood x Intensite)
 
-> **Mise a jour (mars 2026) :** ce document reste valable pour la migration du schema de mood (8 moods x 3 intensites), mais les scores benchmark cites ailleurs dans les anciens plans ont ete depasses. Pour les references actuelles, voir `manga-mood-ai/research/RESEARCH_SYNTHESIS.md`.
+> **Mise a jour (mars 2026) :** ce document reste valable pour la migration du schema de mood (8 moods x 3 intensites), mais ce n'est ni la reference benchmark ni la reference produit. Voir [manga-mood-ai/research/RESEARCH_SYNTHESIS.md](/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/research/RESEARCH_SYNTHESIS.md) pour les benchmarks et [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md) pour le flux actif.
 
 ## Objectif
 

@@ -3,9 +3,8 @@
 > **Statut : EVOLUE → Pipeline V6.** L'idee originale (VLM describe → LLM text classify batch) a donne 19% strict (Pass 3). L'evolution (VLM describe → VLM classify with context) a donne **71% strict (V6)**. Voir la section "Resultats reels" en bas.
 >
 > **Mise a jour (mars 2026) :** ce document est historique. Les references actuelles sont :
-> - **31 pages Blue Lock :** V12 multi-image + Qwen3.5-VL 4B → **23/31 strict, 28/31 relaxed**
-> - **RealTest `BL/1` par defaut dans le repo :** protocole historique V12 + Qwen3-VL-4B-Thinking → **47/70 strict, 60/70 relaxed (85.7%)**
-> - Voir `manga-mood-ai/research/RESEARCH_SYNTHESIS.md` pour la vue d'ensemble a jour.
+> - benchmark de reference: [manga-mood-ai/research/RESEARCH_SYNTHESIS.md](/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/research/RESEARCH_SYNTHESIS.md)
+> - architecture produit active: [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md)
 
 ## Probleme
 

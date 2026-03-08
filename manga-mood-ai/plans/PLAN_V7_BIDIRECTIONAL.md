@@ -1,9 +1,8 @@
 # Plan: Pass V7 — Contexte bidirectionnel (passe + futur)
 
 > **Mise a jour (mars 2026) :** ce plan est historique. Au moment de son ecriture, V6 etait le meilleur resultat observe. Depuis, la reference a ete depassee par :
-> - **V12 multi-image + Qwen3.5-VL 4B** sur le benchmark 31 pages Blue Lock
-> - **V12 historique + Qwen3-VL-4B-Thinking** sur le benchmark RealTest `BL/1` par defaut dans le repo
-> Voir `manga-mood-ai/research/RESEARCH_SYNTHESIS.md` pour l'etat a jour.
+> - les winners benchmark documentes dans [manga-mood-ai/research/RESEARCH_SYNTHESIS.md](/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/research/RESEARCH_SYNTHESIS.md)
+> - le flux produit actif decrit dans [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md)
 
 ## Contexte
 

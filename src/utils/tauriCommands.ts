@@ -413,6 +413,17 @@ export async function getMoodServerStatus(): Promise<string> {
   return invoke<string>("get_mood_server_status");
 }
 
+export interface MoodServiceStatus {
+  runtime: "stopped" | "starting" | "running" | "error";
+  api: "disabled" | "stopped" | "running" | "error";
+  enabled: boolean;
+  port: number;
+}
+
+export async function getMoodServiceStatus(): Promise<MoodServiceStatus> {
+  return invoke<MoodServiceStatus>("get_mood_service_status");
+}
+
 export async function analyzeMood(imagePath: string): Promise<BaseMood> {
   return invoke<BaseMood>("analyze_mood", { imagePath });
 }
