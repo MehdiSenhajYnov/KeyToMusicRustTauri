@@ -1,3 +1,4 @@
+import { listen } from "@tauri-apps/api/event";
 import { lazy, Suspense, useEffect } from "react";
 import { ProfileSelector } from "../Profiles/ProfileSelector";
 import { GlobalToggles } from "../Controls/GlobalToggles";
@@ -27,16 +28,16 @@ function MoodIndicator() {
   useEffect(() => {
     if (!moodAiEnabled) return;
     checkInstallation();
-    let cleanups: (() => void)[] = [];
-    import("@tauri-apps/api/event").then(({ listen }) => {
-      listen("mood_server_status", () => {
-        refreshServiceStatus();
-      }).then((u) => { cleanups.push(u); });
-      listen("mood_api_status", () => {
-        refreshServiceStatus();
-      }).then((u) => { cleanups.push(u); });
-    });
-    return () => { cleanups.forEach((u) => u()); };
+    const cleanups: (() => void)[] = [];
+    let disposed = false;
+    const register = (unlisten: () => void) => { if (disposed) unlisten(); else cleanups.push(unlisten); };
+    listen("mood_server_status", () => {
+      refreshServiceStatus();
+    }).then(register);
+    listen("mood_api_status", () => {
+      refreshServiceStatus();
+    }).then(register);
+    return () => { disposed = true; cleanups.forEach((u) => u()); };
   }, [checkInstallation, moodAiEnabled, refreshServiceStatus]);
 
   if (!moodAiEnabled) return null;

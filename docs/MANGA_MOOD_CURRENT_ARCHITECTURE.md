@@ -1,6 +1,6 @@
 # Manga Mood Current Architecture
 
-> Statut: reference produit actuelle au 2026-03-08.
+> Statut: reference produit actuelle au 2026-03-28.
 >
 > Si une autre doc contredit ce fichier sur le flux extension/backend/runtime, ce fichier fait foi.
 
@@ -17,10 +17,11 @@ Il ne couvre pas :
 ## Runtime actif
 
 - Modele runtime: `Qwen3-VL-4B-Thinking`
-- Noyau partage: [winner.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/winner.rs)
-- Scheduler produit: [chapter_pipeline.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/chapter_pipeline.rs)
+- Noyau partage de prediction page: [winner.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/winner.rs)
+- Scheduler produit chapitre: [chapter_pipeline.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/chapter_pipeline.rs)
 - API HTTP locale: [server.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/server.rs)
 - Cache en memoire par chapitre: [cache.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/cache.rs)
+- Couche de commit OST: [soundtrack_commit.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/soundtrack_commit.rs)
 
 Le systeme actif est base sur 8 moods:
 
@@ -35,6 +36,199 @@ Le systeme actif est base sur 8 moods:
 
 Chaque prediction transporte aussi une intensite `1..3`.
 
+## Idee cle
+
+Le produit ne travaille plus avec une seule notion de "mood".
+
+Il y a maintenant 2 couches distinctes :
+
+1. `page mood`
+2. `OST committed mood`
+
+### `page mood`
+
+Le `page mood` est la prediction finale page par page sortie par le pipeline courant.
+
+Il est calcule a partir de :
+
+- l'analyse visible-window pour la page courante
+- ou le pipeline chapitre
+- plus les post-traitements deja presents dans `winner.rs` et `chapter_pipeline.rs`
+
+Ce resultat est celui qui est stocke dans le cache, benchmarke dans les fichiers Production, et visible comme base dans RealTest.
+
+### `OST committed mood`
+
+Le `OST committed mood` est l'etat musical final decide pour la lecture audio.
+
+Il est derive du `page mood`, mais il n'est pas autorise a changer d'OST pour un pic isole d'une seule page.
+
+Cette couche existe parce qu'un faux positif page par page est acceptable pour l'analyse, mais pas pour la musique :
+
+- un lecteur manga peut supporter une page mal classee
+- une OST qui change 10 secondes puis revient casse l'experience
+
+## Pourquoi cette couche existe
+
+Le pipeline page par page peut encore produire des pics isoles incorrects.
+
+Exemple concret:
+
+- run Production courant: `BL/2/21 = tension:2`, `BL/2/22 = comedy:3`, `BL/2/23 = tension:2`
+- dans le contexte de lecture et de musique, ce `comedy` central est un spike aberrant
+- si on relance une OST `comedy` pour cette page puis qu'on revient a `tension`, on cree une rupture artificielle
+
+Le but de la couche `soundtrack_commit` est donc :
+
+- conserver la finesse analytique du pipeline page par page
+- mais rendre les transitions OST beaucoup plus stables
+- sans revenir a l'ancien `MoodDirector`
+
+## Couche OST commit
+
+### Position dans le flux
+
+La couche OST ne remplace pas le pipeline page par page.
+
+Elle est appliquee apres resolution d'une page, au moment ou l'extension demande au backend de rejouer le mood final via `POST /api/trigger`.
+
+Le flux live est donc :
+
+1. le backend resout une page et produit un `page mood`
+2. l'extension appelle `POST /api/trigger` avec `mood + chapter + page`
+3. le backend relit l'entree de cache courante
+4. le backend regarde aussi jusqu'a `page+2` si ces pages sont deja en cache
+5. `soundtrack_commit` decide si l'OST doit rester ou changer
+6. le backend emet `mood_detected` puis `mood_committed`
+
+### Familles musicales
+
+La couche OST raisonne d'abord en familles, pas seulement en labels bruts :
+
+- `Action` = `epic + tension`
+- `Emotion` = `sadness + romance`
+- `Light` = `comedy + peaceful`
+- `Suspense` = `horror + mystery`
+
+Consequence produit :
+
+- un switch entre familles est couteux et demande plus de confirmation
+- un changement dans la meme famille peut etre accepte plus facilement
+
+Exemple :
+
+- `tension -> epic` peut etre une intensification de la meme OST d'action
+- `tension -> comedy` est un vrai changement de couleur musicale, donc il faut plus de certitude
+
+### Fenetre de contexte
+
+La logique actuelle utilise une petite fenetre locale autour de la page courante :
+
+- historique recent conserve: jusqu'a `6` observations
+- rayon de contexte pour la decision: `-2 .. +2`
+- futur live exploite si deja connu en cache: jusqu'a `page+2`
+
+Le score de contexte est pondere :
+
+- la page courante pese le plus
+- `+/-1` pese moins
+- `+/-2` pese encore moins
+
+Le but est de decider "comme le modele", c'est-a-dire avec du contexte avant/apres, au lieu de faire une simple hysteresis causale qui retarde tout d'une page.
+
+### Regles de commit
+
+La couche OST suit 4 principes :
+
+1. Un spike cross-family d'une seule page ne doit pas changer l'OST.
+2. Un vrai nouveau segment confirme par le voisinage peut changer l'OST des la premiere page du segment.
+3. Un changement dans la meme famille est plus permissif qu'un changement cross-family.
+4. Si le futur n'est pas encore en cache, la page courante peut quand meme debloquer un switch immediat si ses scores sont tres forts et que le role narratif n'est pas un simple `continuation`.
+
+En plus de ces regles, la logique actuelle applique maintenant un decrochage explicite pour la famille `Light` :
+
+- si l'OST engagee est `Light`
+- si la page courante a deja quitte `Light`
+- et que `page+1` et `page+2` ont aussi quitte `Light`
+- alors on n'a plus le droit de rester colle a cette OST `Light`
+
+Dans ce cas, la couche OST force la sortie de la famille courante, puis choisit la nouvelle cible a partir du contexte local au lieu de reprendre aveuglement le label brut de la page.
+
+En pratique, le systeme essaye d'eviter 2 ecueils :
+
+- faux positif `comedy` d'une seule page au milieu d'une zone action
+- delai mecanique d'une page sur tous les vrais changements
+- collage artificiel d'une OST `Light` alors que les pages suivantes disent deja clairement "on n'est plus la"
+
+### Exemple `BL/2/22`
+
+Cas Production observe :
+
+- `BL/2/21 = tension:2`
+- `BL/2/22 = comedy:3`
+- `BL/2/23 = tension:2`
+
+Interpretation OST :
+
+- le `page mood` reste `comedy:3`
+- mais l'`OST committed mood` reste `tension:2`
+
+Pourquoi :
+
+- `comedy` appartient a la famille `Light`
+- les pages voisines soutiennent `Action`
+- le switch `Action -> Light` n'a pas assez de support de contexte
+- la couche OST refuse donc de relancer une OST `comedy` pour une seule page
+
+Ce comportement est exactement la correction voulue pour eviter les micro-switchs musicaux.
+
+### Exemple `BL/3/09..12`
+
+Cas Production observe :
+
+- `BL/3/08 = comedy:3`
+- `BL/3/09 = tension:2`
+- `BL/3/10 = horror:3`
+- `BL/3/11 = tension:2`
+- `BL/3/12 = horror:3`
+
+Probleme produit :
+
+- l'ancienne version de `soundtrack_commit` pouvait rester bloquee sur `comedy`
+- comme `Action` et `Suspense` se partageaient le contexte, aucune famille adverse ne "gagnait proprement"
+- resultat : l'OST `Light` survivait alors que la scene etait deja sortie de cette ambiance
+
+Correction actuelle :
+
+- si la page courante et `page+1/page+2` ont toutes quitte `Light`, on force la sortie de `Light`
+- la nouvelle famille cible est choisie par le score de contexte local
+- le nouveau mood cible est choisi dans cette famille avec une priorite musicale stable
+
+Exemple :
+
+- dans une famille `Action`, on prefere `tension` a `epic` en cas d'egalite
+- dans une famille `Suspense`, on prefere `mystery` a `horror` en cas d'egalite
+
+Le but n'est pas de corriger le `page mood` semantique a tout prix.  
+Le but est d'eviter qu'une OST absurde reste engagee juste parce que le bruit se repartit entre deux alternatives serieuses.
+
+## Ancien `MoodDirector`
+
+L'ancien `MoodDirector` existe encore dans le repo pour reference et anciens tests, dans [director.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/director.rs).
+
+Il n'est pas branche dans le flux produit actuel.
+
+Le runtime actif utilise :
+
+- `winner.rs`
+- `chapter_pipeline.rs`
+- `soundtrack_commit.rs`
+
+Il ne faut donc pas confondre :
+
+- ancien `MoodDirector` legacy
+- nouvelle couche `soundtrack_commit` branchee en live
+
 ## Composants
 
 ### App Tauri
@@ -44,15 +238,19 @@ L'app Tauri fait tourner :
 - le runtime `llama-server`
 - l'API HTTP locale
 - le cache mood en memoire
-- le `MoodDirector` qui declenche les changements d'OST cote app
+- le pipeline chapitre
+- la couche de commit OST appelee au moment de `POST /api/trigger`
 
 ### Extension navigateur
 
-L'extension n'essaie plus de "decider" le mood elle-meme. Elle fait 3 choses :
+L'extension n'essaie plus de "decider" le mood elle-meme.
+
+Elle fait 4 choses :
 
 1. detecter la page visible et l'ordre de lecture
 2. precharger les pages voisines dans le navigateur reel de l'utilisateur
 3. pousser les pages vers l'API locale, puis consommer le cache
+4. demander explicitement le commit OST via `POST /api/trigger`
 
 ### Session navigateur reelle
 
@@ -86,7 +284,7 @@ L'API HTTP locale expose actuellement :
 Notes importantes :
 
 - l'ancien `POST /api/analyze` ne fait plus partie du flux extension
-- `analyze_mood(image_path)` existe encore comme commande Tauri locale, mais c'est un helper interne/manuel, pas le chemin de production de l'extension
+- l'ancien helper Tauri local `analyze_mood(image_path)` a ete retire du produit
 
 ## Workflow actuel
 
@@ -155,12 +353,32 @@ Pour la page visible `X`, le flux prioritaire est :
 
 1. `POST /api/lookup`
 2. si miss cache, `POST /api/analyze-window`
+3. puis `POST /api/trigger` pour decider l'etat OST reel
 
 `analyze-window` envoie une fenetre locale centree sur la page visible, jusqu'a `9` pages max (`-4 .. +4`) si elles sont capturables.
 
 Le strict minimum pour lancer ce chemin est la disponibilite locale de `X-2 .. X+2`.
 
-### 7. Annulation
+### 7. Evenements emis
+
+Apres `POST /api/trigger`, le backend emet 2 evenements distincts :
+
+- `mood_detected`
+- `mood_committed`
+
+Semantique :
+
+- `mood_detected` = resultat brut de la page courante
+- `mood_committed` = etat musical final apres smoothing OST
+
+Consequence debug importante :
+
+- un `mood_detected = comedy`
+- suivi d'un `mood_committed = tension`
+
+est un comportement normal si la couche OST a filtre un spike isole.
+
+### 8. Annulation
 
 Si l'utilisateur change de page pendant une analyse visible :
 
@@ -208,6 +426,12 @@ Une entree de cache contient :
 - source (`visible_window` ou `chapter_pipeline`)
 - statut `finalized`
 
+Important :
+
+- le cache stocke le `page mood`
+- il ne stocke pas directement l'etat musical commute final
+- la couche OST lit le cache puis decide le `committed mood` a la demande sur `POST /api/trigger`
+
 ### `/api/cache/status`
 
 Cet endpoint est la source de debug pour l'extension. Il expose notamment :
@@ -217,39 +441,6 @@ Cet endpoint est la source de debug pour l'extension. Il expose notamment :
 - focus courant
 - phase backend active
 - derniere erreur backend
-
-## Semantique du popup extension
-
-Le popup simplifie volontairement l'etat en 3 notions :
-
-- `Already Analyzed`
-- `Current Work`
-- `Next Pages`
-
-### Already Analyzed
-
-Pages du buffer cible `X-10 .. X+20` qui ont deja un mood pret en cache.
-
-### Current Work
-
-Ce champ est oriente page cible utilisateur, pas operation technique brute.
-
-Exemple :
-
-- si le backend calcule une fenetre centree sur `24` pour debloquer `22`
-- le popup affiche `Analyzing Page 22`
-- la note precise que le contexte centré sur `24` est en cours de calcul
-
-### Next Pages
-
-Pages encore manquantes dans la zone cible `X-10 .. X+20`.
-
-### Etats frequents
-
-- `Idle` : rien a faire cote extension et aucun travail cible immediat
-- `Waiting for context` : des pages manquantes existent encore, mais le backend n'a pas encore assez de contexte local pour publier la prochaine page cible
-- `Preparing Page X` : l'extension pousse encore des sources vers le pipeline
-- `Analyzing Page X` : le backend travaille activement pour debloquer la prochaine page cible
 
 ## Extension UI et debug
 
@@ -264,20 +455,54 @@ Le popup actuel est un outil de debug produit. Il montre :
 - prochaines pages attendues
 - evenements recents
 
-Les anciens champs debug plus techniques (`Warming Pages`, `Prefetch Queue`, `Visible Queue`) ne sont plus la vue principale a lire.
+Il expose aussi des toggles distincts :
+
+- detection globale
+- badge/page overlay
+- playback trigger
+
+Le toggle `playback trigger` coupe la republication musicale sans couper l'analyse du pipeline.
+
+## RealTest et comparaison base vs smoothing
+
+Le benchmark Production continue de produire le resultat page par page de reference :
+
+- [realtest_suite_t4b_wide5_selective_hold.json](/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/results/realtests/realtest_suite_t4b_wide5_selective_hold.json)
+
+Le benchmark genere aussi un companion derive avec la couche OST appliquee :
+
+- [realtest_suite_t4b_wide5_selective_hold_soundtrack_commit.json](/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/results/realtests/realtest_suite_t4b_wide5_selective_hold_soundtrack_commit.json)
+
+Dans le viewer RealTest :
+
+- le resultat base correspond au `page mood`
+- la variante `+ OST commit` correspond au `committed mood`
+- la `Reference` ground truth peut aussi etre comparee a `Reference + OST commit`
+- le bouton `Compare OST` compare les deux directement
+
+Ce viewer sert a verifier qu'on filtre bien les spikes du type `BL/2/22 = comedy` sans rendre tout le systeme trop collant ailleurs.
+
+Il sert aussi a verifier que la couche OST :
+
+- ne garde pas `comedy` quand `page+1/page+2` montrent deja une vraie sortie de `Light`
+- choisit une cible musicale plus stable que le simple label brut de la page
 
 ## Limites connues
 
 - Le systeme ne peut precharger que les pages dont la source est deja recuperable depuis la page lecteur ou son JS.
 - Si le site ne revele pas encore les URLs futures, l'extension ne peut pas inventer les pages lointaines.
 - Le chemin `analyze-window` reste conditionne par la capturabilite locale de `X-2 .. X+2`.
+- Si `page+1` et `page+2` ne sont pas encore en cache, la couche OST decide avec moins de futur disponible.
 - Le cache est memoire seulement; il sert le chapitre courant, pas une persistence cross-session.
 
 ## Fichiers de reference
 
 - [src-tauri/src/mood/server.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/server.rs)
+- [src-tauri/src/mood/soundtrack_commit.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/soundtrack_commit.rs)
 - [src-tauri/src/mood/chapter_pipeline.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/chapter_pipeline.rs)
 - [src-tauri/src/mood/winner.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/winner.rs)
+- [src-tauri/src/mood/director.rs](/home/mehdi/Dev/KeyToMusicRustTauri/src-tauri/src/mood/director.rs)
 - [WebExtension/manga-mood/content.js](/home/mehdi/Dev/KeyToMusicRustTauri/WebExtension/manga-mood/content.js)
 - [WebExtension/manga-mood/background.js](/home/mehdi/Dev/KeyToMusicRustTauri/WebExtension/manga-mood/background.js)
 - [WebExtension/manga-mood/popup.js](/home/mehdi/Dev/KeyToMusicRustTauri/WebExtension/manga-mood/popup.js)
+- [manga-mood-ai/results/realtest-results-viewer.js](/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/results/realtest-results-viewer.js)

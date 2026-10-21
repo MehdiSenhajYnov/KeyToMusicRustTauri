@@ -58,12 +58,19 @@ interface HistoryState {
   getRedoActionName: () => string | null;
 }
 
+let batchDepth = 0;
+export function batchHistory(work: () => void) {
+  batchDepth++;
+  try { work(); } finally { batchDepth--; }
+}
+
 export const useHistoryStore = create<HistoryState>((set, get) => ({
   past: [],
   future: [],
   maxEntries: 50,
 
   pushState: (action, previousState, newState) => {
+    if (batchDepth > 0) return;
     set((state) => {
       const entry: HistoryEntry = {
         timestamp: Date.now(),

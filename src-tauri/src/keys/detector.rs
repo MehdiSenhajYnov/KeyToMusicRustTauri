@@ -33,6 +33,7 @@ fn is_modifier_code(code: &str) -> bool {
 /// Consolidated into a single RwLock for efficient concurrent reads.
 struct KeyDetectorConfig {
     enabled: bool,
+    suspended: bool,
     cooldown_ms: u32,
     stop_all_shortcut: Vec<String>,
     key_detection_shortcut: Vec<String>,
@@ -59,6 +60,7 @@ impl KeyDetector {
         Self {
             config: Arc::new(RwLock::new(KeyDetectorConfig {
                 enabled: true,
+                suspended: false,
                 cooldown_ms,
                 stop_all_shortcut,
                 key_detection_shortcut: Vec::new(),
@@ -103,6 +105,10 @@ impl KeyDetector {
 
                     // Single read-lock for all config fields (shortcuts + enabled)
                     let cfg = config.read().unwrap();
+
+                    if cfg.suspended {
+                        return;
+                    }
 
                     // Global shortcuts: work even when key detection is disabled
                     if !cfg.key_detection_shortcut.is_empty()
@@ -305,10 +311,12 @@ impl KeyDetector {
                 let mut guard = result.0;
                 *guard = false;
 
-                if !config.read().unwrap().enabled {
+                let cfg = config.read().unwrap();
+                if !cfg.enabled || cfg.suspended {
                     continue;
                 }
 
+                drop(cfg);
                 if let Some(combo) = chord_detector.check_timer() {
                     let pressed = pressed_keys.lock().unwrap();
                     let has_shift = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
@@ -329,6 +337,13 @@ impl KeyDetector {
         if !enabled {
             self.chord_detector.clear();
         }
+    }
+
+    /// Suspend UI typing/capture without changing the persisted enabled preference.
+    pub fn set_suspended(&self, suspended: bool) {
+        self.config.write().unwrap().suspended = suspended;
+        self.chord_detector.clear();
+        self.pressed_keys.lock().unwrap().clear();
     }
 
     /// Update the cooldown duration.

@@ -46,6 +46,12 @@ REALTEST_FILTER=BL/1 cargo test --manifest-path src-tauri/Cargo.toml realtest_be
 # Narrow the suite to a few experiments
 REALTEST_FILTER=BL/1 REALTEST_EXPERIMENTS=baseline_cache,t4b_official,q35_9b_viterbi cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
 
+# Current-method showdown (same prod method, multiple model backbones)
+REALTEST_FILTER=BL/1 REALTEST_EXPERIMENTS=current_method_showdown cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
+
+# Current-runtime showdown (same model + same method, runtime only)
+REALTEST_FILTER=BL/1 REALTEST_EXPERIMENTS=current_runtime_showdown cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
+
 # Smoke run on only the first 3 pages of each selected chapter
 REALTEST_FILTER=BL/1 REALTEST_PAGE_LIMIT=3 cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
 
@@ -249,6 +255,167 @@ This small-looking change is exactly the kind of gain we wanted:
 - no new oracle
 - no extra inference
 - better temporal coherence on a real chapter-level run
+
+### March 2026 model showdown on the current production method (`BL/1`)
+
+After the winner was stabilized, a dedicated **same-method showdown** was run to answer a narrower question:
+
+- keep the exact same current production methodology
+- keep the exact same `wide-5` prompt backbone
+- keep the exact same legacy `672 JPEG` preprocessing
+- keep the exact same selective repairs
+- keep the exact same action-bridge hold
+- swap **only the model backbone**
+
+Command used:
+
+```bash
+REALTEST_FILTER=BL/1 REALTEST_EXPERIMENTS=current_method_showdown cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
+```
+
+Results:
+
+| Experiment | Strict | Relaxed | Intensity | Avg time | Verdict |
+|-----------|--------|---------|-----------|----------|---------|
+| `t4b_wide5_selective_hold` | **59/70** | **68/70** | 24/70 | ~12.8s/page | **Current winner remains best overall** |
+| `q35_9b_wide5_selective_hold` | 47/70 | 57/70 | 19/70 | ~4.5s/page | Fastest strong challenger, but clearly below the winner |
+| `q35_4b_wide5_selective_hold` | 38/70 | 56/70 | **33/70** | ~4.1s/page | Best challenger for intensity only, not for primary mood |
+| `q35_4b_opus_v2_wide5_selective_hold` | 34/70 | 55/70 | 28/70 | ~38.5s/page | Not usable: slower and less accurate, with occasional `???` outputs |
+
+Conclusions from this showdown:
+- **do not replace** `Qwen3-VL-4B-Thinking` in production for the BL/1 mood task
+- `Qwen3.5-9B` is the best pure challenger, but still loses badly on strict and relaxed accuracy
+- `Qwen3.5-4B` has one interesting property: it predicts **intensity** better than the current winner
+- the Jackrong `Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-v2` model is **not competitive** here
+
+Why this benchmark should not be rerun casually:
+- it already answers the exact “same method, different model” question
+- it is expensive (~86 minutes for the full 4-model run on the current machine)
+- it should only be rerun if one of these changes:
+  - the BL/1 ground truth
+  - the current production method (`wide-5`, selective repairs, hold, preprocessing)
+  - the candidate model list
+  - the runtime integration in a way that materially changes decoding behavior
+
+Artifacts saved from this showdown:
+- `manga-mood-ai/results/realtest_suite_bl_1.json`
+- `manga-mood-ai/results/realtest_suite_bl_1.md`
+- `manga-mood-ai/results/realtest_suite_bl_1_pages.json`
+- `manga-mood-ai/results/realtest_suite_bl_1_pages.md`
+
+---
+
+### March 2026 quantization showdown on the current production method (`BL/1`)
+
+After the frozen same-method model showdown, a second narrower question was run:
+
+- keep the exact same backbone: `Qwen3-VL-4B-Thinking`
+- keep the exact same `wide-5` prompt backbone
+- keep the exact same legacy `672 JPEG` preprocessing
+- keep the exact same selective repairs
+- keep the exact same action-bridge hold
+- swap **only the official GGUF quantization pairing**
+
+Official Qwen / Hugging Face availability for `Qwen3-VL-4B-Thinking-GGUF` at the time of the run:
+
+- LLM: `Q4_K_M`, `Q8_0`, `F16`
+- mmproj: `F16`, `Q8_0`
+- there is **no lighter official LLM quant than `Q4_K_M`** in the official repo, so `Q3/Q2/IQ*` were not included
+
+Tested subset:
+
+- current baseline: `llm=Q4_K_M + mmproj=F16`
+- lighter official stack around current: `llm=Q4_K_M + mmproj=Q8_0`
+- heavier official stack: `llm=Q8_0 + mmproj=F16`
+- heaviest official stack: `llm=F16 + mmproj=F16`
+
+Command used:
+
+```bash
+REALTEST_FILTER=BL/1 REALTEST_EXPERIMENTS=current_quantization_showdown cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
+```
+
+Results:
+
+| Experiment | Quantization | Strict | Relaxed | Intensity | Avg time | VRAM | Weights | Verdict |
+|-----------|--------------|--------|---------|-----------|----------|------|---------|---------|
+| `t4b_wide5_selective_hold` | `Q4_K_M + F16 mmproj` | **59/70** | **68/70** | **24/70** | **~12.1s/page** | **~6437 MiB** | **~3180 MiB** | **Keep as production baseline** |
+| `t4b_wide5_selective_hold_mmproj_q8_0` | `Q4_K_M + Q8_0 mmproj` | 47/70 | 61/70 | 22/70 | ~11.0s/page | ~6567 MiB | ~2815 MiB | Slightly lighter on disk, but accuracy collapses badly |
+| `t4b_wide5_selective_hold_q8_0` | `Q8_0 + F16 mmproj` | 49/70 | 63/70 | **24/70** | ~15.5s/page | ~8264 MiB | ~4880 MiB | More expensive and still clearly worse than baseline |
+| `t4b_wide5_selective_hold_f16` | `F16 + F16 mmproj` | 47/70 | 65/70 | 23/70 | ~23.7s/page | ~11747 MiB | ~8476 MiB | Near-VRAM-limit, much slower, still worse on mood accuracy |
+
+Conclusions from this showdown:
+
+- **keep `Q4_K_M`** for production
+- no official heavier quantization improves strict or relaxed accuracy on `BL/1`
+- the only slightly smaller official stack (`Q4_K_M + mmproj Q8_0`) is **not acceptable** because it loses **-12 strict** and **-7 relaxed**
+- `Q8_0` preserves intensity parity with the baseline but loses too much mood accuracy while costing more VRAM and more time
+- `F16` is the worst product tradeoff here: no accuracy win, ~11.7 GiB VRAM, occasional unstable `???` output, and nearly **2x** the latency of the baseline
+
+Artifacts saved from this showdown:
+
+- `manga-mood-ai/results/realtest_suite_bl_1_current_quantization_showdown.json`
+- `manga-mood-ai/results/realtest_suite_bl_1_current_quantization_showdown.md`
+- `manga-mood-ai/results/realtest_suite_bl_1_current_quantization_showdown_pages.json`
+- `manga-mood-ai/results/realtest_suite_bl_1_current_quantization_showdown_pages.md`
+
+### March 24, 2026 runtime showdown on the current production method (`BL/1`)
+
+Question asked:
+
+- keep the exact same winner method (`t4b_wide5_selective_hold`)
+- keep the exact same model (`Qwen3-VL-4B-Thinking`, `Q4_K_M + mmproj F16`)
+- change only the llama-server runtime stack
+
+Important clarification discovered during this run:
+
+- before this showdown, the **benchmark winner baseline** was still using `primary_12288x1`
+- the **app runtime path** was already starting the same winner core through `BenchmarkPrimary`, which resolves to `8192x1` unless overridden
+- after validation, the benchmark winner baseline was explicitly aligned to the production runtime; the old `12288x1` profile is now kept as a **legacy reference** experiment
+- on this RTX 4070 12 GB machine, the current auto GPU heuristic resolves to **`ngl=48`** because `nvidia-smi` reports **12282 MiB** total VRAM
+
+Command used for the full runtime-only showdown:
+
+```bash
+REALTEST_FILTER=BL/1 REALTEST_EXPERIMENTS=current_runtime_showdown cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
+```
+
+Full `BL/1` results:
+
+| Experiment | Runtime | Strict | Relaxed | Intensity | Avg time | VRAM | Errors | Verdict |
+|-----------|---------|--------|---------|-----------|----------|------|--------|---------|
+| `t4b_wide5_selective_hold` | `8192x1, ngl=48` | **59/70** | **68/70** | 24/70 | **~11.1s/page** | **~6565 MiB** | 0 | **Current benchmark baseline and current production runtime** |
+| `t4b_wide5_selective_hold_runtime_legacy_12288` | `12288x1, ngl=48` | **59/70** | **68/70** | 24/70 | ~11.6s/page | ~6863 MiB | 0 | Legacy benchmark reference, no quality gain over the prod-aligned baseline |
+| `t4b_wide5_selective_hold_runtime_ctx_16384` | `16384x1, ngl=48` | **59/70** | **68/70** | 24/70 | ~11.9s/page | ~7279 MiB | 0 | No quality gain; only more VRAM and slightly more latency |
+| `t4b_wide5_selective_hold_runtime_parallel_2` | `12288x2, ngl=48` | 46/70 | 66/70 | **40/70** | **~7.8s/page** | ~7005 MiB | **11** | Faster, but too unstable and too damaging on strict mood accuracy |
+| `t4b_wide5_selective_hold_runtime_gpu_64` | `12288x1, ngl=64` | **59/70** | **68/70** | 24/70 | ~13.3s/page | ~7250 MiB | 0 | Same quality as baseline, but slower and more memory-hungry |
+
+Low-end offload smoke only:
+
+- `t4b_wide5_selective_hold_runtime_gpu_32` (`12288x1, ngl=32`) was run as a short smoke on the first 3 pages only.
+- Measured result: `0/1 strict`, `1/1 relaxed`, `0/1 intensity`, **~54.3s/page**, **~6883 MiB VRAM**.
+- This profile is not useful as a default low-end fallback: it is dramatically slower and showed no compensating quality gain in the smoke.
+
+Conclusions from this runtime showdown:
+
+- **keep the current app runtime logic** (`8192x1` + auto GPU layers) as the best production-balanced profile
+- the benchmark winner baseline is now explicitly aligned to that same runtime
+- the old benchmark-specific `12288x1` runtime is **not better** than `8192x1` on `BL/1`, so it now survives only as a legacy comparison point
+- larger context (`16384`) brings **no benefit** for the current wide-5 winner method
+- more aggressive GPU offload (`ngl=64`) also brings **no benefit** on this machine
+- `parallel_slots=2` is **not safe** for the primary mood classifier here: it is faster, but loses **-13 strict**, produces **11 errors**, and even changes decoded labels on early pages
+- if a lower-end recommendation is needed, prefer **`8192x1 + ngl auto`** over explicit low GPU offload on this stack
+
+Artifacts saved from this showdown:
+
+- `manga-mood-ai/results/realtest_suite_bl_1_current_runtime_showdown.json`
+- `manga-mood-ai/results/realtest_suite_bl_1_current_runtime_showdown.md`
+- `manga-mood-ai/results/realtest_suite_bl_1_current_runtime_showdown_pages.json`
+- `manga-mood-ai/results/realtest_suite_bl_1_current_runtime_showdown_pages.md`
+- `manga-mood-ai/results/realtest_suite_bl_1_first3_current_runtime_gpu32_smoke.json`
+- `manga-mood-ai/results/realtest_suite_bl_1_first3_current_runtime_gpu32_smoke.md`
+- `manga-mood-ai/results/realtest_suite_bl_1_first3_current_runtime_gpu32_smoke_pages.json`
+- `manga-mood-ai/results/realtest_suite_bl_1_first3_current_runtime_gpu32_smoke_pages.md`
 
 ---
 

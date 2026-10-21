@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { TrackId, SoundId } from "../types";
+import type { ActiveLoopContext } from "../utils/loopPlayback";
 
 interface PlayingTrack {
   trackId: TrackId;
@@ -12,18 +13,23 @@ const _positions: Record<string, number> = {};
 
 interface AudioState {
   playingTracks: Map<TrackId, PlayingTrack>;
+  loopContexts: Map<TrackId, ActiveLoopContext>;
   lastKeyPressed: string | null;
 
   setSoundStarted: (trackId: TrackId, soundId: SoundId) => void;
-  setSoundEnded: (trackId: TrackId) => void;
+  setSoundEnded: (trackId: TrackId, soundId?: SoundId) => void;
   updateProgress: (trackId: TrackId, position: number) => void;
   getPosition: (trackId: TrackId) => number;
+  setLoopContext: (trackId: TrackId, context: ActiveLoopContext | null) => void;
+  clearLoopContext: (trackId: TrackId) => void;
+  clearLoopContexts: () => void;
   setLastKeyPressed: (keyCode: string | null) => void;
   clearAll: () => void;
 }
 
-export const useAudioStore = create<AudioState>((set) => ({
+export const useAudioStore = create<AudioState>((set, get) => ({
   playingTracks: new Map(),
+  loopContexts: new Map(),
   lastKeyPressed: null,
 
   setSoundStarted: (trackId, soundId) => {
@@ -35,7 +41,8 @@ export const useAudioStore = create<AudioState>((set) => ({
     });
   },
 
-  setSoundEnded: (trackId) => {
+  setSoundEnded: (trackId, soundId) => {
+    if (soundId && get().playingTracks.get(trackId)?.soundId !== soundId) return;
     delete _positions[trackId];
     set((state) => {
       const newMap = new Map(state.playingTracks);
@@ -51,6 +58,31 @@ export const useAudioStore = create<AudioState>((set) => ({
 
   getPosition: (trackId) => {
     return _positions[trackId] ?? 0;
+  },
+
+  setLoopContext: (trackId, context) => {
+    set((state) => {
+      const next = new Map(state.loopContexts);
+      if (context) {
+        next.set(trackId, context);
+      } else {
+        next.delete(trackId);
+      }
+      return { loopContexts: next };
+    });
+  },
+
+  clearLoopContext: (trackId) => {
+    set((state) => {
+      if (!state.loopContexts.has(trackId)) return state;
+      const next = new Map(state.loopContexts);
+      next.delete(trackId);
+      return { loopContexts: next };
+    });
+  },
+
+  clearLoopContexts: () => {
+    set({ loopContexts: new Map() });
   },
 
   setLastKeyPressed: (keyCode) => {
@@ -69,6 +101,6 @@ export const useAudioStore = create<AudioState>((set) => ({
     for (const key of Object.keys(_positions)) {
       delete _positions[key];
     }
-    set({ playingTracks: new Map(), lastKeyPressed: null });
+    set({ playingTracks: new Map(), loopContexts: new Map(), lastKeyPressed: null });
   },
 }));

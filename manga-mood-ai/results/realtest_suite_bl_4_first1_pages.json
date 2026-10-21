@@ -1,0 +1,17 @@
+[
+  {
+    "chapter": "BL/4",
+    "expected_intensity": 1,
+    "expected_mood": "mystery",
+    "page": "BL/4/01.jpg",
+    "page_number": 1,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 1,
+        "predicted_mood": "peaceful",
+        "verdict": "wrong"
+      }
+    }
+  }
+]

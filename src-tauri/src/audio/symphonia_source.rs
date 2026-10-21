@@ -123,9 +123,12 @@ impl SymphoniaSource {
             .map_err(|e| format!("Failed to spawn decode thread: {}", e))?;
 
         // Pre-fill the first buffer so the source is immediately ready
-        let (sample_buf, finished) = match buf_rx.recv_timeout(Duration::from_secs(5)) {
-            Ok(buf) => (buf, false),
-            Err(_) => (Vec::new(), true),
+        let sample_buf = match buf_rx.recv_timeout(Duration::from_secs(5)) {
+            Ok(buf) if !buf.is_empty() => buf,
+            _ => {
+                stop_flag.store(true, Ordering::Relaxed);
+                return Err("No decodable audio at the requested position".to_string());
+            }
         };
 
         Ok(Self {
@@ -133,7 +136,7 @@ impl SymphoniaSource {
             channels,
             sample_buf,
             sample_pos: 0,
-            finished,
+            finished: false,
             buf_rx,
             stop_flag,
         })
@@ -177,14 +180,14 @@ fn decode_thread(
                 Ok(decoded) => {
                     let spec = *decoded.spec();
                     let duration = decoded.capacity();
-                    if duration == 0 {
+                    if decoded.frames() == 0 {
                         continue;
                     }
                     let signal_spec = SignalSpec::new(sample_rate, spec.channels);
 
                     // Reuse the persistent SampleBuffer if capacity is sufficient
                     let buf = match &mut decode_buf {
-                        Some(buf) if buf.capacity() >= duration => buf,
+                        Some(buf) if buf.capacity() >= duration * spec.channels.count() => buf,
                         _ => {
                             decode_buf =
                                 Some(SampleBuffer::<f32>::new(duration as u64, signal_spec));

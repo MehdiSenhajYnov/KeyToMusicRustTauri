@@ -9,8 +9,12 @@ use super::chapter_pipeline::{
     analyze_visible_window, execute_action, ActionPage, ChapterMoodPipeline, PipelineActivity,
     PublishedPageUpdate,
 };
-use super::director::MoodScores;
 use super::inference::{self, LlamaServer, PageFeatures};
+use super::shared::MoodScores;
+use super::soundtrack_commit::{
+    SoundtrackCommitDecision, SoundtrackCommitter, SoundtrackObservation,
+};
+use super::winner;
 use crate::types::MoodCategory;
 
 /// State shared with axum handlers.
@@ -18,6 +22,7 @@ pub struct MoodApiState {
     pub llama_server: Arc<Mutex<Option<LlamaServer>>>,
     pub app_handle: tauri::AppHandle,
     pub mood_cache: Arc<std::sync::Mutex<MoodCache>>,
+    pub soundtrack_committer: Arc<std::sync::Mutex<SoundtrackCommitter>>,
     pub chapter_pipeline: Arc<Mutex<ChapterMoodPipeline>>,
     pub live_requests: Arc<AtomicUsize>,
     pub active_live_cancel: Arc<Mutex<Option<LiveCancelHandle>>>,
@@ -45,6 +50,7 @@ pub async fn start_api_server(
         llama_server,
         app_handle,
         mood_cache,
+        soundtrack_committer: Arc::new(std::sync::Mutex::new(SoundtrackCommitter::new())),
         chapter_pipeline: Arc::new(Mutex::new(ChapterMoodPipeline::new())),
         live_requests: Arc::new(AtomicUsize::new(0)),
         active_live_cancel: Arc::new(Mutex::new(None)),
@@ -61,6 +67,7 @@ pub async fn start_api_server(
         .route("/api/cache/status", get(cache_status_handler))
         .route("/api/status", get(status_handler))
         .route("/api/moods", get(moods_handler))
+        .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
         .with_state(state);
 
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
@@ -127,12 +134,89 @@ struct ErrorResponse {
     status: String,
 }
 
-/// Convert MoodScores to a HashMap for JSON serialization.
+/// Convert mood scores to a HashMap for JSON serialization.
 fn scores_to_map(scores: &MoodScores) -> std::collections::HashMap<String, f32> {
     MoodCategory::ALL
         .iter()
         .map(|m| (m.as_str().to_string(), scores.get(*m)))
         .collect()
+}
+
+fn fallback_trigger_observation(mood: MoodCategory) -> SoundtrackObservation {
+    let intensity = crate::types::MoodIntensity::Medium;
+    SoundtrackObservation {
+        page: None,
+        mood,
+        intensity,
+        scores: MoodScores::from_single(mood),
+        narrative_role: winner::infer_narrative_role(mood, intensity),
+        finalized: true,
+    }
+}
+
+fn resolve_trigger_observation(
+    cache: &std::sync::Mutex<MoodCache>,
+    chapter: Option<&str>,
+    page: Option<u32>,
+    fallback_mood: MoodCategory,
+) -> SoundtrackObservation {
+    let Some(chapter) = chapter else {
+        return fallback_trigger_observation(fallback_mood);
+    };
+    let Some(page) = page else {
+        return fallback_trigger_observation(fallback_mood);
+    };
+
+    let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    let cached = guard.get(chapter, page).cloned();
+    drop(guard);
+
+    if let Some(entry) = cached {
+        SoundtrackObservation {
+            page: Some(page),
+            mood: entry.mood,
+            intensity: entry.intensity,
+            scores: entry.scores,
+            narrative_role: entry.narrative_role,
+            finalized: entry.finalized,
+        }
+    } else {
+        let mut observation = fallback_trigger_observation(fallback_mood);
+        observation.page = Some(page);
+        observation
+    }
+}
+
+fn resolve_trigger_future_observations(
+    cache: &std::sync::Mutex<MoodCache>,
+    chapter: Option<&str>,
+    page: Option<u32>,
+) -> Vec<SoundtrackObservation> {
+    let Some(chapter) = chapter else {
+        return Vec::new();
+    };
+    let Some(page) = page else {
+        return Vec::new();
+    };
+
+    let guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+    let mut future = Vec::new();
+    for offset in 1..=2 {
+        let Some(entry) = guard.get(chapter, page + offset).cloned() else {
+            break;
+        };
+        future.push(SoundtrackObservation {
+            page: Some(page + offset),
+            mood: entry.mood,
+            intensity: entry.intensity,
+            scores: entry.scores,
+            narrative_role: entry.narrative_role,
+            finalized: entry.finalized,
+        });
+    }
+    drop(guard);
+
+    future
 }
 
 /// Helper to create an error response tuple.
@@ -531,10 +615,14 @@ const VALID_MOODS: &[&str] = &[
 #[derive(serde::Deserialize)]
 struct TriggerRequest {
     mood: String,
+    #[serde(default)]
+    chapter: Option<String>,
+    #[serde(default)]
+    page: Option<u32>,
 }
 
-/// Re-emit a previously detected mood without running inference.
-/// Bypasses the director — directly emits mood_committed for immediate playback.
+/// Re-emit a final mood without rerunning inference.
+/// Used after cache hit or visible-window analysis has already decided the page mood.
 async fn trigger_handler(
     axum::extract::State(state): axum::extract::State<Arc<MoodApiState>>,
     axum::Json(payload): axum::Json<TriggerRequest>,
@@ -548,28 +636,74 @@ async fn trigger_handler(
         ));
     }
 
-    tracing::info!("POST /api/trigger — re-emitting mood: {}", payload.mood);
+    tracing::info!(
+        "POST /api/trigger — re-emitting mood: {} ({:?}, {:?})",
+        payload.mood,
+        payload.chapter,
+        payload.page
+    );
+
+    let fallback_mood = MoodCategory::from_str_opt(&payload.mood).ok_or_else(|| {
+        err_response(
+            axum::http::StatusCode::BAD_REQUEST,
+            format!("Unknown mood: {}", payload.mood),
+        )
+    })?;
+    let observation = resolve_trigger_observation(
+        &state.mood_cache,
+        payload.chapter.as_deref(),
+        payload.page,
+        fallback_mood,
+    );
+    let future_context = resolve_trigger_future_observations(
+        &state.mood_cache,
+        payload.chapter.as_deref(),
+        payload.page,
+    );
+    let decision: SoundtrackCommitDecision = {
+        let mut committer = state
+            .soundtrack_committer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        committer.update_with_context(
+            payload.chapter.as_deref(),
+            observation.clone(),
+            &future_context,
+        )
+    };
 
     let _ = state.app_handle.emit(
         "mood_detected",
-        serde_json::json!({ "mood": payload.mood, "source": "api" }),
+        serde_json::json!({
+            "mood": observation.mood.as_str(),
+            "intensity": observation.intensity.as_u8(),
+            "source": "api"
+        }),
     );
 
-    // Trigger also emits mood_committed for immediate playback
     let _ = state.app_handle.emit(
         "mood_committed",
-        serde_json::json!({ "mood": payload.mood, "source": "api" }),
+        serde_json::json!({
+            "mood": decision.committed_mood.as_str(),
+            "intensity": decision.committed_intensity.as_u8(),
+            "source": "api",
+            "previous_mood": decision.previous_mood.map(|mood| mood.as_str()),
+            "previous_intensity": decision.previous_intensity.map(|intensity| intensity.as_u8()),
+            "dwell_count": decision.dwell_count,
+            "mood_changed": decision.mood_changed,
+            "intensity_changed": decision.intensity_changed
+        }),
     );
 
     Ok(axum::Json(AnalyzeResponse {
-        mood: payload.mood,
+        mood: observation.mood.as_str().to_string(),
         status: "ok".to_string(),
         cached: None,
-        committed_mood: None,
-        mood_changed: None,
-        scores: None,
-        narrative_role: None,
-        dwell_count: None,
+        committed_mood: Some(decision.committed_mood.as_str().to_string()),
+        mood_changed: Some(decision.mood_changed),
+        scores: Some(scores_to_map(&observation.scores)),
+        narrative_role: Some(observation.narrative_role.as_str().to_string()),
+        dwell_count: Some(decision.dwell_count),
     }))
 }
 

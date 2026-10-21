@@ -25,9 +25,49 @@ const MOOD_LABELS = {
 
 const ANALYZED_AHEAD_TARGET = 20;
 const ANALYZED_BEHIND_TARGET = 10;
+const STORAGE_KEYS = [
+  "ktmPort",
+  "ktmEnabled",
+  "ktmPlaybackTriggerEnabled",
+  "ktmPageMoodBadgeEnabled",
+];
 
 const $ = (sel) => document.querySelector(sel);
 let lastVisiblePage = null;
+
+async function readLocalConfig() {
+  if (!ext.storage?.local?.get) return {};
+  try {
+    return await ext.storage.local.get(STORAGE_KEYS);
+  } catch {
+    return {};
+  }
+}
+
+async function saveConfig(overrides = {}) {
+  const nextConfig = {
+    ktmEnabled: overrides.enabled ?? $('#enableToggle').checked,
+    ktmPlaybackTriggerEnabled: overrides.playbackEnabled ?? $('#playbackToggle').checked,
+    ktmPageMoodBadgeEnabled: overrides.overlayEnabled ?? $('#pageBadgeToggle').checked,
+    ktmPort: overrides.port ?? (parseInt($('#portInput').value, 10) || 8765),
+  };
+
+  if (ext.storage?.local?.set) {
+    try {
+      await ext.storage.local.set(nextConfig);
+    } catch {
+      // Ignore storage fallback failures and still try the background route.
+    }
+  }
+
+  return await ext.runtime.sendMessage({
+    type: 'set_config',
+    enabled: nextConfig.ktmEnabled,
+    playbackEnabled: nextConfig.ktmPlaybackTriggerEnabled,
+    overlayEnabled: nextConfig.ktmPageMoodBadgeEnabled,
+    port: nextConfig.ktmPort,
+  });
+}
 
 function renderMoodPill(container, color, label) {
   container.replaceChildren();
@@ -244,7 +284,10 @@ function describeCurrentWork(stats, pendingPages, targetPage = null) {
 
 async function refresh() {
   try {
-    const res = await ext.runtime.sendMessage({ type: 'get_status' });
+    const [res, localConfig] = await Promise.all([
+      ext.runtime.sendMessage({ type: 'get_status' }),
+      readLocalConfig(),
+    ]);
 
     // Connection dot
     const dot = $('#connection');
@@ -260,10 +303,20 @@ async function refresh() {
     }
 
     // Toggle
-    $('#enableToggle').checked = res.enabled;
+    $('#enableToggle').checked = typeof res.enabled === 'boolean'
+      ? res.enabled
+      : localConfig.ktmEnabled !== false;
+    $('#playbackToggle').checked = typeof res.playbackEnabled === 'boolean'
+      ? res.playbackEnabled
+      : localConfig.ktmPlaybackTriggerEnabled !== false;
+    $('#pageBadgeToggle').checked = typeof res.overlayEnabled === 'boolean'
+      ? res.overlayEnabled
+      : localConfig.ktmPageMoodBadgeEnabled !== false;
 
     // Port
-    $('#portInput').value = res.port;
+    $('#portInput').value = Number.isFinite(res.port)
+      ? res.port
+      : (localConfig.ktmPort ?? 8765);
 
     // Server status
     const statusEl = $('#serverStatus');
@@ -319,6 +372,11 @@ async function refresh() {
     }
   } catch {
     $('#connection').className = 'status-dot disconnected';
+    const localConfig = await readLocalConfig();
+    $('#enableToggle').checked = localConfig.ktmEnabled !== false;
+    $('#playbackToggle').checked = localConfig.ktmPlaybackTriggerEnabled !== false;
+    $('#pageBadgeToggle').checked = localConfig.ktmPageMoodBadgeEnabled !== false;
+    $('#portInput').value = localConfig.ktmPort ?? 8765;
   }
 }
 
@@ -393,22 +451,26 @@ async function refreshPreview() {
 // --- Events ---
 
 $('#enableToggle').addEventListener('change', async (e) => {
-  await ext.runtime.sendMessage({
-    type: 'set_config',
-    enabled: e.target.checked,
-    port: parseInt($('#portInput').value) || 8765,
-  });
+  await saveConfig({ enabled: e.target.checked });
+  refresh();
+});
+
+$('#playbackToggle').addEventListener('change', async (e) => {
+  await saveConfig({ playbackEnabled: e.target.checked });
+  refresh();
+});
+
+$('#pageBadgeToggle').addEventListener('change', async (e) => {
+  await saveConfig({ overlayEnabled: e.target.checked });
   refresh();
 });
 
 $('#portSave').addEventListener('click', async () => {
-  const port = parseInt($('#portInput').value);
-  if (port < 1024 || port > 65535) return;
-  await ext.runtime.sendMessage({
-    type: 'set_config',
-    enabled: $('#enableToggle').checked,
-    port,
-  });
+  const input = $('#portInput');
+  const port = Number(input.value);
+  input.setCustomValidity(Number.isInteger(port) && port >= 1024 && port <= 65535 ? '' : 'Port must be an integer between 1024 and 65535');
+  if (!input.reportValidity()) return;
+  await saveConfig({ port });
   refresh();
 });
 

@@ -8,6 +8,7 @@ interface MoodState {
   apiStatus: "disabled" | "stopped" | "running" | "error";
   apiPort: number;
   serverInstalled: boolean;
+  isInstallingServer: boolean;
   modelInstalled: boolean;
   modelDownloadProgress: { downloaded: number; total: number } | null;
   lastDetectedMood: BaseMood | null;
@@ -29,11 +30,12 @@ interface MoodState {
   setCommittedMood: (mood: BaseMood | null, intensity?: MoodIntensity | null) => void;
 }
 
-export const useMoodStore = create<MoodState>((set) => ({
+export const useMoodStore = create<MoodState>((set, get) => ({
   serverStatus: "stopped",
   apiStatus: "disabled",
   apiPort: 8765,
   serverInstalled: false,
+  isInstallingServer: false,
   modelInstalled: false,
   modelDownloadProgress: null,
   lastDetectedMood: null,
@@ -70,16 +72,19 @@ export const useMoodStore = create<MoodState>((set) => ({
   },
 
   installServer: async () => {
+    if (get().isInstallingServer) return;
+    set({ isInstallingServer: true });
     try {
       await commands.installLlamaServer();
       set({ serverInstalled: true });
       useToastStore.getState().addToast("llama-server installed", "success");
     } catch (e) {
       useToastStore.getState().addToast(`Failed to install llama-server: ${e}`, "error");
-    }
+    } finally { set({ isInstallingServer: false }); }
   },
 
   installModel: async () => {
+    if (get().modelDownloadProgress) return;
     try {
       set({ modelDownloadProgress: { downloaded: 0, total: 0 } });
       await commands.installMoodModel();
@@ -92,6 +97,7 @@ export const useMoodStore = create<MoodState>((set) => ({
   },
 
   startServer: async () => {
+    if (get().serverStatus === "starting") return;
     try {
       set({ serverStatus: "starting" });
       await commands.startMoodServer();

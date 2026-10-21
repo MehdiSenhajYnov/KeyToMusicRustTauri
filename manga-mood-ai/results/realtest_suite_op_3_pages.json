@@ -1,0 +1,212 @@
+[
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/3/02.webp",
+    "page_number": 2,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "OP/3/03.webp",
+    "page_number": 3,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "OP/3/04.webp",
+    "page_number": 4,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/3/05.webp",
+    "page_number": 5,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/3/06.webp",
+    "page_number": 6,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "OP/3/07.webp",
+    "page_number": 7,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/3/08.webp",
+    "page_number": 8,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/3/09.webp",
+    "page_number": 9,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/3/10.webp",
+    "page_number": 10,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "OP/3/11.webp",
+    "page_number": 11,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "OP/3/12.webp",
+    "page_number": 12,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "OP/3/13.webp",
+    "page_number": 13,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 2,
+    "expected_mood": "sadness",
+    "page": "OP/3/14.webp",
+    "page_number": 14,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "OP/3",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "OP/3/15.webp",
+    "page_number": 15,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  }
+]

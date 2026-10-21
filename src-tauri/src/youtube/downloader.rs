@@ -27,60 +27,63 @@ pub(crate) fn yt_dlp_command(bin: &PathBuf) -> Command {
 
 /// Extracts the video ID from a YouTube URL.
 /// Supports youtube.com/watch?v=ID, youtu.be/ID, and youtube.com/shorts/ID formats.
-pub fn extract_video_id(url: &str) -> Option<String> {
-    // youtube.com/watch?v=ID
-    if let Some(pos) = url.find("v=") {
-        let after = &url[pos + 2..];
-        let id: String = after
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
-            .collect();
-        if id.len() >= 11 {
-            return Some(id[..11].to_string());
-        }
-        if !id.is_empty() {
-            return Some(id);
-        }
+pub fn extract_video_id(input: &str) -> Option<String> {
+    let url = reqwest::Url::parse(input.trim()).ok()?;
+    if !matches!(url.scheme(), "https" | "http")
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return None;
     }
-
-    // youtu.be/ID
-    if url.contains("youtu.be/") {
-        if let Some(pos) = url.find("youtu.be/") {
-            let after = &url[pos + 9..];
-            let id: String = after
-                .chars()
-                .take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
-                .collect();
-            if !id.is_empty() {
-                return Some(id);
+    let id = match url.host_str()? {
+        "youtu.be" => url.path().trim_start_matches('/').to_string(),
+        "youtube.com" | "www.youtube.com" | "m.youtube.com" | "music.youtube.com" => {
+            if url.path() == "/watch" {
+                url.query_pairs()
+                    .find(|(key, _)| key == "v")?
+                    .1
+                    .into_owned()
+            } else {
+                let mut segments = url.path_segments()?;
+                if !matches!(segments.next()?, "shorts" | "live" | "embed") {
+                    return None;
+                }
+                segments.next()?.to_string()
             }
         }
-    }
-
-    // youtube.com/shorts/ID
-    if url.contains("/shorts/") {
-        if let Some(pos) = url.find("/shorts/") {
-            let after = &url[pos + 8..];
-            let id: String = after
-                .chars()
-                .take_while(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
-                .collect();
-            if !id.is_empty() {
-                return Some(id);
-            }
-        }
-    }
-
-    None
+        _ => return None,
+    };
+    (id.len() == 11
+        && id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'))
+    .then_some(id)
 }
 
-/// Check if a URL looks like a valid YouTube URL.
 pub fn is_valid_youtube_url(url: &str) -> bool {
-    let url_lower = url.to_lowercase();
-    (url_lower.contains("youtube.com/watch")
-        || url_lower.contains("youtu.be/")
-        || url_lower.contains("youtube.com/shorts/"))
-        && extract_video_id(url).is_some()
+    extract_video_id(url).is_some()
+}
+
+// A discovery predownload and a manual download may request the same file together.
+// Serialize by video ID before checking the cache or removing partial files.
+static DOWNLOAD_SLOTS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(3);
+
+static DOWNLOAD_LOCKS: std::sync::OnceLock<
+    Mutex<std::collections::HashMap<String, std::sync::Weak<tokio::sync::Mutex<()>>>>,
+> = std::sync::OnceLock::new();
+
+fn download_lock(id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    let mut locks = DOWNLOAD_LOCKS
+        .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    locks.retain(|_, lock| lock.strong_count() > 0);
+    if let Some(lock) = locks.get(id).and_then(std::sync::Weak::upgrade) {
+        return lock;
+    }
+    let lock = Arc::new(tokio::sync::Mutex::new(()));
+    locks.insert(id.to_string(), Arc::downgrade(&lock));
+    lock
 }
 
 /// Get the yt-dlp binary path, or return an error message.
@@ -115,6 +118,9 @@ pub async fn download_audio(
     let video_id =
         extract_video_id(url).ok_or_else(|| "Could not extract video ID from URL".to_string())?;
 
+    let lock = download_lock(&video_id);
+    let _guard = lock.lock().await;
+
     // Use canonical URL for cache lookups (strip list=, pp=, etc.)
     let cache_url = canonical_url(&video_id);
 
@@ -125,6 +131,8 @@ pub async fn download_audio(
             return Ok(entry.clone());
         }
     }
+
+    let _slot = DOWNLOAD_SLOTS.acquire().await.map_err(|e| e.to_string())?;
 
     // Get yt-dlp binary path, auto-install if not found
     let yt_dlp_bin = match get_yt_dlp_bin() {
@@ -193,7 +201,8 @@ pub async fn download_audio(
         }
 
         let mut child = cmd
-            .arg(url)
+            .arg("--")
+            .arg(&cache_url)
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
@@ -447,4 +456,37 @@ fn parse_yt_dlp_error(stderr: &str) -> String {
         .unwrap_or(stderr.lines().next().unwrap_or("Unknown error"));
 
     format!("Download failed: {}", first_error.trim())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn youtube_urls_are_parsed_by_host_and_exact_ascii_id() {
+        for url in [
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL",
+            "https://youtu.be/dQw4w9WgXcQ?t=20",
+            "https://m.youtube.com/shorts/dQw4w9WgXcQ",
+            "https://youtube.com/live/dQw4w9WgXcQ",
+        ] {
+            assert_eq!(extract_video_id(url).as_deref(), Some("dQw4w9WgXcQ"));
+        }
+        for url in [
+            "https://evil.test/youtube.com/watch?v=dQw4w9WgXcQ",
+            "https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ",
+            "https://youtube.com/watch?v=éééééééé",
+            "https://youtu.be/short",
+            "--exec=evil",
+            "file:///youtube.com/watch?v=dQw4w9WgXcQ",
+        ] {
+            assert_eq!(extract_video_id(url), None, "{url}");
+        }
+    }
+    #[test]
+    fn concurrent_requests_share_the_same_video_lock() {
+        let first = download_lock("same");
+        let second = download_lock("same");
+        assert!(Arc::ptr_eq(&first, &second));
+        assert!(!Arc::ptr_eq(&first, &download_lock("other")));
+    }
 }

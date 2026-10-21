@@ -1,6 +1,9 @@
+import { useConfirmStore } from "../../stores/confirmStore";
+import { useDialog } from "../../hooks/useDialog";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { useProfileStore } from "../../stores/profileStore";
+import { useProfileStore, profileTransaction } from "../../stores/profileStore";
+import { useAudioStore } from "../../stores/audioStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useWheelSlider } from "../../hooks/useWheelSlider";
@@ -239,7 +242,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   const downloadIdCounter = useRef(0);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const selectedTrackIdRef = useRef(currentProfile?.tracks[0]?.id || "");
+  const previewTrackId = useRef(`preview-${crypto.randomUUID()}`).current;
   // Key assignment: array of key codes (e.g., ["KeyA", "Ctrl+KeyB"])
   const [assignedKeys, setAssignedKeys] = useState<string[]>(targetKey ? [targetKey] : [""]);
   const [selectedTrackId, setSelectedTrackId] = useState(
@@ -269,6 +272,9 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
 
   // Auto-search YouTube when typing (debounced, non-URL only)
   useEffect(() => {
+    let cancelled = false;
+    setIsSearching(false);
+    setSearchResults([]);
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     const query = youtubeUrl.trim();
     const looksLikeUrl = query.toLowerCase().includes("youtube.com") || query.toLowerCase().includes("youtu.be");
@@ -277,14 +283,15 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
       setIsSearching(true);
       try {
         const results = await commands.searchYoutube(query, 6);
-        setSearchResults(results);
+        if (!cancelled) setSearchResults(results);
       } catch {
         // Silent fail for auto-search — user can still click Search
       } finally {
-        setIsSearching(false);
+        if (!cancelled) setIsSearching(false);
       }
     }, 400);
     return () => {
+      cancelled = true;
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
     };
   }, [youtubeUrl, sourceMode]);
@@ -328,37 +335,16 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
 
 
   const handleStopPreview = useCallback(() => {
-    if (selectedTrackId) {
-      commands.stopSound(selectedTrackId).catch(() => {});
-    }
+    if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+    void commands.stopSound(previewTrackId).catch(() => {});
     setPreviewingIndex(null);
-  }, [selectedTrackId]);
+  }, [previewTrackId]);
 
-  // Close on Escape
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        handleStopPreview();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [onClose, handleStopPreview]);
-
-  // Keep ref in sync with state
-  useEffect(() => {
-    selectedTrackIdRef.current = selectedTrackId;
-  }, [selectedTrackId]);
-
-  // Stop preview on unmount
-  useEffect(() => {
-    return () => {
-      if (selectedTrackIdRef.current) {
-        commands.stopSound(selectedTrackIdRef.current).catch(() => {});
-      }
-    };
-  }, []);
+  const dialogRef = useDialog(() => { void handleClose(); });
+  useEffect(() => () => {
+    if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+    void commands.stopSound(previewTrackId).catch(() => {});
+  }, [previewTrackId]);
 
   // Listen for download progress events
   useEffect(() => {
@@ -629,11 +615,12 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     setFiles((prev) =>
       prev.map((f, i) => (i === index ? { ...f, momentum } : f))
     );
-    if (previewingIndex === index && selectedTrackId) {
+    if (previewingIndex === index) {
       if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
       const file = files[index];
       seekTimerRef.current = setTimeout(() => {
-        commands.playSound(selectedTrackId, `preview-${index}`, file.path, momentum, volume / 100).catch(() => {});
+
+        commands.playSound(previewTrackId, `preview-${index}`, file.path, momentum, volume / 100).catch(() => {});
       }, 150);
     }
   };
@@ -647,17 +634,15 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
 
     // Stop any currently playing preview
     if (previewingIndex !== null) {
-      await commands.stopSound(selectedTrackId).catch(() => {});
+
+      await commands.stopSound(previewTrackId).catch(() => {});
     }
 
     const file = files[index];
-    const trackId = selectedTrackId || currentProfile?.tracks[0]?.id;
-    if (!trackId) {
-      addToast("Select a track first to preview", "warning");
-      return;
-    }
+    const trackId = previewTrackId;
 
     try {
+      useAudioStore.getState().clearLoopContext(trackId);
       await commands.playSound(
         trackId,
         `preview-${index}`,
@@ -701,7 +686,7 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   };
 
   // Get valid keys (non-empty)
-  const validKeys = assignedKeys.filter((k) => k !== "");
+  const validKeys = [...new Set(assignedKeys.filter((k) => k !== ""))];
 
   // Calculate cycling preview: which key each file will be assigned to
   const getKeyForFile = (fileIndex: number): string | null => {
@@ -717,27 +702,17 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
 
     handleStopPreview();
 
-    let trackId = selectedTrackId;
-
-    if (!trackId && newTrackName.trim()) {
-      trackId = crypto.randomUUID();
-      addTrack({
-        id: trackId,
-        name: newTrackName.trim(),
-        volume: 1.0,
-      });
-    }
-
-    if (!trackId) {
-      addToast("Select or create a track", "warning");
-      return;
-    }
-
+    if (!currentProfile) return;
     const keyCodes = targetKey ? [targetKey] : validKeys;
-    if (keyCodes.length === 0) {
-      addToast("Assign at least one key", "warning");
-      return;
-    }
+    if (keyCodes.length === 0) { addToast("Assign at least one key", "warning"); return; }
+    let trackId = selectedTrackId;
+    if (!trackId && !newTrackName.trim()) { addToast("Select or create a track", "warning"); return; }
+    if (!trackId && tracks.length >= 20) { addToast("Maximum 20 tracks allowed", "warning"); return; }
+    profileTransaction(`Add ${files.length} sound(s)`, () => {
+      if (!trackId) {
+        trackId = crypto.randomUUID();
+        addTrack({ id: trackId, name: newTrackName.trim(), volume: 1 });
+      }
 
     // Group sounds by key, then create/update bindings once per key
     const keyGroups: Map<string, string[]> = new Map();
@@ -788,7 +763,8 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
       }
     }
 
-    setTimeout(() => saveCurrentProfile(), 100);
+    });
+    void saveCurrentProfile();
     addToast(
       `${files.length} sound${files.length > 1 ? "s" : ""} added`,
       "success"
@@ -796,7 +772,10 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
     onClose();
   };
 
-  const handleClose = () => {
+  const handleClose = async () => {
+    if ((files.length > 0 || activeDownloads.size > 0) && !await useConfirmStore.getState().confirm(
+      "Close without adding these sounds? Downloads already started will remain in the cache."
+    )) return;
     handleStopPreview();
     setStreamPreview(null);
     onClose();
@@ -805,7 +784,8 @@ export function AddSoundModal({ targetKey, initialFiles, onClose }: AddSoundModa
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={handleClose}>
       <div
-        className="bg-bg-secondary border border-border-color rounded-lg w-[520px] max-h-[85vh] overflow-y-auto p-5 space-y-4"
+        ref={dialogRef} role="dialog" aria-modal="true" aria-label="Add sounds" tabIndex={-1}
+        className="bg-bg-secondary border border-border-color rounded-lg w-[520px] max-w-[95vw] max-h-[85vh] overflow-y-auto p-5 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">

@@ -16,7 +16,7 @@ export default {
         // Text
         'text-primary': '#ffffff',
         'text-secondary': '#a0a0a0',
-        'text-muted': '#666666',
+        'text-muted': '#8a8a94',
 
         // Accent
         'accent-primary': '#6366f1',

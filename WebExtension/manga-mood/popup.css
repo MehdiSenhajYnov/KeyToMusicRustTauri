@@ -52,6 +52,12 @@ body {
   user-select: none;
 }
 
+.toggle-subrow {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #1e293b;
+}
+
 .toggle-row input { display: none; }
 
 .toggle-slider {

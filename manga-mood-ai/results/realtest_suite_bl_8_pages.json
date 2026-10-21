@@ -1,0 +1,287 @@
+[
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "BL/8/01.jpg",
+    "page_number": 1,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 2,
+    "expected_mood": "sadness",
+    "page": "BL/8/02.jpg",
+    "page_number": 2,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "BL/8/03.jpg",
+    "page_number": 3,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 1,
+    "expected_mood": "mystery",
+    "page": "BL/8/04.jpg",
+    "page_number": 4,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/8/05.jpg",
+    "page_number": 5,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "BL/8/06.jpg",
+    "page_number": 6,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 1,
+    "expected_mood": "peaceful",
+    "page": "BL/8/07.jpg",
+    "page_number": 7,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "BL/8/08.jpg",
+    "page_number": 8,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 1,
+    "expected_mood": "mystery",
+    "page": "BL/8/09.jpg",
+    "page_number": 9,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "BL/8/10.jpg",
+    "page_number": 10,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "BL/8/11.jpg",
+    "page_number": 11,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "BL/8/12.jpg",
+    "page_number": 12,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/8/13.jpg",
+    "page_number": 13,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 1,
+    "expected_mood": "mystery",
+    "page": "BL/8/14.jpg",
+    "page_number": 14,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 1,
+    "expected_mood": "mystery",
+    "page": "BL/8/15.jpg",
+    "page_number": 15,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/8/16.jpg",
+    "page_number": 16,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/8/17.jpg",
+    "page_number": 17,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/8/18.jpg",
+    "page_number": 18,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/8",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "BL/8/19.jpg",
+    "page_number": 19,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  }
+]

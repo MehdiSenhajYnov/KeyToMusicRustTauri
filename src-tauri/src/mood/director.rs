@@ -2023,6 +2023,7 @@ Example: tension 2";
     /// Run: cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
     /// Run filtered: REALTEST_FILTER=BL/1 cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
     /// Narrow experiments: REALTEST_EXPERIMENTS=t4b_viterbi,q35_9b_viterbi cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
+    /// Current runtime showdown: REALTEST_FILTER=BL/1 REALTEST_EXPERIMENTS=current_runtime_showdown cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
     /// Smoke run: REALTEST_FILTER=BL/1 REALTEST_PAGE_LIMIT=3 cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
     #[tokio::test]
     #[ignore]

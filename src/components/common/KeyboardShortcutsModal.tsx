@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useDialog } from "../../hooks/useDialog";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { formatShortcut } from "../../utils/keyMapping";
 
@@ -59,13 +59,7 @@ function momentumModifierLabel(modifier: string): string[] | null {
 export function KeyboardShortcutsModal({ onClose }: KeyboardShortcutsModalProps) {
   const config = useSettingsStore((s) => s.config);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  const dialogRef = useDialog(onClose);
 
   const stopAll = config.stopAllShortcut.length > 0
     ? formatShortcut(config.stopAllShortcut).split("+")
@@ -81,7 +75,8 @@ export function KeyboardShortcutsModal({ onClose }: KeyboardShortcutsModalProps)
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-bg-secondary border border-border-color rounded-lg w-[520px] max-h-[80vh] flex flex-col"
+        ref={dialogRef} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" tabIndex={-1}
+        className="bg-bg-secondary border border-border-color rounded-lg w-[520px] max-w-[95vw] max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

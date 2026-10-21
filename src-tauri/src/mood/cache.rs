@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::mood::director::{MoodScores, NarrativeRole};
+use crate::mood::shared::{MoodScores, NarrativeRole};
 use crate::types::{MoodCategory, MoodIntensity};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,7 +115,7 @@ impl MoodCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mood::director::{MoodScores, NarrativeRole};
+    use crate::mood::shared::{MoodScores, NarrativeRole};
     use crate::types::{MoodCategory, MoodIntensity};
 
     #[test]

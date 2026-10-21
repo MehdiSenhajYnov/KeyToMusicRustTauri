@@ -6,6 +6,8 @@
 const ext = globalThis.browser ?? globalThis.chrome;
 const DEFAULT_PORT = 8765;
 const STATS_STORAGE_KEY = "ktmMoodDebugStats";
+const PAGE_MOOD_BADGE_STORAGE_KEY = "ktmPageMoodBadgeEnabled";
+const PLAYBACK_TRIGGER_STORAGE_KEY = "ktmPlaybackTriggerEnabled";
 const CHAPTER_FEED_TTL_MS = 10000;
 const ANALYZE_WINDOW_TIMEOUT_MS = 180000;
 
@@ -139,8 +141,25 @@ async function clearPersistedStatsSnapshot() {
 // --- Config ---
 
 async function getConfig() {
-  const { ktmPort = DEFAULT_PORT, ktmEnabled = true } = await ext.storage.local.get(["ktmPort", "ktmEnabled"]);
-  return { port: ktmPort, enabled: ktmEnabled };
+  const config = await ext.storage.local.get([
+    "ktmPort",
+    "ktmEnabled",
+    PAGE_MOOD_BADGE_STORAGE_KEY,
+    PLAYBACK_TRIGGER_STORAGE_KEY,
+  ]);
+  return {
+    port: config.ktmPort ?? DEFAULT_PORT,
+    enabled: config.ktmEnabled ?? true,
+    overlayEnabled: config[PAGE_MOOD_BADGE_STORAGE_KEY] !== false,
+    playbackEnabled: config[PLAYBACK_TRIGGER_STORAGE_KEY] !== false,
+  };
+}
+
+async function maybeTriggerMood(config, mood, chapter = null, page = null) {
+  if (!config.playbackEnabled) {
+    return { mood, committed_mood: mood, skipped: true };
+  }
+  return await triggerMood(config.port, mood, chapter, page);
 }
 
 // --- API ---
@@ -260,11 +279,18 @@ async function lookupMood(port, chapter, page, signal = null) {
   }
 }
 
-async function triggerMood(port, mood) {
+async function triggerMood(port, mood, chapter = null, page = null) {
+  const payload = { mood };
+  if (chapter !== null && chapter !== undefined) {
+    payload.chapter = chapter;
+  }
+  if (page !== null && page !== undefined) {
+    payload.page = page;
+  }
   const res = await fetch(apiUrl(port, '/api/trigger'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mood }),
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(5000),
   });
   if (!res.ok) {
@@ -804,16 +830,27 @@ async function processQueue() {
             ) {
               return;
             }
-            await triggerMood(config.port, lookup.mood);
-            stats.lastMood = lookup.mood;
+            const playback = await maybeTriggerMood(
+              config,
+              lookup.mood,
+              item.chapter,
+              item.pageIndex
+            );
+            const committedMood = playback.committed_mood || lookup.mood;
+            stats.lastMood = committedMood;
             stats.lastPage = item.pageIndex;
             pushUniquePage(stats.analyzedPages, item.pageIndex);
-            rememberStatusNote(`Page ${Number(item.pageIndex) + 1} resolved from cache -> ${lookup.mood}.`);
-            recordEvent(`visible request resolved from cache -> ${lookup.mood}`, item.pageIndex ?? null);
-            ext.action.setBadgeBackgroundColor({ color: getMoodColor(lookup.mood) });
+            rememberStatusNote(
+              `Page ${Number(item.pageIndex) + 1} resolved from cache -> ${committedMood}.`
+            );
+            recordEvent(
+              `visible request resolved from cache -> ${committedMood}`,
+              item.pageIndex ?? null
+            );
+            ext.action.setBadgeBackgroundColor({ color: getMoodColor(committedMood) });
             await sendTabMessage(item.tabId, {
               type: "mood_result",
-              mood: lookup.mood,
+              mood: committedMood,
               pageIndex: item.pageIndex,
               imgSelector: item.imgSelector,
             });
@@ -840,15 +877,19 @@ async function processQueue() {
         return;
       }
 
-      const committedMood = result.committed_mood || result.mood;
+      const playback = await maybeTriggerMood(
+        config,
+        result.mood,
+        item.chapter,
+        item.pageIndex
+      );
+      const committedMood = playback.committed_mood || result.committed_mood || result.mood;
       stats.analyzed++;
       stats.lastMood = committedMood;
       stats.lastPage = item.pageIndex;
       pushUniquePage(stats.analyzedPages, item.pageIndex);
       rememberStatusNote(`Visible-window analysis completed for page ${Number(item.pageIndex) + 1} -> ${committedMood}.`);
       recordEvent(`visible-window result -> ${committedMood}`, item.pageIndex ?? null);
-
-      await triggerMood(config.port, committedMood);
 
       // Update badge
       ext.action.setBadgeText({ text: String(stats.analyzed) });
@@ -1083,10 +1124,16 @@ ext.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           clearPendingDebug(msg.page ?? null);
           rememberStatusNote(`Lookup hit for page ${Number(msg.page) + 1} -> ${result.mood}.`);
           recordEvent(`lookup hit -> ${result.mood}`, msg.page ?? null);
-          await triggerMood(config.port, result.mood);
-          stats.lastMood = result.mood;
+          const playback = await maybeTriggerMood(
+            config,
+            result.mood,
+            msg.chapter,
+            msg.page
+          );
+          const committedMood = playback.committed_mood || result.mood;
+          stats.lastMood = committedMood;
           stats.lastPage = msg.page;
-          ext.action.setBadgeBackgroundColor({ color: getMoodColor(result.mood) });
+          ext.action.setBadgeBackgroundColor({ color: getMoodColor(committedMood) });
           pushUniquePage(stats.analyzedPages, msg.page);
         }
 
@@ -1131,14 +1178,20 @@ ext.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         const config = await getConfig();
         if (!config.enabled) { sendResponse({ ok: false }); return; }
-        const data = await triggerMood(config.port, msg.mood);
-        recordEvent(`re-trigger -> ${data.mood || msg.mood}`, msg.pageIndex ?? null);
+        const data = await maybeTriggerMood(config, msg.mood, msg.chapter, msg.pageIndex);
+        const committedMood = data.committed_mood || data.mood || msg.mood;
+        recordEvent(
+          config.playbackEnabled
+            ? `re-trigger -> ${committedMood}`
+            : `re-trigger suppressed -> ${msg.mood}`,
+          msg.pageIndex ?? null
+        );
 
-        stats.lastMood = msg.mood;
+        stats.lastMood = committedMood;
         stats.lastPage = msg.pageIndex;
-        ext.action.setBadgeBackgroundColor({ color: getMoodColor(data.mood || msg.mood) });
+        ext.action.setBadgeBackgroundColor({ color: getMoodColor(committedMood) });
 
-        sendResponse({ ok: true, mood: data.mood });
+        sendResponse({ ok: true, mood: committedMood, playbackSuppressed: data.skipped === true });
       } catch {
         sendResponse({ ok: false });
       }
@@ -1221,12 +1274,23 @@ ext.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
       }
 
-      sendResponse({ ...status, enabled: config.enabled, port: config.port, stats: effectiveStats });
+      sendResponse({
+        ...status,
+        enabled: config.enabled,
+        overlayEnabled: config.overlayEnabled,
+        playbackEnabled: config.playbackEnabled,
+        port: config.port,
+        stats: effectiveStats,
+      });
     })();
     return true; // async response
   }
 
   if (msg.type === 'set_config') {
+    if (msg.port !== undefined && (!Number.isInteger(msg.port) || msg.port < 1024 || msg.port > 65535)) {
+      sendResponse({ error: 'Port must be an integer between 1024 and 65535' });
+      return false;
+    }
     if (msg.enabled === false && activeLiveRequest) {
       cancelActiveVisibleRequest("Mood detection disabled.");
     }
@@ -1235,10 +1299,20 @@ ext.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       resetChapterFeedState(null);
       resetFocusTracking();
     }
-    ext.storage.local.set({
-      ktmPort: msg.port ?? DEFAULT_PORT,
-      ktmEnabled: msg.enabled ?? true,
-    }).then(() => sendResponse({ ok: true }));
+    const nextConfig = {};
+    if (msg.port !== undefined) {
+      nextConfig.ktmPort = msg.port;
+    }
+    if (msg.enabled !== undefined) {
+      nextConfig.ktmEnabled = msg.enabled;
+    }
+    if (msg.overlayEnabled !== undefined) {
+      nextConfig[PAGE_MOOD_BADGE_STORAGE_KEY] = msg.overlayEnabled;
+    }
+    if (msg.playbackEnabled !== undefined) {
+      nextConfig[PLAYBACK_TRIGGER_STORAGE_KEY] = msg.playbackEnabled;
+    }
+    ext.storage.local.set(nextConfig).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ error: String(error) }));
     return true;
   }
 

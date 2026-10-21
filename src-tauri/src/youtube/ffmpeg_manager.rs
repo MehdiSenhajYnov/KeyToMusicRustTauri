@@ -71,7 +71,10 @@ pub fn is_installed() -> bool {
 /// Download ffmpeg to the app's bin directory.
 /// On Windows/macOS: downloads ZIP and extracts ffmpeg binary.
 /// On Linux: downloads tar.xz and extracts ffmpeg binary.
+static INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 pub async fn download_ffmpeg() -> Result<PathBuf, String> {
+    let _install = INSTALL_LOCK.lock().await;
     let target_path = get_ffmpeg_path();
     let bin_dir = target_path.parent().unwrap().to_path_buf();
 

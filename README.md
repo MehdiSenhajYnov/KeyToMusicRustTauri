@@ -17,6 +17,7 @@ Le sous-systeme Manga Mood actif repose sur :
 - un runtime local `llama-server` pilote par l'app Tauri
 - une API HTTP locale sur `127.0.0.1:8765` par defaut
 - une extension navigateur qui precharge les pages manga dans le navigateur, les capture en base64, et alimente le cache mood du chapitre
+- une couche de commit OST qui lisse les changements musicaux et filtre les spikes isoles de type `comedy` au milieu d'une zone action
 - un pipeline cible oriente lecture utilisateur, avec buffer analyse vise `X-10 .. X+20`
 
 La source de verite pour ce flux est [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md).
@@ -41,7 +42,12 @@ npm run tauri:build
 cargo fmt --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml
+python3 scripts/serve-realtest-viewer.py
+python3 scripts/run-realtest-prod-benchmark.py start
 ```
+
+Reference complete des commandes utiles :
+[docs/COMMANDS_REFERENCE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/COMMANDS_REFERENCE.md)
 
 ## Structure
 
@@ -59,6 +65,7 @@ data/                    Donnees runtime generees localement
 ## Documentation
 
 - [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md) : architecture produit actuelle du systeme Manga Mood
+- [docs/COMMANDS_REFERENCE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/COMMANDS_REFERENCE.md) : index rapide des commandes lancables du repo, viewer RealTest et benchmark inclus
 - [WebExtension/manga-mood/README.md](/home/mehdi/Dev/KeyToMusicRustTauri/WebExtension/manga-mood/README.md) : installation, workflow et debug de l'extension
 - [docs/KeyToMusic_Technical_Specification.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/KeyToMusic_Technical_Specification.md) : specification technique large de l'app
 - [docs/DOCUMENTATION_AUDIT.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/DOCUMENTATION_AUDIT.md) : statut de chaque famille documentaire

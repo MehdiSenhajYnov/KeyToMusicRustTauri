@@ -1,3 +1,5 @@
+import { useKeyboardLayoutVersion } from "../../hooks/useKeyboardLayout";
+import { isKeyDetectionSuspended } from "../../utils/keyDetectionSuspension";
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { TrackView } from "../Tracks/TrackView";
@@ -5,7 +7,6 @@ import { KeyGrid, usePlayingSoundIds } from "../Keys/KeyGrid";
 import { SoundDetails } from "../Sounds/SoundDetails";
 import { MultiKeyDetails } from "../Sounds/MultiKeyDetails";
 import { useProfileStore } from "../../stores/profileStore";
-import { useSettingsStore } from "../../stores/settingsStore";
 import { useToastStore } from "../../stores/toastStore";
 import { isAudioFile } from "../../utils/fileHelpers";
 import { SearchFilterBar, type SearchFilterBarHandle } from "../common/SearchFilterBar";
@@ -38,7 +39,6 @@ function MainContentSkeleton() {
 
 function NoProfileCTA() {
   const { createProfile, loadProfile } = useProfileStore();
-  const { updateConfig } = useSettingsStore();
   const addToast = useToastStore((s) => s.addToast);
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState("");
@@ -49,7 +49,6 @@ function NoProfileCTA() {
     const profile = await createProfile(trimmed);
     if (profile) {
       await loadProfile(profile.id);
-      await updateConfig({ currentProfileId: profile.id });
       addToast(`Profile "${trimmed}" created`, "success");
       setName("");
       setIsCreating(false);
@@ -270,11 +269,14 @@ export function MainContent() {
     setSelectedKeys(new Set());
     setAnchorKey(null);
     setFilter(null);
+    setShowAddSound(false);
+    setDroppedFiles([]);
   }, [currentProfile?.id]);
 
   // Ctrl+F to focus search bar
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || isKeyDetectionSuspended()) return;
       if ((e.ctrlKey || e.metaKey) && e.key === "f") {
         e.preventDefault();
         searchBarRef.current?.focus();
@@ -292,6 +294,7 @@ export function MainContent() {
   // Reuse the same stable hook as KeyGrid (shallow-compared, no re-render on position-only changes)
   const playingSoundIds = usePlayingSoundIds();
 
+  const keyboardLayoutVersion = useKeyboardLayoutVersion();
   const matchingKeys = useMemo(() => {
     if (!currentProfile || !filter) return null;
 
@@ -334,7 +337,7 @@ export function MainContent() {
     }
 
     return matched;
-  }, [currentProfile, filter, playingSoundIds]);
+  }, [currentProfile, filter, playingSoundIds, keyboardLayoutVersion]);
 
   const handleKeySelect = useCallback((keyCode: string, event: React.MouseEvent) => {
     if (!currentProfile) return;
@@ -421,8 +424,8 @@ export function MainContent() {
               </h2>
               <SearchFilterBar
                 ref={searchBarRef}
-                totalCount={currentProfile.keyBindings.length}
-                matchCount={matchingKeys?.size ?? currentProfile.keyBindings.length}
+                totalCount={new Set(currentProfile.keyBindings.map((kb) => kb.keyCode)).size}
+                matchCount={matchingKeys?.size ?? new Set(currentProfile.keyBindings.map((kb) => kb.keyCode)).size}
                 onFilterChange={setFilter}
                 tracks={currentProfile.tracks}
               />

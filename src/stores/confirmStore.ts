@@ -14,17 +14,10 @@ export const useConfirmStore = create<ConfirmState>((set, get) => ({
   resolve: null,
 
   confirm: (message: string) => {
+    // Settle any previous request instead of leaving an orphaned promise or timer.
+    get().close(false);
     return new Promise<boolean>((resolve) => {
-      const timeout = setTimeout(() => {
-        get().close(false);
-      }, 30000);
-
-      const wrappedResolve = (value: boolean) => {
-        clearTimeout(timeout);
-        resolve(value);
-      };
-
-      set({ isOpen: true, message, resolve: wrappedResolve });
+      set({ isOpen: true, message, resolve });
     });
   },
 

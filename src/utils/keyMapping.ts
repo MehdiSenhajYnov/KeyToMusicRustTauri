@@ -36,15 +36,63 @@ const KEY_DISPLAY_MAP: Record<string, string> = {
   BracketLeft: "[", BracketRight: "]", Minus: "-", Equal: "=",
 };
 
-// Dynamic layout map: records the actual character for each physical key code
-// Populated at runtime from keydown events, so it adapts to any keyboard layout
-const layoutMap: Map<string, string> = new Map();
+// Labels describe the system layout; bindings always retain physical codes.
+const LAYOUT_STORAGE_KEY = "keytomusic.keyboardLayout.v1";
+const layoutMap = new Map<string, string>();
+const layoutListeners = new Set<() => void>();
+let layoutVersion = 0;
+let authoritativeLayout = false;
 
-export function recordKeyLayout(code: string, key: string): void {
-  // Only record single-character keys (letters, digits, punctuation)
-  if (key.length === 1 && /^Key[A-Z]$|^Digit[0-9]$/.test(code)) {
-    layoutMap.set(code, key.toUpperCase());
+function validLayoutEntry(code: string, value: unknown): value is string {
+  return code in KEY_DISPLAY_MAP && !code.startsWith("Numpad") &&
+    typeof value === "string" && Array.from(value).length === 1 && value.trim().length > 0;
+}
+
+// Retain learned labels when neither the browser nor the OS exposes a layout map.
+try {
+  const cached = JSON.parse(localStorage.getItem(LAYOUT_STORAGE_KEY) ?? "{}");
+  for (const [code, value] of Object.entries(cached)) {
+    if (validLayoutEntry(code, value)) layoutMap.set(code, value.toUpperCase());
   }
+} catch { /* Storage may be disabled. Native initialization still works. */ }
+
+function publishLayout() {
+  try { localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(Object.fromEntries(layoutMap))); } catch { /* Optional cache. */ }
+  layoutVersion++;
+  layoutListeners.forEach((notify) => notify());
+}
+
+export const subscribeKeyboardLayout = (notify: () => void) => {
+  layoutListeners.add(notify);
+  return () => { layoutListeners.delete(notify); };
+};
+export const getKeyboardLayoutVersion = () => layoutVersion;
+
+/** Apply the entire layout together, so A/Q and Z/W never update one at a time. */
+export function applyKeyboardLayout(labels: Record<string, string>): void {
+  const entries = Object.entries(labels).filter(([code, value]) => validLayoutEntry(code, value));
+  if (entries.length === 0) return;
+  authoritativeLayout = true;
+  const next = new Map(entries.map(([code, value]) => [code, value.toUpperCase()]));
+  if (next.size === layoutMap.size && [...next].every(([code, value]) => layoutMap.get(code) === value)) return;
+  layoutMap.clear();
+  next.forEach((value, code) => layoutMap.set(code, value));
+  publishLayout();
+}
+
+export function recordKeyLayout(
+  code: string,
+  key: string,
+  modifiers?: Pick<KeyboardEvent, "shiftKey" | "ctrlKey" | "altKey" | "metaKey">
+): void {
+  // Shift/AltGr characters must never replace the unmodified key label.
+  if (modifiers && (modifiers.shiftKey || modifiers.ctrlKey || modifiers.altKey || modifiers.metaKey)) return;
+  if (!validLayoutEntry(code, key)) return;
+  if (authoritativeLayout) return;
+  const label = key.toUpperCase();
+  if (layoutMap.get(code) === label) return;
+  layoutMap.set(code, label);
+  publishLayout();
 }
 
 export function keyCodeToDisplay(code: string): string {

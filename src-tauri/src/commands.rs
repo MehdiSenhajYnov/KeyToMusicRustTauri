@@ -4,7 +4,7 @@ use crate::import_export;
 use crate::mood;
 use crate::state::AppState;
 use crate::storage;
-use crate::types::{AppConfig, MomentumModifier, MoodCategory, Profile, Sound, SoundSource};
+use crate::types::{AppConfig, MomentumModifier, Profile, Sound, SoundSource};
 use crate::youtube;
 use tauri::{Emitter, State};
 
@@ -12,6 +12,13 @@ use tauri::{Emitter, State};
 use std::os::unix::fs::PermissionsExt;
 
 // ─── Configuration Commands ─────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn get_keyboard_layout(
+    app: tauri::AppHandle,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    crate::keys::layout::current(&app).await
+}
 
 #[tauri::command]
 pub fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
@@ -108,21 +115,23 @@ fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
     if let Some(v) = updates.get("moodApiPort").and_then(|v| v.as_u64()) {
         config.mood_api_port = v as u16;
     }
-    if let Some(v) = updates.get("moodEntryThreshold").and_then(|v| v.as_f64()) {
-        config.mood_entry_threshold = v as f32;
-    }
-    if let Some(v) = updates.get("moodExitThreshold").and_then(|v| v.as_f64()) {
-        config.mood_exit_threshold = v as f32;
-    }
-    if let Some(v) = updates.get("moodDwellPages").and_then(|v| v.as_u64()) {
-        config.mood_dwell_pages = v as u32;
-    }
-    if let Some(v) = updates.get("moodWindowSize").and_then(|v| v.as_u64()) {
-        config.mood_window_size = v as usize;
+}
+
+fn restore_config_fields(
+    config: &mut AppConfig,
+    previous: &AppConfig,
+    updates: &serde_json::Value,
+) {
+    // Restore only this request's fields; unrelated concurrent changes must survive.
+    if let (Ok(serde_json::Value::Object(mut fields)), Some(updates)) =
+        (serde_json::to_value(previous), updates.as_object())
+    {
+        fields.retain(|key, _| updates.contains_key(key));
+        apply_config_updates(config, &serde_json::Value::Object(fields));
     }
 }
 
-fn sync_runtime_dependent_config(state: &AppState, config: &AppConfig, reset_director: bool) {
+fn sync_runtime_dependent_config(state: &AppState, config: &AppConfig) {
     if let Ok(engine) = state.get_audio_engine() {
         let _ = engine.set_audio_device(config.audio_device.clone());
         let _ = engine.set_master_volume(config.master_volume);
@@ -140,20 +149,6 @@ fn sync_runtime_dependent_config(state: &AppState, config: &AppConfig, reset_dir
         .key_detector
         .set_key_detection_shortcut(config.key_detection_shortcut.clone());
     state.key_detector.set_chord_window(config.chord_window_ms);
-
-    let mut director = state
-        .mood_director
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if reset_director {
-        director.reset();
-    }
-    director.update_config(mood::director::DirectorConfig {
-        entry_threshold: config.mood_entry_threshold,
-        exit_threshold: config.mood_exit_threshold,
-        min_dwell_pages: config.mood_dwell_pages,
-        window_size: config.mood_window_size,
-    });
 }
 
 fn emit_mood_server_status(app_handle: &tauri::AppHandle, status: &str) {
@@ -355,13 +350,6 @@ async fn stop_mood_runtime_inner(state: &AppState, app_handle: &tauri::AppHandle
     }
     drop(guard);
 
-    let mut director = state
-        .mood_director
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    director.reset();
-    drop(director);
-
     emit_mood_server_status(app_handle, "stopped");
 }
 
@@ -404,22 +392,34 @@ pub async fn update_config(
     app_handle: tauri::AppHandle,
     updates: serde_json::Value,
 ) -> Result<(), String> {
-    let previous = state.get_config();
-    let reset_director = updates.get("currentProfileId").is_some();
     let touches_mood_service =
         updates.get("moodAiEnabled").is_some() || updates.get("moodApiPort").is_some();
+    let _lifecycle = if touches_mood_service {
+        Some(state.mood_lifecycle.lock().await)
+    } else {
+        None
+    };
+    if let Some(port) = updates.get("moodApiPort") {
+        if !port
+            .as_u64()
+            .is_some_and(|port| (1024..=65535).contains(&port))
+        {
+            return Err("API port must be between 1024 and 65535".into());
+        }
+    }
+    let previous = state.get_config();
 
     let config = state.update_config(|config| {
         apply_config_updates(config, &updates);
     });
-    sync_runtime_dependent_config(&state, &config, reset_director);
+    sync_runtime_dependent_config(&state, &config);
 
     if touches_mood_service {
         if let Err(err) = sync_mood_service_config(&state, &app_handle, &previous, &config).await {
             let restored = state.update_config(|config| {
-                *config = previous.clone();
+                restore_config_fields(config, &previous, &updates);
             });
-            sync_runtime_dependent_config(&state, &restored, reset_director);
+            sync_runtime_dependent_config(&state, &restored);
             let _ = sync_mood_service_config(&state, &app_handle, &config, &restored).await;
             return Err(err);
         }
@@ -427,7 +427,19 @@ pub async fn update_config(
         emit_mood_api_status(&app_handle, &state);
     }
 
-    storage::save_config(&config)
+    state.schedule_config_save();
+    if let Err(error) = state.flush_config() {
+        let restored = state.update_config(|current| {
+            restore_config_fields(current, &previous, &updates);
+        });
+        sync_runtime_dependent_config(&state, &restored);
+        if touches_mood_service {
+            let _ = sync_mood_service_config(&state, &app_handle, &config, &restored).await;
+        }
+        state.schedule_config_save();
+        return Err(error);
+    }
+    Ok(())
 }
 
 /// Set the profile bindings for chord detection.
@@ -439,6 +451,11 @@ pub fn set_profile_bindings(
 ) -> Result<(), String> {
     state.key_detector.set_profile_bindings(&bindings);
     Ok(())
+}
+
+#[tauri::command]
+pub fn flush_config(state: State<'_, AppState>) -> Result<(), String> {
+    state.flush_config()
 }
 
 // ─── Profile Commands ───────────────────────────────────────────────────────
@@ -465,9 +482,8 @@ pub fn save_profile(profile: Profile) -> Result<(), String> {
 
 #[tauri::command]
 pub fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    // Clean up discovery cache for this profile
+    storage::delete_profile(id.clone())?;
     discovery::cache::DiscoveryCache::delete(&id);
-    storage::delete_profile(id)?;
     // Cleanup cached YouTube files no longer referenced by any profile
     if let Ok(mut cache) = state.youtube_cache.lock() {
         cache.ensure_loaded();
@@ -484,7 +500,8 @@ pub fn duplicate_profile(id: String, new_name: Option<String>) -> Result<Profile
 // ─── Audio Commands ─────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn play_sound(
+#[allow(clippy::too_many_arguments)] // Keep explicit IPC fields compatible with existing callers.
+pub async fn play_sound(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     track_id: String,
@@ -492,7 +509,14 @@ pub fn play_sound(
     file_path: String,
     start_position: f64,
     sound_volume: f32,
+    track_volume: Option<f32>,
 ) -> Result<(), String> {
+    if !start_position.is_finite() || start_position < 0.0 {
+        return Err("Invalid playback position".to_string());
+    }
+    if !sound_volume.is_finite() || !(0.0..=1.0).contains(&sound_volume) {
+        return Err("Invalid sound volume".to_string());
+    }
     let engine = state.get_audio_engine()?;
     let config = state.get_config();
 
@@ -518,18 +542,33 @@ pub fn play_sound(
         return Err(format!("Sound file not found: {}", file_path));
     }
 
+    // Apply the requested volume before decoding; a cancelled slow preparation
+    // must never overwrite the volume of a newer playback request.
+    engine.set_track_volume(
+        track_id.clone(),
+        track_volume.unwrap_or(1.0).clamp(0.0, 1.0),
+    )?;
     // Pre-create the source off the audio thread (file I/O + probe + seek + first decode)
-    let source = crate::audio::symphonia_source::SymphoniaSource::new(&file_path, start_position)?;
+    let request = engine.begin_playback(&track_id);
+    let decode_path = file_path.clone();
+    let source = tokio::task::spawn_blocking(move || {
+        crate::audio::symphonia_source::SymphoniaSource::new(&decode_path, start_position)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
-    engine.play_sound_prepared(
-        track_id,
-        sound_id,
-        file_path,
-        start_position,
-        source,
-        sound_volume,
-        config.crossfade_duration,
-    )
+    engine
+        .play_sound_prepared(
+            request,
+            track_id,
+            sound_id,
+            file_path,
+            start_position,
+            source,
+            sound_volume,
+            config.crossfade_duration,
+        )
+        .await
 }
 
 #[tauri::command]
@@ -849,6 +888,11 @@ udevadm trigger --subsystem-match=input --action=change
             status,
         })
     }
+}
+
+#[tauri::command]
+pub fn suspend_key_detection(state: State<'_, AppState>, suspended: bool) {
+    state.key_detector.set_suspended(suspended);
 }
 
 #[tauri::command]
@@ -1472,8 +1516,16 @@ pub async fn start_discovery(
 
     let is_background = background.unwrap_or(false);
 
-    // Reset cancel flag
-    state.discovery_cancel.store(false, Ordering::Relaxed);
+    let cancel_flag = {
+        let mut active = state
+            .discovery_cancel
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        active.store(true, Ordering::Relaxed);
+        let next = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        *active = next.clone();
+        next
+    };
 
     // Load the profile to extract seeds (YouTube + local)
     let profile = storage::load_profile(profile_id.clone())?;
@@ -1567,7 +1619,9 @@ pub async fn start_discovery(
         Ok(path) => path,
         Err(_) => youtube::download_yt_dlp().await?,
     };
-    let cancel_flag = state.discovery_cancel.clone();
+    if cancel_flag.load(Ordering::Relaxed) {
+        return Err("Discovery cancelled".into());
+    }
 
     if !is_background {
         let _ = app.emit("discovery_started", serde_json::json!({}));
@@ -1578,13 +1632,15 @@ pub async fn start_discovery(
     let app_progress = app.clone();
     let app_partial = app.clone();
     let bg = is_background;
+    let progress_cancel = cancel_flag.clone();
+    let partial_cancel = cancel_flag.clone();
     let suggestions = engine
         .generate_suggestions(
             seeds.clone(),
             all_excluded,
             yt_dlp_bin,
             move |current, total, seed_name| {
-                if !bg {
+                if !bg && !progress_cancel.load(Ordering::Relaxed) {
                     let _ = app_progress.emit(
                         "discovery_progress",
                         serde_json::json!({
@@ -1596,7 +1652,7 @@ pub async fn start_discovery(
                 }
             },
             move |partial_suggestions| {
-                if !bg {
+                if !bg && !partial_cancel.load(Ordering::Relaxed) {
                     let _ = app_partial.emit("discovery_partial", partial_suggestions);
                 }
             },
@@ -1604,14 +1660,6 @@ pub async fn start_discovery(
         .await;
 
     if cancel_flag.load(Ordering::Relaxed) {
-        if !is_background {
-            let _ = app.emit(
-                "discovery_error",
-                serde_json::json!({
-                    "message": "Discovery cancelled",
-                }),
-            );
-        }
         return Err("Discovery cancelled".to_string());
     }
 
@@ -1856,7 +1904,11 @@ pub async fn list_disliked_videos(profile_id: String) -> Result<Vec<DislikedVide
 #[tauri::command]
 pub fn cancel_discovery(state: State<'_, AppState>) {
     use std::sync::atomic::Ordering;
-    state.discovery_cancel.store(true, Ordering::Relaxed);
+    state
+        .discovery_cancel
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .store(true, Ordering::Relaxed);
 }
 
 // ─── Pre-download Commands ───────────────────────────────────────────────
@@ -2086,16 +2138,20 @@ pub struct InitialState {
     pub profiles: Vec<storage::ProfileSummary>,
     pub current_profile: Option<Profile>,
     pub input_runtime: InputRuntime,
+    pub profile_error: Option<String>,
 }
 
 #[tauri::command]
 pub fn get_initial_state(state: State<'_, AppState>) -> Result<InitialState, String> {
     let config = state.get_config();
     let profiles = storage::list_profiles()?;
-    let current_profile = if let Some(ref id) = config.current_profile_id {
-        storage::load_profile(id.clone()).ok()
+    let (current_profile, profile_error) = if let Some(ref id) = config.current_profile_id {
+        match storage::load_profile(id.clone()) {
+            Ok(profile) => (Some(profile), None),
+            Err(error) => (None, Some(error)),
+        }
     } else {
-        None
+        (None, None)
     };
     let is_linux = cfg!(target_os = "linux");
     let is_wayland = is_linux && is_wayland_session();
@@ -2104,6 +2160,7 @@ pub fn get_initial_state(state: State<'_, AppState>) -> Result<InitialState, Str
         config,
         profiles,
         current_profile,
+        profile_error,
         input_runtime: InputRuntime {
             is_linux,
             is_wayland,
@@ -2147,6 +2204,7 @@ pub async fn start_mood_server(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    let _lifecycle = state.mood_lifecycle.lock().await;
     let config = state.get_config();
     if !config.mood_ai_enabled {
         return Err("Enable Mood AI first to expose the browser extension API.".to_string());
@@ -2162,6 +2220,7 @@ pub async fn stop_mood_server(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
+    let _lifecycle = state.mood_lifecycle.lock().await;
     stop_mood_runtime_inner(&state, &app_handle).await;
     Ok(())
 }
@@ -2184,60 +2243,22 @@ pub async fn get_mood_service_status(
     })
 }
 
-#[tauri::command]
-pub async fn analyze_mood(
-    state: State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-    image_path: String,
-) -> Result<MoodCategory, String> {
-    let image_data =
-        std::fs::read(&image_path).map_err(|e| format!("Failed to read image: {}", e))?;
+#[cfg(test)]
+mod config_tests {
+    use super::*;
 
-    let image_b64 = mood::inference::prepare_image(&image_data)?;
-
-    let mut guard = state.llama_server.lock().await;
-    let server = guard
-        .as_mut()
-        .ok_or_else(|| "Mood server not running".to_string())?;
-
-    let detected = server.analyze_mood(&image_b64).await?;
-    let dominant_mood = detected.mood;
-    let mood_str = dominant_mood.as_str().to_string();
-
-    // Feed into director
-    let decision = {
-        let analysis = mood::director::PageAnalysis {
-            scores: mood::director::MoodScores::from_single(dominant_mood),
-            intensity: detected.intensity,
-            narrative_role: mood::director::NarrativeRole::Continuation,
-            dominant_mood,
-        };
-        let mut director = state
-            .mood_director
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        director.process(analysis, None)
-    };
-
-    // Always emit raw mood for UI
-    let _ = app_handle.emit(
-        "mood_detected",
-        serde_json::json!({ "mood": mood_str, "source": "local" }),
-    );
-
-    // Emit committed mood only if changed
-    if decision.mood_changed {
-        let committed_str = decision.committed_mood.as_str().to_string();
-        let _ = app_handle.emit(
-            "mood_committed",
-            serde_json::json!({
-                "mood": committed_str,
-                "source": "local",
-                "previous_mood": mood_str,
-                "dwell_count": decision.dwell_count,
-            }),
+    #[test]
+    fn rollback_restores_only_requested_fields() {
+        let previous = AppConfig::default();
+        let mut current = previous.clone();
+        current.mood_api_port = 9999;
+        current.master_volume = 0.2;
+        restore_config_fields(
+            &mut current,
+            &previous,
+            &serde_json::json!({"moodApiPort": 9999}),
         );
+        assert_eq!(current.mood_api_port, previous.mood_api_port);
+        assert_eq!(current.master_volume, 0.2);
     }
-
-    Ok(decision.committed_mood)
 }

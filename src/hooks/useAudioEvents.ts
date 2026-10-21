@@ -42,7 +42,7 @@ export function useAudioEvents() {
 
     unlisteners.push(
       listen<SoundPayload>("sound_ended", (event) => {
-        setSoundEnded(event.payload.trackId);
+        setSoundEnded(event.payload.trackId, event.payload.soundId);
       })
     );
 

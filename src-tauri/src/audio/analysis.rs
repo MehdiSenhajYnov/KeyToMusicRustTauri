@@ -103,7 +103,17 @@ pub fn read_audio_metadata_tags(path: &str) -> Option<AudioTags> {
 
 /// Compute a waveform (RMS amplitude per segment) for the given audio file.
 /// `num_points` controls the resolution (e.g., 200 for a typical display width).
+type WaveformProgress<'a> = Option<&'a dyn Fn(&[f32], f64, u32)>;
+
 pub fn compute_waveform(file_path: &str, num_points: usize) -> Result<WaveformData, String> {
+    compute_waveform_streaming(file_path, num_points, None)
+}
+
+fn compute_waveform_streaming(
+    file_path: &str,
+    num_points: usize,
+    progress_cb: WaveformProgress<'_>,
+) -> Result<WaveformData, String> {
     let num_points = num_points.clamp(10, 2000);
 
     let file = File::open(file_path).map_err(|e| format!("Failed to open audio file: {}", e))?;
@@ -165,6 +175,7 @@ pub fn compute_waveform(file_path: &str, num_points: usize) -> Result<WaveformDa
     let mut rms_sums: Vec<f64> = vec![0.0; num_points];
     let mut rms_counts: Vec<usize> = vec![0; num_points];
     let mut global_frame: usize = 0;
+    let mut reported_points = 0;
 
     loop {
         let packet = match reader.next_packet() {
@@ -215,6 +226,24 @@ pub fn compute_waveform(file_path: &str, num_points: usize) -> Result<WaveformDa
             rms_sums[segment] += (mono as f64) * (mono as f64);
             rms_counts[segment] += 1;
             global_frame += 1;
+        }
+        if let Some(callback) = progress_cb {
+            if total_frames_est > 0 {
+                let completed = (global_frame * num_points / total_frames_est).min(num_points);
+                if completed >= reported_points + 5 {
+                    let points: Vec<f32> = (0..completed)
+                        .map(|i| {
+                            if rms_counts[i] > 0 {
+                                (rms_sums[i] / rms_counts[i] as f64).sqrt() as f32
+                            } else {
+                                0.0
+                            }
+                        })
+                        .collect();
+                    callback(&points, duration, sample_rate);
+                    reported_points = completed;
+                }
+            }
         }
     }
 
@@ -282,6 +311,10 @@ pub fn compute_waveform(file_path: &str, num_points: usize) -> Result<WaveformDa
         smoothed[i] = sum / count;
     }
 
+    if let Some(callback) = progress_cb {
+        callback(&smoothed, duration, sample_rate);
+    }
+
     // Detect momentum point
     let suggested_momentum = detect_momentum_point(&smoothed, duration);
 
@@ -294,12 +327,13 @@ pub fn compute_waveform(file_path: &str, num_points: usize) -> Result<WaveformDa
 }
 
 /// Compute a waveform by seeking to N positions and decoding a small window at each.
-/// ~40x faster than `compute_waveform` for files with seekable containers (M4A, MP3, FLAC).
+/// Uses sparse sampling for independent-frame codecs (M4A, FLAC, etc.).
+/// MP3 uses sequential decoding to preserve its inter-frame bit reservoir.
 /// Falls back to `compute_waveform` if seeking fails.
 pub fn compute_waveform_sampled(
     file_path: &str,
     num_points: usize,
-    progress_cb: Option<&dyn Fn(&[f32], f64, u32)>,
+    progress_cb: WaveformProgress<'_>,
 ) -> Result<WaveformData, String> {
     let num_points = num_points.clamp(10, 2000);
 
@@ -333,6 +367,13 @@ pub fn compute_waveform_sampled(
 
     let track_id = track.id;
     let codec_params = track.codec_params.clone();
+    // MPEG Layer III frames share a bit reservoir. Repeated coarse seeks +
+    // decoder resets discard it, producing warnings and invalid RMS windows even
+    // for valid files. Decode MP3 sequentially once; the waveform is disk-cached.
+    if codec_params.codec == symphonia::core::codecs::CODEC_TYPE_MP3 {
+        return compute_waveform_streaming(file_path, num_points, progress_cb);
+    }
+
     let sample_rate = codec_params.sample_rate.unwrap_or(44100);
     let channels = codec_params.channels.map(|c| c.count()).unwrap_or(2);
 
@@ -842,6 +883,63 @@ fn file_mtime(path: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mp3_waveform_keeps_reservoir_and_silence() {
+        use std::sync::{Arc, Mutex};
+        let _ = tracing_log::LogTracer::init();
+        #[derive(Clone)]
+        struct LogWriter(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for LogWriter {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().write(bytes)
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let logs = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let writer = LogWriter(logs.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::WARN)
+            .with_ansi(false)
+            .without_time()
+            .with_writer(move || writer.clone())
+            .finish();
+        let fixture = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../resources/test-fixtures/reservoir.mp3"
+        );
+        let progress = std::cell::Cell::new(0);
+        let waveform = tracing::subscriber::with_default(subscriber, || {
+            compute_waveform_sampled(
+                fixture,
+                100,
+                Some(&|_, _, _| progress.set(progress.get() + 1)),
+            )
+        })
+        .unwrap();
+        assert!(progress.get() > 1, "Analysis must still report progress");
+        assert_eq!(waveform.points.len(), 100);
+        assert!((waveform.duration - 6.0).abs() < 0.1);
+        assert!(
+            waveform.points[10] < 0.01,
+            "Opening silence must remain silent"
+        );
+        assert!(
+            waveform.points[50] > 0.5,
+            "The middle tone must remain visible"
+        );
+        assert!(
+            waveform.points[90] < 0.01,
+            "Ending silence must remain silent"
+        );
+        let logs = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
+        assert!(
+            !logs.contains("underflow") && !logs.contains("skipping junk"),
+            "Valid MP3 generated warnings: {logs}"
+        );
+    }
 
     #[test]
     fn test_silence_returns_none() {

@@ -1,5 +1,6 @@
 pub mod chord;
 pub mod detector;
+pub mod layout;
 #[cfg(target_os = "linux")]
 pub mod linux_listener;
 #[cfg(target_os = "macos")]

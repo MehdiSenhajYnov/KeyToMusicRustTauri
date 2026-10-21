@@ -1,237 +1,1207 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-<meta charset="UTF-8">
-<title>Manga Mood Viewer</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #1a1a2e; color: #eee; font-family: -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; }
-  .topbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: #16213e; border-bottom: 1px solid #333; flex-shrink: 0; flex-wrap: wrap; }
-  .topbar select { background: #0f3460; color: #eee; border: 1px solid #555; padding: 6px 10px; border-radius: 6px; font-size: 14px; }
-  .topbar .counter { margin-left: auto; font-size: 13px; color: #888; }
-  .topbar .shortcuts { font-size: 11px; color: #666; }
-  .main { flex: 1; display: flex; overflow: hidden; }
-  .image-panel { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; background: #111; }
-  .image-panel img { max-width: 95%; max-height: 95%; object-fit: contain; border-radius: 4px; }
-  .badge { position: absolute; top: 16px; right: 16px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-  .mood-pill { padding: 8px 18px; border-radius: 20px; font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
-  .intensity-bar { display: flex; gap: 4px; }
-  .intensity-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3); }
-  .intensity-dot.active { border-color: #fff; }
-  .confidence-label { font-size: 12px; color: #aaa; }
-  .reasoning { font-size: 13px; color: #ccc; background: rgba(0,0,0,0.7); padding: 6px 12px; border-radius: 8px; max-width: 350px; text-align: right; }
-  .mood-epic { background: #e74c3c; color: #fff; }
-  .mood-tension { background: #e67e22; color: #fff; }
-  .mood-sadness { background: #3498db; color: #fff; }
-  .mood-comedy { background: #f1c40f; color: #222; }
-  .mood-romance { background: #e91e8a; color: #fff; }
-  .mood-horror { background: #8e44ad; color: #fff; }
-  .mood-peaceful { background: #2ecc71; color: #222; }
-  .mood-mystery { background: #1abc9c; color: #fff; }
-  .sidebar { width: 220px; overflow-y: auto; background: #16213e; border-left: 1px solid #333; flex-shrink: 0; }
-  .sidebar .item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; border-bottom: 1px solid #1a1a2e; font-size: 13px; transition: background 0.1s; }
-  .sidebar .item:hover { background: #1a3a5c; }
-  .sidebar .item.active { background: #0f3460; }
-  .sidebar .item .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-  .sidebar .item .name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sidebar .item .int { font-size: 11px; color: #888; }
-  .nav-arrow { position: absolute; top: 50%; transform: translateY(-50%); font-size: 48px; color: rgba(255,255,255,0.4); cursor: pointer; padding: 30px 14px; user-select: none; z-index: 10; }
-  .nav-arrow:hover { color: #fff; }
-  .nav-arrow.left { left: 0; }
-  .nav-arrow.right { right: 0; }
-  .edit-overlay { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: none; gap: 8px; background: rgba(0,0,0,0.85); padding: 10px 16px; border-radius: 12px; align-items: center; }
-  .edit-overlay.show { display: flex; }
-  .edit-overlay select, .edit-overlay button { background: #0f3460; color: #eee; border: 1px solid #555; padding: 6px 10px; border-radius: 6px; font-size: 14px; cursor: pointer; }
-  .edit-overlay button { background: #2ecc71; color: #222; font-weight: 600; }
-  .edit-overlay button.cancel { background: #555; color: #eee; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RealTest Ground Truth Viewer</title>
+  <style>
+    :root {
+      --bg: #0b0e13;
+      --surface: #131821;
+      --surface-soft: #0f141c;
+      --surface-muted: #181e28;
+      --line: #262d38;
+      --line-strong: #384252;
+      --text: #f3f4f6;
+      --muted: #98a2b3;
+      --danger: #f97066;
+      --success: #47cd89;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --shadow: 0 16px 38px rgba(0, 0, 0, 0.28);
+      --font-body: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+      --font-head: "Aptos Display", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+      --font-mono: "Cascadia Code", "Fira Code", Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+    }
+
+    body {
+      padding: 12px;
+      overflow: hidden;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+      color: inherit;
+    }
+
+    .app {
+      height: calc(100vh - 24px);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    .topbar {
+      padding: 0 0 8px;
+      display: grid;
+      gap: 6px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .topbar-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .nav {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 24px;
+      padding: 0;
+      border-radius: 0;
+      border: 0;
+      color: var(--muted);
+      font-weight: 700;
+      background: transparent;
+    }
+
+    .nav-link:hover,
+    .nav-link:focus-visible {
+      color: var(--text);
+      outline: none;
+    }
+
+    .page-marker {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .filter-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .topbar .field {
+      gap: 0;
+    }
+
+    .topbar .field span {
+      display: none;
+    }
+
+    .topbar .field select {
+      min-width: 118px;
+      height: 34px;
+      background: transparent;
+      border-radius: 999px;
+      padding: 0 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .field span {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .field select,
+    .field input {
+      width: 100%;
+      min-width: 0;
+      height: 40px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--line);
+      background: var(--surface-muted);
+      padding: 0 12px;
+    }
+
+    .field select:focus,
+    .field input:focus,
+    .button:focus-visible,
+    .icon-button:focus-visible,
+    .sidebar-item:focus-visible {
+      outline: 2px solid #f3f4f6;
+      outline-offset: 2px;
+    }
+
+    .status-line {
+      min-height: 0;
+      font-size: 11px;
+      line-height: 1.25;
+      color: var(--muted);
+    }
+
+    .status-line:empty {
+      display: none;
+    }
+
+    .status-line[data-tone="warn"] {
+      color: var(--danger);
+    }
+
+    .status-line[data-tone="ok"] {
+      color: var(--success);
+    }
+
+    .layout {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 292px;
+      gap: 20px;
+    }
+
+    .viewer {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+      gap: 12px;
+    }
+
+    .preview {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 8px;
+      padding: 0;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .preview-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .preview-page {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
+
+    .preview-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+      color: var(--muted);
+    }
+
+    .preview-key {
+      font-family: var(--font-head);
+      font-size: clamp(16px, 1.5vw, 20px);
+      line-height: 1.1;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .preview-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .button,
+    .icon-button,
+    .pill,
+    .mood-pill,
+    .dirty-tag {
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .button {
+      min-height: 38px;
+      padding: 0 14px;
+      cursor: pointer;
+    }
+
+    .button-ghost {
+      background: var(--surface-muted);
+    }
+
+    .button-primary {
+      background: #f3f4f6;
+      border-color: #f3f4f6;
+      color: #101418;
+    }
+
+    .icon-button {
+      width: 38px;
+      height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    .mood-pill,
+    .pill,
+    .dirty-tag {
+      min-height: 36px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 12px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .dirty-tag {
+      color: var(--muted);
+    }
+
+    .dirty-tag[data-dirty="true"] {
+      color: #ffd8b4;
+      background: rgba(194, 65, 12, 0.18);
+      border-color: rgba(249, 115, 22, 0.34);
+    }
+
+    .info-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .info-popover {
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      z-index: 10;
+      width: min(420px, calc(100vw - 72px));
+      max-height: 300px;
+      overflow: auto;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--line-strong);
+      background: #171d27;
+      box-shadow: 0 18px 36px rgba(0, 0, 0, 0.34);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      opacity: 0;
+      transform: translateY(-4px);
+      pointer-events: none;
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    .info-wrap:hover .info-popover,
+    .info-wrap:focus-within .info-popover {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .preview-media {
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      position: relative;
+    }
+
+    .preview-media img {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      user-select: none;
+    }
+
+    .nav-inline {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 2;
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(11, 14, 19, 0.84);
+      backdrop-filter: blur(8px);
+      cursor: pointer;
+      font-size: 16px;
+      color: var(--text);
+    }
+
+    .nav-inline.prev {
+      left: 10px;
+    }
+
+    .nav-inline.next {
+      right: 10px;
+    }
+
+    .edit-panel {
+      display: none;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      padding: 0;
+    }
+
+    .edit-panel.show {
+      display: grid;
+    }
+
+    .edit-panel .field-full {
+      grid-column: span 2;
+    }
+
+    .edit-actions {
+      display: flex;
+      align-items: end;
+      gap: 8px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .sidebar {
+      min-height: 0;
+      padding: 0 0 0 18px;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 12px;
+      border-left: 1px solid var(--line);
+    }
+
+    .sidebar-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .sidebar-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+      color: var(--muted);
+    }
+
+    .sidebar-count {
+      margin-top: 4px;
+      font-family: var(--font-head);
+      font-size: 24px;
+      line-height: 1;
+      letter-spacing: -0.03em;
+    }
+
+    .search-field input {
+      background: var(--surface);
+    }
+
+    .list {
+      min-height: 0;
+      overflow: auto;
+      display: grid;
+      gap: 8px;
+      padding-right: 4px;
+    }
+
+    .sidebar-item {
+      width: 100%;
+      padding: 10px 0 10px 12px;
+      border-radius: 0;
+      border: 0;
+      border-left: 2px solid transparent;
+      border-bottom: 1px solid var(--line);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      display: grid;
+      gap: 8px;
+    }
+
+    .sidebar-item:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .sidebar-item.active {
+      background: rgba(255, 255, 255, 0.02);
+      border-left-color: #6b7280;
+      border-bottom-color: var(--line-strong);
+    }
+
+    .sidebar-item-top,
+    .sidebar-item-bottom {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .sidebar-item-title {
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sidebar-item-series {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .sidebar-item-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .placeholder {
+      display: grid;
+      place-items: center;
+      min-height: 100%;
+      padding: 24px;
+      text-align: center;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .info-title {
+      margin: 0 0 10px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+      color: var(--muted);
+    }
+
+    .info-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .info-row {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      font-size: 12px;
+    }
+
+    .info-key {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 10px;
+      font-weight: 800;
+      padding-top: 2px;
+    }
+
+    .info-value {
+      min-width: 0;
+      color: var(--text);
+      line-height: 1.5;
+      word-break: break-word;
+    }
+
+    .info-reasoning {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    @media (max-width: 1180px) {
+      .layout {
+        grid-template-columns: minmax(0, 1fr) 280px;
+      }
+    }
+
+    @media (max-width: 980px) {
+      body {
+        overflow: auto;
+      }
+
+      .app {
+        height: auto;
+        min-height: calc(100vh - 24px);
+      }
+
+      .layout {
+        grid-template-columns: 1fr;
+      }
+
+      .viewer {
+        min-height: 70vh;
+      }
+
+      .sidebar {
+        min-height: 320px;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .topbar-row {
+        align-items: stretch;
+      }
+
+      .filter-group {
+        width: 100%;
+      }
+
+      .filter-group .field {
+        flex: 1 1 100%;
+      }
+
+      .preview-top,
+      .sidebar-head {
+        align-items: stretch;
+      }
+
+      .edit-panel {
+        grid-template-columns: 1fr;
+      }
+
+      .edit-panel .field-full {
+        grid-column: span 1;
+      }
+
+      .edit-actions {
+        justify-content: flex-start;
+      }
+    }
+  </style>
 </head>
 <body>
+  <div id="appShell" class="app">
+    <header class="topbar">
+      <div class="topbar-row">
+        <div class="nav">
+          <a class="nav-link" href="/realtest">Accueil</a>
+          <a class="nav-link" href="/compare">Comparer</a>
+          <span class="page-marker">Ground truth</span>
+        </div>
+        <div class="filter-group">
+          <label class="field">
+            <span>Manga</span>
+            <select id="mangaFilter" aria-label="Filtrer par manga">
+              <option value="all">Tous</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Mood</span>
+            <select id="moodFilter" aria-label="Filtrer par mood">
+              <option value="all">Tous</option>
+              <option value="epic">epic</option>
+              <option value="tension">tension</option>
+              <option value="sadness">sadness</option>
+              <option value="comedy">comedy</option>
+              <option value="romance">romance</option>
+              <option value="horror">horror</option>
+              <option value="peaceful">peaceful</option>
+              <option value="mystery">mystery</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Intensité</span>
+            <select id="intensityFilter" aria-label="Filtrer par intensite">
+              <option value="all">Toutes</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div id="statusLine" class="status-line" data-tone="neutral">Chargement du ground truth...</div>
+    </header>
 
-<div class="topbar">
-  <select id="mangaFilter">
-    <option value="all">Tous les mangas</option>
-    <option value="BL">BL - Blue Lock</option>
-    <option value="OP">OP - One Piece</option>
-    <option value="SL">SL - Solo Leveling</option>
-    <option value="SNK">SNK - Attack on Titan</option>
-    <option value="TPN">TPN - Promised Neverland</option>
-    <option value="TR">TR - Tokyo Revengers</option>
-  </select>
-  <select id="moodFilter">
-    <option value="all">Tous les moods</option>
-    <option value="epic">epic</option>
-    <option value="tension">tension</option>
-    <option value="sadness">sadness</option>
-    <option value="comedy">comedy</option>
-    <option value="romance">romance</option>
-    <option value="horror">horror</option>
-    <option value="peaceful">peaceful</option>
-    <option value="mystery">mystery</option>
-  </select>
-  <select id="intensityFilter">
-    <option value="all">Toutes intensites</option>
-    <option value="1">Intensite 1</option>
-    <option value="2">Intensite 2</option>
-    <option value="3">Intensite 3</option>
-  </select>
-  <span class="shortcuts">Fleches/AD: naviguer | E: editer | S: exporter</span>
-  <span class="counter" id="counter">0 / 0</span>
-</div>
+    <main class="layout">
+      <section class="viewer">
+        <div id="preview" class="preview">
+          <div class="placeholder">Chargement...</div>
+        </div>
 
-<div class="main">
-  <div class="image-panel">
-    <div class="nav-arrow left" onclick="navigate(-1)">&lsaquo;</div>
-    <img id="mainImage" src="" alt="">
-    <div class="badge">
-      <div class="mood-pill" id="moodPill"></div>
-      <div class="intensity-bar" id="intensityBar"></div>
-      <div class="confidence-label" id="confidenceLabel"></div>
-      <div class="reasoning" id="reasoning"></div>
-    </div>
-    <div class="nav-arrow right" onclick="navigate(1)">&rsaquo;</div>
-    <div class="edit-overlay" id="editOverlay">
-      <select id="editMood">
-        <option value="epic">epic</option><option value="tension">tension</option>
-        <option value="sadness">sadness</option><option value="comedy">comedy</option>
-        <option value="romance">romance</option><option value="horror">horror</option>
-        <option value="peaceful">peaceful</option><option value="mystery">mystery</option>
-      </select>
-      <select id="editIntensity">
-        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
-      </select>
-      <button onclick="saveEdit()">OK</button>
-      <button class="cancel" onclick="cancelEdit()">Annuler</button>
-    </div>
+        <div id="editPanel" class="edit-panel">
+          <label class="field field-full">
+            <span>Mood</span>
+            <select id="editMood">
+              <option value="epic">epic</option>
+              <option value="tension">tension</option>
+              <option value="sadness">sadness</option>
+              <option value="comedy">comedy</option>
+              <option value="romance">romance</option>
+              <option value="horror">horror</option>
+              <option value="peaceful">peaceful</option>
+              <option value="mystery">mystery</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Intensité</span>
+            <select id="editIntensity">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Confidence</span>
+            <input id="editConfidence" type="number" min="0" max="1" step="0.05">
+          </label>
+          <div class="edit-actions">
+            <button id="saveEditButton" class="button button-primary" type="button">Valider</button>
+            <button id="cancelEditButton" class="button button-ghost" type="button">Annuler</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <div>
+            <div class="sidebar-title">Pages</div>
+            <div id="counter" class="sidebar-count">0 / 0</div>
+          </div>
+          <button id="exportButton" class="button button-ghost" type="button">Exporter</button>
+        </div>
+
+        <label class="field search-field">
+          <span>Recherche</span>
+          <input id="pageSearchInput" type="search" placeholder="BL/1/34, epic, dialogue...">
+        </label>
+
+        <div id="sidebarList" class="list">
+          <div class="placeholder">Chargement...</div>
+        </div>
+      </aside>
+    </main>
   </div>
-  <div class="sidebar" id="sidebar"></div>
-</div>
 
-<!-- ground_truth.js = var GROUND_TRUTH = { ... }; -->
-<script src="ground_truth.js"></script>
-<script>
-var groundTruth = GROUND_TRUTH;
-var filteredKeys = [];
-var currentIndex = 0;
-var editMode = false;
+  <script>
+    (function () {
+      const MOOD_COLORS = {
+        epic: "#d92d20",
+        tension: "#ea580c",
+        sadness: "#2563eb",
+        comedy: "#ca8a04",
+        romance: "#db2777",
+        horror: "#7c3aed",
+        peaceful: "#16a34a",
+        mystery: "#0f766e"
+      };
 
-var moodColors = {
-  epic: '#e74c3c', tension: '#e67e22', sadness: '#3498db', comedy: '#f1c40f',
-  romance: '#e91e8a', horror: '#8e44ad', peaceful: '#2ecc71', mystery: '#1abc9c'
-};
+      const state = {
+        groundTruth: {},
+        filteredKeys: [],
+        currentIndex: 0,
+        editMode: false,
+        dirty: false
+      };
+      const INFO_ICON = [
+        "<svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\">",
+        "<circle cx=\"8\" cy=\"8\" r=\"6.25\" stroke=\"currentColor\" stroke-width=\"1.5\"/>",
+        "<circle cx=\"8\" cy=\"4.6\" r=\"0.9\" fill=\"currentColor\"/>",
+        "<path d=\"M8 7.1V11.3\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\"/>",
+        "</svg>"
+      ].join("");
 
-function sortKey(a, b) {
-  var pa = a.split('/'), pb = b.split('/');
-  if (pa[0] !== pb[0]) return pa[0].localeCompare(pb[0]);
-  if (pa[1] !== pb[1]) return parseInt(pa[1]) - parseInt(pb[1]);
-  return parseInt(pa[2]) - parseInt(pb[2]);
-}
+      const elements = {};
 
-function applyFilters() {
-  var manga = document.getElementById('mangaFilter').value;
-  var mood = document.getElementById('moodFilter').value;
-  var intensity = document.getElementById('intensityFilter').value;
-  filteredKeys = Object.keys(groundTruth).filter(function(k) {
-    if (manga !== 'all' && k.indexOf(manga + '/') !== 0) return false;
-    if (mood !== 'all' && groundTruth[k].mood !== mood) return false;
-    if (intensity !== 'all' && groundTruth[k].intensity !== parseInt(intensity)) return false;
-    return true;
-  }).sort(sortKey);
-  currentIndex = 0;
-  renderSidebar();
-  showCurrent();
-}
+      document.addEventListener("DOMContentLoaded", function () {
+        cacheElements();
+        bindEvents();
+        void init();
+      });
 
-function renderSidebar() {
-  var sb = document.getElementById('sidebar');
-  var html = '';
-  for (var i = 0; i < filteredKeys.length; i++) {
-    var k = filteredKeys[i];
-    var v = groundTruth[k];
-    var parts = k.split('/');
-    html += '<div class="item' + (i === currentIndex ? ' active' : '') + '" onclick="goTo(' + i + ')" data-idx="' + i + '">' +
-      '<span class="dot" style="background:' + moodColors[v.mood] + '"></span>' +
-      '<span class="name">' + parts[0] + ' ' + parts[1] + '/' + parts[2] + '</span>' +
-      '<span class="int">' + v.intensity + '</span></div>';
-  }
-  sb.innerHTML = html;
-}
+      async function init() {
+        if (window.location.protocol === "file:") {
+          setStatus("Ce viewer est prevu pour le mini serveur local. Lance `python scripts/serve-realtest-viewer.py` puis ouvre `/ground-truth`.", "warn");
+          return;
+        }
 
-function showCurrent() {
-  if (filteredKeys.length === 0) {
-    document.getElementById('mainImage').src = '';
-    document.getElementById('moodPill').textContent = '';
-    document.getElementById('reasoning').textContent = 'Aucune image';
-    document.getElementById('counter').textContent = '0 / 0';
-    return;
-  }
-  var key = filteredKeys[currentIndex];
-  var val = groundTruth[key];
-  document.getElementById('mainImage').src = key;
-  var pill = document.getElementById('moodPill');
-  pill.textContent = val.mood;
-  pill.className = 'mood-pill mood-' + val.mood;
-  var dots = '';
-  for (var i = 1; i <= 3; i++) {
-    dots += '<div class="intensity-dot' + (i <= val.intensity ? ' active' : '') + '" style="background:' + (i <= val.intensity ? moodColors[val.mood] : 'transparent') + '"></div>';
-  }
-  document.getElementById('intensityBar').innerHTML = dots;
-  document.getElementById('confidenceLabel').textContent = 'confidence: ' + (val.confidence != null ? val.confidence : '?');
-  document.getElementById('reasoning').textContent = val.reasoning || '';
-  document.getElementById('counter').textContent = (currentIndex + 1) + ' / ' + filteredKeys.length;
-  var items = document.querySelectorAll('.sidebar .item');
-  for (var j = 0; j < items.length; j++) items[j].classList.remove('active');
-  var el = document.querySelector('.sidebar .item[data-idx="' + currentIndex + '"]');
-  if (el) { el.classList.add('active'); el.scrollIntoView({ block: 'nearest' }); }
-}
+        try {
+          const response = await fetch("/api/ground-truth", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(response.status + " " + response.statusText);
+          }
 
-function navigate(delta) {
-  if (filteredKeys.length === 0) return;
-  currentIndex = (currentIndex + delta + filteredKeys.length) % filteredKeys.length;
-  showCurrent();
-}
-function goTo(idx) { currentIndex = idx; showCurrent(); }
+          state.groundTruth = await response.json();
+          populateMangaFilter();
+          applyFilters();
+          setStatus("", "neutral");
+        } catch (error) {
+          elements.sidebarList.innerHTML = "<div class=\"placeholder\">Impossible de charger les donnees.</div>";
+          elements.preview.innerHTML = "<div class=\"placeholder\">Impossible de charger les donnees.</div>";
+          setStatus("Chargement impossible: " + error.message, "warn");
+        }
+      }
 
-function toggleEdit() {
-  editMode = !editMode;
-  var overlay = document.getElementById('editOverlay');
-  if (editMode && filteredKeys.length > 0) {
-    var val = groundTruth[filteredKeys[currentIndex]];
-    document.getElementById('editMood').value = val.mood;
-    document.getElementById('editIntensity').value = val.intensity;
-    overlay.classList.add('show');
-  } else { overlay.classList.remove('show'); editMode = false; }
-}
-function saveEdit() {
-  var key = filteredKeys[currentIndex];
-  groundTruth[key].mood = document.getElementById('editMood').value;
-  groundTruth[key].intensity = parseInt(document.getElementById('editIntensity').value);
-  groundTruth[key].confidence = 1.0;
-  editMode = false;
-  document.getElementById('editOverlay').classList.remove('show');
-  renderSidebar(); showCurrent();
-}
-function cancelEdit() { editMode = false; document.getElementById('editOverlay').classList.remove('show'); }
+      function cacheElements() {
+        elements.statusLine = document.getElementById("statusLine");
+        elements.mangaFilter = document.getElementById("mangaFilter");
+        elements.moodFilter = document.getElementById("moodFilter");
+        elements.intensityFilter = document.getElementById("intensityFilter");
+        elements.pageSearchInput = document.getElementById("pageSearchInput");
+        elements.exportButton = document.getElementById("exportButton");
+        elements.counter = document.getElementById("counter");
+        elements.sidebarList = document.getElementById("sidebarList");
+        elements.preview = document.getElementById("preview");
+        elements.editPanel = document.getElementById("editPanel");
+        elements.editMood = document.getElementById("editMood");
+        elements.editIntensity = document.getElementById("editIntensity");
+        elements.editConfidence = document.getElementById("editConfidence");
+        elements.saveEditButton = document.getElementById("saveEditButton");
+        elements.cancelEditButton = document.getElementById("cancelEditButton");
+      }
 
-function exportJSON() {
-  var blob = new Blob([JSON.stringify(groundTruth, null, 2)], { type: 'application/json' });
-  var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = 'ground_truth.json'; a.click(); URL.revokeObjectURL(a.href);
-}
+      function bindEvents() {
+        elements.mangaFilter.addEventListener("change", applyFilters);
+        elements.moodFilter.addEventListener("change", applyFilters);
+        elements.intensityFilter.addEventListener("change", applyFilters);
+        elements.pageSearchInput.addEventListener("input", applyFilters);
+        elements.exportButton.addEventListener("click", exportJson);
+        elements.saveEditButton.addEventListener("click", saveEdit);
+        elements.cancelEditButton.addEventListener("click", cancelEdit);
 
-document.addEventListener('keydown', function(e) {
-  if (editMode) { if (e.key === 'Escape') cancelEdit(); if (e.key === 'Enter') saveEdit(); return; }
-  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') navigate(-1);
-  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') navigate(1);
-  if (e.key === 'e' || e.key === 'E') toggleEdit();
-  if (e.key === 's' || e.key === 'S') { if (e.ctrlKey || e.metaKey) e.preventDefault(); exportJSON(); }
-});
+        document.addEventListener("keydown", function (event) {
+          const target = event.target;
+          const tagName = target && target.tagName ? target.tagName.toLowerCase() : "";
+          const isFormField =
+            tagName === "input" ||
+            tagName === "select" ||
+            tagName === "textarea" ||
+            Boolean(target && target.isContentEditable);
 
-document.getElementById('mangaFilter').addEventListener('change', applyFilters);
-document.getElementById('moodFilter').addEventListener('change', applyFilters);
-document.getElementById('intensityFilter').addEventListener('change', applyFilters);
+          if (isFormField) {
+            if (state.editMode && event.key === "Escape") {
+              cancelEdit();
+            } else if (state.editMode && event.key === "Enter") {
+              saveEdit();
+            }
+            return;
+          }
 
-applyFilters();
-</script>
+          if (event.key === "ArrowLeft" || event.key === "a" || event.key === "A") {
+            navigate(-1);
+          }
+          if (event.key === "ArrowRight" || event.key === "d" || event.key === "D") {
+            navigate(1);
+          }
+          if (event.key === "e" || event.key === "E") {
+            toggleEdit();
+          }
+          if (state.editMode && event.key === "Escape") {
+            cancelEdit();
+          }
+          if (state.editMode && event.key === "Enter") {
+            saveEdit();
+          }
+          if (event.key === "s" || event.key === "S") {
+            if (event.ctrlKey || event.metaKey) {
+              event.preventDefault();
+            }
+            exportJson();
+          }
+        });
+      }
+
+      function populateMangaFilter() {
+        const mangas = Array.from(new Set(Object.keys(state.groundTruth).map(function (key) {
+          return String(key).split("/")[0];
+        }))).sort();
+
+        const options = ["<option value=\"all\">Tous</option>"].concat(
+          mangas.map(function (manga) {
+            return "<option value=\"" + escapeHtml(manga) + "\">" + escapeHtml(manga) + "</option>";
+          })
+        );
+
+        elements.mangaFilter.innerHTML = options.join("");
+      }
+
+      function applyFilters() {
+        const previousKey = state.filteredKeys[state.currentIndex] || null;
+        const manga = elements.mangaFilter.value;
+        const mood = elements.moodFilter.value;
+        const intensity = elements.intensityFilter.value;
+        const query = elements.pageSearchInput.value.trim().toLowerCase();
+
+        state.filteredKeys = Object.keys(state.groundTruth).filter(function (key) {
+          const entry = state.groundTruth[key];
+
+          if (manga !== "all" && !key.startsWith(manga + "/")) {
+            return false;
+          }
+          if (mood !== "all" && entry.mood !== mood) {
+            return false;
+          }
+          if (intensity !== "all" && Number(entry.intensity) !== Number(intensity)) {
+            return false;
+          }
+          if (query) {
+            const haystack = [
+              key,
+              entry.mood,
+              String(entry.intensity),
+              String(entry.confidence),
+              entry.reasoning || ""
+            ].join(" ").toLowerCase();
+
+            if (!haystack.includes(query)) {
+              return false;
+            }
+          }
+
+          return true;
+        }).sort(sortKey);
+
+        if (previousKey) {
+          const previousIndex = state.filteredKeys.indexOf(previousKey);
+          if (previousIndex !== -1) {
+            state.currentIndex = previousIndex;
+          } else {
+            state.currentIndex = Math.min(state.currentIndex, Math.max(state.filteredKeys.length - 1, 0));
+          }
+        } else {
+          state.currentIndex = Math.min(state.currentIndex, Math.max(state.filteredKeys.length - 1, 0));
+        }
+
+        renderSidebar();
+        renderCurrent();
+      }
+
+      function renderSidebar() {
+        if (!state.filteredKeys.length) {
+          elements.sidebarList.innerHTML = "<div class=\"placeholder\">Aucune page ne correspond aux filtres.</div>";
+          return;
+        }
+
+        elements.sidebarList.innerHTML = state.filteredKeys.map(function (key, index) {
+          const entry = state.groundTruth[key];
+          const parts = key.split("/");
+          const fileLabel = parts.slice(2).join("/") || key;
+          const chapterLabel = parts[1] ? "chap. " + parts[1] : "chap. ?";
+          const active = index === state.currentIndex ? " active" : "";
+          const moodStyle = buildMoodStyle(entry.mood);
+
+          return (
+            "<button class=\"sidebar-item" + active + "\" type=\"button\" data-index=\"" + index + "\">" +
+              "<div class=\"sidebar-item-top\">" +
+                "<span class=\"sidebar-item-title\">" + escapeHtml(fileLabel) + "</span>" +
+                "<span class=\"sidebar-item-series\">" + escapeHtml(chapterLabel) + "</span>" +
+              "</div>" +
+              "<div class=\"sidebar-item-bottom\">" +
+                "<span class=\"sidebar-item-series\">" + escapeHtml(parts[0] || "") + "</span>" +
+                "<span class=\"sidebar-item-badge\" style=\"" + moodStyle + "\">" + escapeHtml(entry.mood) + " · " + escapeHtml(String(entry.intensity)) + "</span>" +
+              "</div>" +
+            "</button>"
+          );
+        }).join("");
+
+        Array.from(elements.sidebarList.querySelectorAll(".sidebar-item")).forEach(function (item) {
+          item.addEventListener("click", function () {
+            state.currentIndex = Number(item.dataset.index);
+            renderSidebar();
+            renderCurrent();
+          });
+        });
+      }
+
+      function renderCurrent() {
+        const total = state.filteredKeys.length;
+        elements.counter.textContent = total ? (state.currentIndex + 1) + " / " + total : "0 / 0";
+
+        if (!total) {
+          elements.preview.innerHTML = "<div class=\"placeholder\">Aucune image.</div>";
+          hideEdit(false);
+          return;
+        }
+
+        const key = state.filteredKeys[state.currentIndex];
+        const entry = state.groundTruth[key];
+        const parts = key.split("/");
+        const manga = parts[0] || "";
+        const chapter = parts[1] || "?";
+        const fileLabel = parts.slice(2).join("/") || key;
+        const moodStyle = buildMoodStyle(entry.mood);
+        const infoPopover = buildInfoPopoverHtml(key, entry, manga, chapter, fileLabel, total);
+
+        elements.preview.innerHTML =
+          "<div class=\"preview-top\">" +
+            "<div class=\"preview-page\">" +
+              "<span class=\"preview-label\">Planche</span>" +
+              "<span class=\"preview-key\">" + escapeHtml(fileLabel) + "</span>" +
+            "</div>" +
+            "<div class=\"preview-actions\">" +
+              "<span class=\"mood-pill\" style=\"" + moodStyle + "\">" + escapeHtml(entry.mood) + " · " + escapeHtml(String(entry.intensity)) + "</span>" +
+              "<div class=\"info-wrap\">" +
+                "<button class=\"icon-button\" type=\"button\" aria-label=\"Voir les informations\">" + INFO_ICON + "</button>" +
+                "<div class=\"info-popover\">" + infoPopover + "</div>" +
+              "</div>" +
+              "<button class=\"button button-ghost preview-edit-button\" type=\"button\">" + (state.editMode ? "Fermer" : "Editer") + "</button>" +
+            "</div>" +
+          "</div>" +
+          "<div class=\"preview-media\">" +
+            "<button class=\"nav-inline prev\" type=\"button\" data-nav=\"-1\" aria-label=\"Page precedente\">←</button>" +
+            "<img src=\"" + escapeAttribute(buildImageUrl(key)) + "\" alt=\"" + escapeAttribute(key) + "\">" +
+            "<button class=\"nav-inline next\" type=\"button\" data-nav=\"1\" aria-label=\"Page suivante\">→</button>" +
+          "</div>";
+
+        const editButton = elements.preview.querySelector(".preview-edit-button");
+        const navButtons = elements.preview.querySelectorAll("[data-nav]");
+
+        if (editButton) {
+          editButton.addEventListener("click", toggleEdit);
+        }
+
+        navButtons.forEach(function (button) {
+          button.addEventListener("click", function () {
+            navigate(Number(button.dataset.nav));
+          });
+        });
+
+        if (state.editMode) {
+          showEdit(entry);
+        } else {
+          hideEdit(true);
+        }
+
+        const activeItem = elements.sidebarList.querySelector(".sidebar-item.active");
+        if (activeItem) {
+          activeItem.scrollIntoView({ block: "nearest" });
+        }
+      }
+
+      function navigate(delta) {
+        if (!state.filteredKeys.length) {
+          return;
+        }
+
+        state.currentIndex = (state.currentIndex + delta + state.filteredKeys.length) % state.filteredKeys.length;
+        renderSidebar();
+        renderCurrent();
+      }
+
+      function toggleEdit() {
+        if (!state.filteredKeys.length) {
+          return;
+        }
+
+        state.editMode = !state.editMode;
+        renderCurrent();
+      }
+
+      function showEdit(entry) {
+        elements.editPanel.classList.add("show");
+        elements.editMood.value = entry.mood;
+        elements.editIntensity.value = String(entry.intensity);
+        elements.editConfidence.value = String(Number(entry.confidence ?? 0));
+      }
+
+      function hideEdit(keepState) {
+        elements.editPanel.classList.remove("show");
+        if (!keepState) {
+          state.editMode = false;
+        }
+      }
+
+      function saveEdit() {
+        if (!state.filteredKeys.length) {
+          return;
+        }
+
+        const key = state.filteredKeys[state.currentIndex];
+        const entry = state.groundTruth[key];
+        entry.mood = elements.editMood.value;
+        entry.intensity = Number(elements.editIntensity.value);
+        entry.confidence = Number(elements.editConfidence.value);
+        state.dirty = true;
+        state.editMode = false;
+        setStatus("Modification locale en memoire. Exporte le JSON si tu veux la conserver.", "ok");
+        renderSidebar();
+        renderCurrent();
+      }
+
+      function cancelEdit() {
+        state.editMode = false;
+        renderCurrent();
+      }
+
+      function exportJson() {
+        const blob = new Blob([JSON.stringify(state.groundTruth, null, 2)], { type: "application/json" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "ground_truth.json";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        setStatus("Export JSON pret.", "ok");
+      }
+
+      function buildInfoPopoverHtml(key, entry, manga, chapter, fileLabel, total) {
+        const reasoning = entry.reasoning || "Aucun reasoning.";
+        return [
+          "<div class=\"info-title\">Informations</div>",
+          "<div class=\"info-grid\">",
+          renderInfoRow("Manga", manga),
+          renderInfoRow("Chapitre", chapter),
+          renderInfoRow("Fichier", fileLabel),
+          renderInfoRow("Chemin", "<span class=\"mono\">" + escapeHtml(key) + "</span>", true),
+          renderInfoRow("Page", (state.currentIndex + 1) + " / " + total),
+          renderInfoRow("Mood", entry.mood + " · " + entry.intensity),
+          renderInfoRow("Confidence", formatConfidence(entry.confidence)),
+          renderInfoRow("Etat", state.dirty ? "modifie localement" : "source intacte"),
+          "</div>",
+          "<div class=\"info-reasoning\">",
+          "<div class=\"info-title\">Reasoning</div>",
+          "<div class=\"info-value\">" + escapeHtml(reasoning) + "</div>",
+          "</div>"
+        ].join("");
+      }
+
+      function renderInfoRow(label, value, rawHtml) {
+        const content = rawHtml ? value : escapeHtml(value);
+        return (
+          "<div class=\"info-row\">" +
+            "<div class=\"info-key\">" + escapeHtml(label) + "</div>" +
+            "<div class=\"info-value\">" + content + "</div>" +
+          "</div>"
+        );
+      }
+
+      function buildMoodStyle(mood) {
+        const color = MOOD_COLORS[mood] || "#475467";
+        return [
+          "--mood-text:" + color,
+          "--mood-fill:" + color + "18",
+          "--mood-border:" + color + "55",
+          "color:var(--mood-text)",
+          "background:var(--mood-fill)",
+          "border-color:var(--mood-border)"
+        ].join(";");
+      }
+
+      function sortKey(left, right) {
+        const a = splitKey(left);
+        const b = splitKey(right);
+        if (a.series !== b.series) {
+          return a.series.localeCompare(b.series);
+        }
+        if (a.chapterNumber !== b.chapterNumber) {
+          return a.chapterNumber - b.chapterNumber;
+        }
+        if (a.pageNumber !== b.pageNumber) {
+          return a.pageNumber - b.pageNumber;
+        }
+        return left.localeCompare(right);
+      }
+
+      function splitKey(key) {
+        const parts = String(key).split("/");
+        return {
+          series: parts[0] || "",
+          chapterNumber: toLeadingNumber(parts[1]),
+          pageNumber: toLeadingNumber(parts[2])
+        };
+      }
+
+      function toLeadingNumber(value) {
+        const match = String(value || "").match(/^(\d+)/);
+        return match ? Number(match[1]) : 0;
+      }
+
+      function buildImageUrl(key) {
+        return new URL(key, window.location.href).href;
+      }
+
+      function formatConfidence(value) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed.toFixed(2) : "?";
+      }
+
+      function setStatus(text, tone) {
+        elements.statusLine.textContent = text;
+        elements.statusLine.dataset.tone = tone || "neutral";
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function escapeAttribute(value) {
+        return escapeHtml(value);
+      }
+    })();
+  </script>
 </body>
 </html>

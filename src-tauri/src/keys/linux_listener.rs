@@ -118,7 +118,7 @@ pub fn get_linux_input_access_status() -> LinuxInputAccessStatus {
     }
 }
 
-fn keycode_to_code(key: KeyCode) -> Option<&'static str> {
+pub(super) fn keycode_to_code(key: KeyCode) -> Option<&'static str> {
     match key {
         KeyCode::KEY_A => Some("KeyA"),
         KeyCode::KEY_B => Some("KeyB"),

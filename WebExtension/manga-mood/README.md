@@ -11,8 +11,38 @@ Elle :
 - capture les images en base64 depuis le navigateur reel de l'utilisateur
 - alimente le cache chapitre du backend local
 - demande un fallback direct pour la page visible si le cache est encore froid
+- demande ensuite au backend de decider l'etat musical reel via `POST /api/trigger`
 
 La doc canonique du flux complet est [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md).
+
+## Deux notions de mood
+
+L'extension manipule maintenant 2 niveaux differents :
+
+1. `page mood`
+2. `OST committed mood`
+
+### `page mood`
+
+Le `page mood` est la prediction finale de la page courante, telle qu'elle sort du backend.
+
+### `OST committed mood`
+
+Le `OST committed mood` est l'etat musical final apres smoothing OST.
+
+Cette distinction est importante :
+
+- le backend peut detecter `comedy` sur une page
+- mais refuser de changer l'OST si c'est un spike isole au milieu d'une zone `tension`
+- ou au contraire forcer la sortie d'une OST `comedy` si `page+1` et `page+2` montrent deja qu'on a quitte cette ambiance `Light`
+
+Exemple typique :
+
+- `BL/2/21 = tension`
+- `BL/2/22 = comedy`
+- `BL/2/23 = tension`
+
+Le `page mood` peut rester `comedy`, mais le `committed mood` reste `tension` pour eviter un micro-switch musical absurde.
 
 ## Pourquoi l'extension capture en base64
 
@@ -36,8 +66,15 @@ Le systeme actuel privilegie donc :
 Pour la page visible `X` :
 
 1. le content script envoie un `lookup`
-2. si la page est deja en cache, l'app rejoue le mood immediatement
+2. si la page est deja en cache, le background appelle `POST /api/trigger`
 3. sinon l'extension lance `analyze-window` sur la page visible avec son contexte local
+4. apres la resolution visible, le background appelle `POST /api/trigger`
+5. le background utilise `committed_mood` pour le playback et pour la couleur de badge
+
+Consequence :
+
+- `lookup` et `analyze-window` resoudent la page
+- `trigger` resout l'etat musical
 
 ### Prise d'avance
 
@@ -63,6 +100,21 @@ Le content script exploite les vraies sources du reader :
 
 Il essaie d'abord de faire charger les images sur les vraies balises `img` du lecteur, puis tombe sur un buffer cache dans la page si necessaire.
 
+### Playback smoothing
+
+Le background ne se contente plus de rejouer directement le label brut.
+
+Il envoie maintenant `chapter + page` avec le mood a `POST /api/trigger`, afin que le backend puisse :
+
+- relire la page courante depuis le cache
+- regarder jusqu'a `page+2` si ces pages sont deja connues
+- appliquer la couche `soundtrack_commit`
+- forcer la sortie d'une OST `Light` devenue incoherente si la suite du contexte ne la soutient plus
+- choisir une cible musicale plus stable que le simple label brut de la page
+- renvoyer un `committed_mood`
+
+Le toggle `Playback Trigger` du popup permet de couper cette republication musicale, tout en laissant l'analyse tourner.
+
 ## API locale utilisee
 
 L'extension parle a l'API locale exposee par l'app Tauri :
@@ -72,6 +124,7 @@ L'extension parle a l'API locale exposee par l'app Tauri :
 - `POST /api/chapter/page`
 - `POST /api/chapter/focus`
 - `POST /api/live/cancel`
+- `POST /api/trigger`
 - `GET /api/cache/status`
 - `GET /api/status`
 
@@ -94,6 +147,12 @@ Cela signifie :
 - le but utilisateur est bien la page `22`
 - l'operation technique backend en cours utilise encore du contexte autour de `24`
 
+Le popup expose aussi des toggles separes :
+
+- `Enabled` : active ou coupe toute la detection manga mood
+- `Playback Trigger` : active ou coupe le commit OST et le replay musical
+- `Page Mood Badge` : active ou coupe l'overlay/badge page
+
 ## Installation
 
 ### Chrome / Chromium
@@ -115,6 +174,7 @@ Les host permissions actuelles couvrent notamment :
 
 - `sushiscan.net`
 - `sushiscan.com`
+- `sushiscan.fr`
 - `lelmanga.com`
 - `mangascan.cc`
 - `scantrad.net`
@@ -129,6 +189,7 @@ La liste exacte est dans [manifest.json](/home/mehdi/Dev/KeyToMusicRustTauri/Web
 - L'extension ne peut precharger que les pages dont la source est deja discoverable depuis le DOM ou le JS du reader.
 - Si le site ne revele pas les images futures, le prechargement lointain restera limite.
 - Le flux visible direct a besoin que `X-2 .. X+2` soient capturables localement pour lancer `analyze-window`.
+- Si `Playback Trigger` est coupe, le pipeline continue d'analyser mais l'etat musical n'est plus republié.
 
 ## Fichiers cles
 

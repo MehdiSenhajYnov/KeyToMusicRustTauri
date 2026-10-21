@@ -47,3 +47,14 @@ export const INTENSITY_COLORS: Record<MoodIntensity, string> = {
   2: "",
   3: "ring-1 ring-current font-bold",
 };
+
+/** Select the most specific eligible intensity on each track. */
+export function selectMoodBindings(bindings: import("../types").KeyBinding[], mood: BaseMood, intensity: number) {
+  const selected = new Map<string, import("../types").KeyBinding>();
+  for (const binding of bindings) {
+    if (binding.mood !== mood || (binding.moodIntensity ?? 1) > intensity || !binding.soundIds.length) continue;
+    const current = selected.get(binding.trackId);
+    if (!current || (binding.moodIntensity ?? 1) > (current.moodIntensity ?? 1)) selected.set(binding.trackId, binding);
+  }
+  return [...selected.values()];
+}

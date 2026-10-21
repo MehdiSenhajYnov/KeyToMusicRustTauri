@@ -17,7 +17,7 @@
       name: 'WordPress Flavor (Sushiscan, Lelmanga, etc.)',
       match: () => !!document.querySelector('#readerarea'),
       readerSelector: '#readerarea',
-      imageSelector: '#readerarea img.ts-main-image',
+      imageSelector: '#readerarea img.ts-main-image, #readerarea img.aligncenter',
       isLoaded: (img) => img.classList.contains('lazyloaded') || (img.complete && img.naturalWidth > 0 && img.src && !img.src.endsWith('.svg')),
       getIndex: (img) => img.dataset.index,
     },
@@ -68,6 +68,7 @@
     if (initRetryTimer) clearTimeout(initRetryTimer);
     if (chapterCheckInterval) clearInterval(chapterCheckInterval);
     resetPreloadState();
+    removeAllRuntimeArtifacts();
     window.__ktmMoodInjected = false; // Allow re-injection
   }
 
@@ -111,6 +112,10 @@
   let preloadContainer = null;
   let preloadInFlight = 0;
   const preloadedPages = new Map();
+  const PAGE_MOOD_BADGE_STORAGE_KEY = 'ktmPageMoodBadgeEnabled';
+  let pageMoodBadgeEnabled = true;
+  let pageMoodBadgePreferenceLoaded = false;
+  let pageMoodBadgeEl = null;
 
   // --- Chapter extraction ---
 
@@ -909,6 +914,58 @@
     mystery: { bg: '#6366F1', label: 'Mystery' },
   };
 
+  function ensureRuntimeStyles() {
+    if (document.querySelector('#ktm-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'ktm-styles';
+    style.textContent = `
+      @keyframes ktm-spin { to { transform: rotate(360deg); } }
+      .ktm-mood-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .ktm-page-mood-badge {
+        position: fixed;
+        top: calc(env(safe-area-inset-top, 0px) + 12px);
+        right: calc(env(safe-area-inset-right, 0px) + 12px);
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 34px;
+        padding: 0 14px;
+        border-radius: 999px;
+        border: 1px solid rgba(107, 114, 128, 0.3);
+        background: rgba(10, 14, 20, 0.92);
+        box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
+        backdrop-filter: blur(10px);
+        color: #f3f4f6;
+        font: 600 13px/1 "Aptos", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+        letter-spacing: -0.01em;
+        z-index: 2147483647;
+        pointer-events: none;
+        opacity: 0;
+        transform: translate3d(0, -8px, 0);
+        transition: opacity 140ms ease, transform 140ms ease, border-color 140ms ease, background 140ms ease, color 140ms ease;
+      }
+      .ktm-page-mood-badge[data-visible="true"] {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function hexToRgba(hex, alpha) {
+    const match = String(hex || '').trim().match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+    if (!match) {
+      return `rgba(107, 114, 128, ${alpha})`;
+    }
+    const [, r, g, b] = match;
+    return `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, ${alpha})`;
+  }
+
   function buildMoodBadgeContent(info) {
     const fragment = document.createDocumentFragment();
     const dot = document.createElement('span');
@@ -919,9 +976,103 @@
     return fragment;
   }
 
+  function ensurePageMoodBadge() {
+    ensureRuntimeStyles();
+    if (pageMoodBadgeEl?.isConnected) return pageMoodBadgeEl;
+
+    const badge = document.createElement('div');
+    badge.className = 'ktm-page-mood-badge';
+    badge.setAttribute('data-ktm-page-badge', '');
+    badge.setAttribute('data-visible', 'false');
+
+    const dot = document.createElement('span');
+    dot.className = 'ktm-mood-dot';
+    const label = document.createElement('span');
+    label.className = 'ktm-page-mood-label';
+
+    badge.append(dot, label);
+    (document.body || document.documentElement).appendChild(badge);
+    pageMoodBadgeEl = badge;
+    return badge;
+  }
+
+  function showPageMoodBadge(mood) {
+    if (!pageMoodBadgePreferenceLoaded || !pageMoodBadgeEnabled) {
+      removePageMoodBadge();
+      return;
+    }
+
+    const info = MOOD_COLORS[mood] || { bg: '#6B7280', label: mood };
+    const badge = ensurePageMoodBadge();
+    const dot = badge.querySelector('.ktm-mood-dot');
+    const label = badge.querySelector('.ktm-page-mood-label');
+
+    dot.style.background = info.bg;
+    label.textContent = info.label;
+    badge.style.color = info.bg;
+    badge.style.borderColor = hexToRgba(info.bg, 0.34);
+    badge.style.background = `linear-gradient(180deg, ${hexToRgba(info.bg, 0.14)}, rgba(10, 14, 20, 0.92))`;
+    badge.setAttribute('data-visible', 'true');
+  }
+
+  function hidePageMoodBadge() {
+    if (pageMoodBadgeEl) {
+      pageMoodBadgeEl.setAttribute('data-visible', 'false');
+    }
+  }
+
+  function removePageMoodBadge() {
+    if (pageMoodBadgeEl) {
+      pageMoodBadgeEl.remove();
+      pageMoodBadgeEl = null;
+    }
+  }
+
+  function syncPageMoodBadge() {
+    if (!pageMoodBadgePreferenceLoaded) return;
+    if (!pageMoodBadgeEnabled) {
+      removePageMoodBadge();
+      return;
+    }
+
+    const currentImg = getCurrentVisibleImage();
+    if (!currentImg || !currentImg.__ktmMood) {
+      hidePageMoodBadge();
+      return;
+    }
+
+    showPageMoodBadge(currentImg.__ktmMood);
+  }
+
+  async function loadPageMoodBadgePreference() {
+    if (!ext.storage?.local) {
+      pageMoodBadgePreferenceLoaded = true;
+      syncPageMoodBadge();
+      return;
+    }
+
+    try {
+      const config = await ext.storage.local.get([PAGE_MOOD_BADGE_STORAGE_KEY]);
+      pageMoodBadgeEnabled = config?.[PAGE_MOOD_BADGE_STORAGE_KEY] !== false;
+    } catch {
+      pageMoodBadgeEnabled = true;
+    } finally {
+      pageMoodBadgePreferenceLoaded = true;
+      syncPageMoodBadge();
+    }
+  }
+
+  function removeAllRuntimeArtifacts() {
+    document.querySelectorAll('[data-ktm-badge], [data-ktm-spinner], [data-ktm-page-badge]').forEach((node) => {
+      node.remove();
+    });
+    pageMoodBadgeEl = null;
+  }
+
   function showMoodBadge(img, mood, dimmed = false) {
     removeBadge(img);
     removeSpinner(img);
+    ensureRuntimeStyles();
 
     const info = MOOD_COLORS[mood] || { bg: '#6B7280', label: mood };
 
@@ -967,10 +1118,12 @@
 
     // Store reference on image
     img.__ktmBadge = badge;
+    syncPageMoodBadge();
   }
 
   function showSpinner(img) {
     removeSpinner(img);
+    ensureRuntimeStyles();
 
     const parent = img.parentElement;
     if (parent && getComputedStyle(parent).position === 'static') {
@@ -994,20 +1147,10 @@
       animation: ktm-spin 0.8s linear infinite;
     `;
 
-    // Inject keyframe if not already done
-    if (!document.querySelector('#ktm-styles')) {
-      const style = document.createElement('style');
-      style.id = 'ktm-styles';
-      style.textContent = `
-        @keyframes ktm-spin { to { transform: rotate(360deg); } }
-        .ktm-mood-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-      `;
-      document.head.appendChild(style);
-    }
-
     const container = parent || img.parentElement;
     if (container) container.appendChild(spinner);
     img.__ktmSpinner = spinner;
+    syncPageMoodBadge();
   }
 
   function removeSpinner(img) {
@@ -1032,6 +1175,7 @@
       removeBadge(img);
       img.__ktmMood = null;
     }
+    syncPageMoodBadge();
   }
 
   // --- Find image by page index ---
@@ -1127,7 +1271,10 @@
   function matchesProfileImage(img) {
     if (!activeProfile) return false;
     if (activeProfile.imageSelector) {
-      return img.matches(activeProfile.imageSelector.replace(/^.*\s/, ''));
+      return activeProfile.imageSelector
+        .split(',')
+        .map((selector) => selector.trim().replace(/^.*\s/, ''))
+        .some((selector) => selector && img.matches(selector));
     }
     return img.naturalWidth > 300;
   }
@@ -1216,6 +1363,7 @@
             }
           }, 300);
         }
+        syncPageMoodBadge();
       }
     }
 
@@ -1235,6 +1383,7 @@
         if (isStillCurrentPage) {
           showMoodBadge(img, msg.mood, false); // full opacity = triggered
         }
+        syncPageMoodBadge();
         return;
       }
 
@@ -1243,6 +1392,7 @@
       if (isStillCurrentPage && !analyzedImages.has(img) && !pendingImages.has(img)) {
         scheduleVisibleAnalysis(img, getPageIndex(img));
       }
+      syncPageMoodBadge();
     }
 
     if (msg.type === 'get_current_image') {
@@ -1270,6 +1420,15 @@
       return;
     }
   });
+
+  if (ext.storage?.onChanged?.addListener) {
+    ext.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== 'local' || !changes[PAGE_MOOD_BADGE_STORAGE_KEY]) return;
+      pageMoodBadgeEnabled = changes[PAGE_MOOD_BADGE_STORAGE_KEY].newValue !== false;
+      pageMoodBadgePreferenceLoaded = true;
+      syncPageMoodBadge();
+    });
+  }
 
   // --- Chapter change detection ---
 
@@ -1425,7 +1584,12 @@
 
   function checkCurrentPage() {
     const img = getCurrentVisibleImage();
-    if (!img) return;
+    if (!img) {
+      hidePageMoodBadge();
+      return;
+    }
+
+    syncPageMoodBadge();
 
     const pageIndex = getPageIndex(img);
     if (pageIndex !== null) {
@@ -1462,6 +1626,8 @@
   }
 
   // Run init — page may still be loading content
+  void loadPageMoodBadgePreference();
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

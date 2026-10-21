@@ -226,6 +226,7 @@ export function DiscoveryPanel() {
       .catch(() => {});
 
     return () => {
+      ++discoveryGenRef.current;
       // Cancel ongoing discovery on profile change
       commands.cancelDiscovery().catch(() => {});
     };
@@ -376,7 +377,7 @@ export function DiscoveryPanel() {
   const addToBinding = (soundId: string, suggestedKey: string, suggestedTrackId: string) => {
     if (!suggestedKey || !profile) return;
 
-    const existingBinding = profile.keyBindings.find(
+    const existingBinding = useProfileStore.getState().currentProfile?.keyBindings.find(
       (kb) => kb.keyCode === suggestedKey && kb.trackId === suggestedTrackId
     );
     if (existingBinding) {
@@ -400,6 +401,11 @@ export function DiscoveryPanel() {
     if (!profile) return;
 
     await stopPreview();
+    if (useProfileStore.getState().currentProfile?.id !== profile.id) return;
+    if (!s.suggestedKey || !useProfileStore.getState().currentProfile?.tracks.some((t) => t.id === s.suggestedTrackId)) {
+      addToast("Select a key and a track before adding this suggestion", "warning");
+      return;
+    }
 
     if (s.predownloadStatus === "ready" && s.cachedPath) {
       // Instant add — file already downloaded
@@ -432,6 +438,7 @@ export function DiscoveryPanel() {
 
       try {
         const sound = await commands.addSoundFromYoutube(s.url, downloadId);
+        if (useProfileStore.getState().currentProfile?.id !== profile.id) return;
         const soundId = crypto.randomUUID();
 
         addSound({
@@ -794,7 +801,7 @@ function SuggestionCard({
         return;
       }
       const code = getKeyCode(e);
-      recordKeyLayout(code, e.key);
+      recordKeyLayout(code, e.key, e);
       pressedKeysRef.current.add(code);
     };
 

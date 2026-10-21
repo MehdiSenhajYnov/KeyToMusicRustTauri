@@ -1,10 +1,15 @@
+import { mergeKeyBindings, moveKeyBinding } from "../utils/keyBindings";
 import { create } from "zustand";
 import type { Profile, KeyBinding, Sound, Track } from "../types";
 import * as commands from "../utils/tauriCommands";
 import type { ProfileSummary } from "../utils/tauriCommands";
 import { useErrorStore } from "./errorStore";
-import { useHistoryStore, captureProfileState, applyHistoryState } from "./historyStore";
+import { useHistoryStore, captureProfileState, applyHistoryState, batchHistory } from "./historyStore";
 import { useWaveformStore } from "./waveformStore";
+import { useToastStore } from "./toastStore";
+import { useSettingsStore } from "./settingsStore";
+import { useAudioStore } from "./audioStore";
+import { createProfilePersistence } from "../utils/profilePersistence";
 import { getSoundFilePath } from "../utils/soundHelpers";
 
 /** Generation counter to cancel stale profile-load operations.
@@ -62,13 +67,15 @@ interface ProfileState {
   profiles: ProfileSummary[];
   currentProfile: Profile | null;
   isLoading: boolean;
+  saveStatus: "pending" | "saving" | "saved" | "error";
+  prepareProfile: (profile: Profile) => Promise<void>;
 
   loadProfiles: () => Promise<void>;
   createProfile: (name: string) => Promise<Profile | null>;
-  loadProfile: (id: string) => Promise<void>;
-  saveCurrentProfile: () => Promise<void>;
-  deleteProfile: (id: string) => Promise<void>;
-  renameProfile: (id: string, newName: string) => Promise<void>;
+  loadProfile: (id: string) => Promise<boolean>;
+  saveCurrentProfile: () => Promise<boolean>;
+  deleteProfile: (id: string) => Promise<boolean>;
+  renameProfile: (id: string, newName: string) => Promise<boolean>;
   duplicateProfile: (id: string, newName?: string) => Promise<Profile | null>;
 
   // Sounds
@@ -86,6 +93,9 @@ interface ProfileState {
   updateKeyBinding: (keyCode: string, trackId: string, updates: Partial<KeyBinding>) => void;
   removeKeyBinding: (keyCode: string, trackId?: string) => void;
 
+  reassignKey: (keyCode: string, trackId: string, newKey: string, soundId?: string) => void;
+  removeSoundFromBinding: (keyCode: string, trackId: string, soundId: string) => void;
+
   // Undo/Redo
   undo: () => boolean;
   redo: () => boolean;
@@ -95,13 +105,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   profiles: [],
   currentProfile: null,
   isLoading: true,
+  saveStatus: "saved",
 
   loadProfiles: async () => {
     try {
       const profiles = await commands.listProfiles();
       set({ profiles });
     } catch (e) {
-      console.error("Failed to load profiles:", e);
+      useToastStore.getState().addToast(`Could not list profiles: ${e}`, "error");
     }
   },
 
@@ -111,142 +122,120 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       await get().loadProfiles();
       return profile;
     } catch (e) {
-      console.error("Failed to create profile:", e);
+      useToastStore.getState().addToast(`Could not create profile: ${e}`, "error");
       return null;
     }
   },
 
   loadProfile: async (id) => {
-    // Bump generation — any in-flight fire-and-forget from a previous load becomes stale
+    if (get().currentProfile?.id === id && !get().isLoading) return true;
     const gen = ++_loadGen;
     set({ isLoading: true });
-
     try {
-      // Stop any playing sounds before switching
-      await commands.stopAllSounds().catch(() => {});
-      // Clear undo history when switching profiles
-      useHistoryStore.getState().clear();
+      if (!await persistence.flush()) throw new Error("Save your changes before switching profiles.");
+      if (gen !== _loadGen) return false;
       const profile = await commands.loadProfile(id);
-
-      // Stale check: another loadProfile was called while we awaited
-      if (gen !== _loadGen) return;
-
-      // Clean up orphaned sounds (not referenced by any key binding)
-      const referencedIds = new Set(
-        profile.keyBindings.flatMap((kb) => kb.soundIds)
-      );
-      const cleanedSounds = profile.sounds.filter((s) => referencedIds.has(s.id));
-      if (cleanedSounds.length < profile.sounds.length) {
-        profile.sounds = cleanedSounds;
-        // Save the cleaned profile
-        commands.saveProfile(profile).catch(() => {});
-      }
+      if (gen !== _loadGen) return false;
+      await commands.stopAllSounds().catch(() => {});
+      if (gen !== _loadGen) return false;
+      useAudioStore.getState().clearAll();
+      useErrorStore.getState().clearAll();
+      useHistoryStore.getState().clear();
       set({ currentProfile: profile, isLoading: false });
-      // Verify sound files exist
-      try {
-        const missing = await commands.verifyProfileSounds(profile);
-        if (gen !== _loadGen) return;
-        const { addMissing } = useErrorStore.getState();
-        for (const entry of missing) {
-          const sound = profile.sounds.find((s) => s.id === entry.soundId);
-          addMissing({
-            soundId: entry.soundId,
-            soundName: entry.soundName,
-            path: entry.filePath,
-            trackId: "",
-            sourceType: entry.sourceType as "local" | "youtube",
-            youtubeUrl: sound?.source.type === "youtube" ? sound.source.url : undefined,
-          });
-        }
-      } catch (e) {
-        console.error("Failed to verify profile sounds:", e);
-      }
-
-      // Note: we do NOT clear the waveform store here — backend cache persists
-      // across profile switches, and the frontend store serves as a superset cache.
-      // Clearing it would force a redundant getWaveformsBatch call.
-
-      // Compute durations in background — single batched update, then preload waveforms
-      computeProfileDurations(profile).then((durations) => {
-        // Stale check: profile switched since this was fired
-        if (gen !== _loadGen) return;
-
-        if (!durations) {
-          // No durations to update, but still preload waveforms for sounds that already have durations
-          preloadWaveforms(profile.sounds);
-          return;
-        }
-        set((state) => {
-          if (!state.currentProfile) return state;
-          const updatedSounds = state.currentProfile.sounds.map((s) =>
-            durations[s.id] != null ? { ...s, duration: durations[s.id] } : s
-          );
-          // Preload waveforms after durations are known
-          preloadWaveforms(updatedSounds);
-          return {
-            currentProfile: {
-              ...state.currentProfile,
-              sounds: updatedSounds,
-            },
-          };
-        });
-      });
-    } catch (e) {
-      console.error("Failed to load profile:", e);
+      await useSettingsStore.getState().updateConfig({ currentProfileId: id });
+      if (gen !== _loadGen) return false;
+      void get().prepareProfile(profile);
+      return true;
+    } catch (error) {
+      if (gen !== _loadGen) return false;
       set({ isLoading: false });
+      useToastStore.getState().addToast(`Could not open profile: ${error}`, "error");
+      return false;
     }
   },
 
-  saveCurrentProfile: async () => {
-    const { currentProfile } = get();
-    if (!currentProfile) return;
+  prepareProfile: async (profile) => {
+    const gen = _loadGen;
+    const isCurrent = () => gen === _loadGen && get().currentProfile?.id === profile.id;
     try {
-      await commands.saveProfile(currentProfile);
-    } catch (e) {
-      console.error("Failed to save profile:", e);
+      const missing = await commands.verifyProfileSounds(profile);
+      if (!isCurrent()) return;
+      for (const entry of missing) {
+        const sound = profile.sounds.find((s) => s.id === entry.soundId);
+        useErrorStore.getState().addMissing({
+          soundId: entry.soundId, soundName: entry.soundName, path: entry.filePath,
+          trackId: "", sourceType: entry.sourceType as "local" | "youtube",
+          youtubeUrl: sound?.source.type === "youtube" ? sound.source.url : undefined,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to verify profile sounds:", error);
     }
+    if (!isCurrent()) return;
+    const durations = await computeProfileDurations(profile);
+    if (!isCurrent()) return;
+    if (durations) {
+      set((state) => ({ currentProfile: {
+        ...state.currentProfile!,
+        sounds: state.currentProfile!.sounds.map((sound) => {
+          const original = profile.sounds.find((s) => s.id === sound.id);
+          return durations[sound.id] != null && original && getSoundFilePath(original) === getSoundFilePath(sound)
+            ? { ...sound, duration: durations[sound.id] } : sound;
+        }),
+      } }));
+    }
+    await preloadWaveforms(get().currentProfile!.sounds);
   },
+
+  saveCurrentProfile: async () => persistence.flush(),
 
   deleteProfile: async (id) => {
     try {
+      if (!await persistence.flush()) return false;
       await commands.deleteProfile(id);
-      const { currentProfile } = get();
-      if (currentProfile?.id === id) {
-        set({ currentProfile: null });
+      if (get().currentProfile?.id === id) {
+        ++_loadGen;
+        await commands.stopAllSounds().catch(() => {});
+        useAudioStore.getState().clearAll();
+        useHistoryStore.getState().clear();
+        useErrorStore.getState().clearAll();
+        set({ currentProfile: null, isLoading: false });
+        await useSettingsStore.getState().updateConfig({ currentProfileId: null });
       }
       await get().loadProfiles();
-    } catch (e) {
-      console.error("Failed to delete profile:", e);
+      return true;
+    } catch (error) {
+      useToastStore.getState().addToast(`Could not delete profile: ${error}`, "error");
+      return false;
     }
   },
 
   renameProfile: async (id, newName) => {
+    if (!newName.trim()) return false;
     try {
-      const { currentProfile } = get();
-      if (currentProfile?.id === id) {
-        // Rename the currently loaded profile
-        const updated = { ...currentProfile, name: newName };
-        set({ currentProfile: updated });
-        await commands.saveProfile(updated);
+      if (get().currentProfile?.id === id) {
+        set({ currentProfile: { ...get().currentProfile!, name: newName.trim() } });
+        if (!await persistence.flush()) return false;
       } else {
-        // Load, rename, save a non-active profile
         const profile = await commands.loadProfile(id);
-        profile.name = newName;
-        await commands.saveProfile(profile);
+        await commands.saveProfile({ ...profile, name: newName.trim(), updatedAt: new Date().toISOString() });
       }
       await get().loadProfiles();
-    } catch (e) {
-      console.error("Failed to rename profile:", e);
+      return true;
+    } catch (error) {
+      useToastStore.getState().addToast(`Could not rename profile: ${error}`, "error");
+      return false;
     }
   },
 
   duplicateProfile: async (id, newName) => {
     try {
+      if (!await persistence.flush()) return null;
       const profile = await commands.duplicateProfile(id, newName);
       await get().loadProfiles();
       return profile;
-    } catch (e) {
-      console.error("Failed to duplicate profile:", e);
+    } catch (error) {
+      useToastStore.getState().addToast(`Could not duplicate profile: ${error}`, "error");
       return null;
     }
   },
@@ -454,7 +443,7 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     if (!currentProfile) return;
 
     // Only track meaningful changes (not currentIndex updates from playback)
-    const trackableUpdates = ["loopMode", "name", "soundIds", "trackId", "mood"];
+    const trackableUpdates = ["loopMode", "name", "soundIds", "trackId", "keyCode", "mood", "moodIntensity"];
     const hasTrackableChange = Object.keys(updates).some((k) =>
       trackableUpdates.includes(k)
     );
@@ -468,9 +457,9 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
       return {
         currentProfile: {
           ...state.currentProfile,
-          keyBindings: state.currentProfile.keyBindings.map((kb) =>
+          keyBindings: mergeKeyBindings(state.currentProfile.keyBindings.map((kb) =>
             kb.keyCode === keyCode && kb.trackId === trackId ? { ...kb, ...updates } : kb
-          ),
+          )),
         },
       };
     });
@@ -525,6 +514,28 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     useHistoryStore.getState().pushState("Remove key binding", previousState, newState);
   },
 
+  reassignKey: (keyCode, trackId, newKey, soundId) => {
+    const profile = get().currentProfile;
+    if (!profile) return;
+    const keyBindings = moveKeyBinding(profile.keyBindings, keyCode, trackId, newKey, soundId);
+    if (keyBindings === profile.keyBindings) return;
+    const updated = { ...profile, keyBindings };
+    set({ currentProfile: updated });
+    useHistoryStore.getState().pushState("Move key assignment", captureProfileState(profile), captureProfileState(updated));
+  },
+
+  removeSoundFromBinding: (keyCode, trackId, soundId) => {
+    const profile = get().currentProfile;
+    if (!profile) return;
+    const keyBindings = profile.keyBindings.map((binding) => binding.keyCode === keyCode && binding.trackId === trackId
+      ? { ...binding, currentIndex: 0, soundIds: binding.soundIds.filter((id) => id !== soundId) } : binding)
+      .filter((binding) => binding.soundIds.length > 0);
+    const used = keyBindings.some((binding) => binding.soundIds.includes(soundId));
+    const updated = { ...profile, keyBindings, sounds: used ? profile.sounds : profile.sounds.filter((sound) => sound.id !== soundId) };
+    set({ currentProfile: updated });
+    useHistoryStore.getState().pushState("Remove sound from key", captureProfileState(profile), captureProfileState(updated));
+  },
+
   undo: () => {
     const { currentProfile } = get();
     if (!currentProfile) return false;
@@ -549,3 +560,27 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     return true;
   },
 }));
+
+const persistence = createProfilePersistence(commands.saveProfile, (saveStatus, error) => {
+  useProfileStore.setState({ saveStatus });
+  if (error) useToastStore.getState().addToast(`Changes could not be saved: ${error}. Use Retry in the header.`, "error");
+});
+
+// Capture the profile at edit time. Component timers cannot accidentally save another profile.
+useProfileStore.subscribe((state, previous) => {
+  const profile = state.currentProfile;
+  if (profile && previous.currentProfile?.id === profile.id && profile !== previous.currentProfile) {
+    persistence.enqueue({ ...profile, updatedAt: new Date().toISOString() });
+  }
+});
+
+/** One user action (such as adding a batch of sounds) is one undo step. */
+export function profileTransaction(action: string, work: () => void) {
+  const before = useProfileStore.getState().currentProfile;
+  if (!before) return;
+  batchHistory(work);
+  const after = useProfileStore.getState().currentProfile;
+  if (after && after.id === before.id && after !== before) {
+    useHistoryStore.getState().pushState(action, captureProfileState(before), captureProfileState(after));
+  }
+}

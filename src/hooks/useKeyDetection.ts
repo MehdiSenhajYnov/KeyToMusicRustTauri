@@ -1,3 +1,4 @@
+import { isKeyDetectionSuspended } from "../utils/keyDetectionSuspension";
 import { useEffect, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useAudioStore } from "../stores/audioStore";
@@ -16,7 +17,9 @@ import {
 import { formatErrorMessage } from "../utils/errorMessages";
 import { getSoundFilePath } from "../utils/soundHelpers";
 import { isTextInput } from "../utils/inputHelpers";
-import type { LoopMode, Sound, MomentumModifier } from "../types";
+import { selectLoopSound } from "../utils/loopPlayback";
+import { withTrackPlayback } from "../utils/playbackRequests";
+import type { MomentumModifier } from "../types";
 
 /** Check if the momentum modifier is present in the key combo */
 function hasMomentumModifier(keyCode: string, modifier: MomentumModifier): boolean {
@@ -61,53 +64,14 @@ interface KeyPressedPayload {
   withShift: boolean;
 }
 
-function selectSound(
-  soundIds: string[],
-  soundMap: Map<string, Sound>,
-  loopMode: LoopMode,
-  currentIndex: number
-): { sound: Sound | null; nextIndex: number } {
-  const available = soundIds
-    .map((id) => soundMap.get(id))
-    .filter((s): s is Sound => s !== undefined);
-
-  if (available.length === 0) return { sound: null, nextIndex: 0 };
-
-  switch (loopMode) {
-    case "off": {
-      if (available.length === 1) return { sound: available[0], nextIndex: 0 };
-      let idx: number;
-      do {
-        idx = Math.floor(Math.random() * available.length);
-      } while (idx === currentIndex && available.length > 1);
-      return { sound: available[idx], nextIndex: idx };
-    }
-    case "single":
-      return {
-        sound: available[Math.min(currentIndex, available.length - 1)],
-        nextIndex: currentIndex,
-      };
-    case "sequential": {
-      const idx = currentIndex % available.length;
-      return { sound: available[idx], nextIndex: idx + 1 };
-    }
-    case "random": {
-      if (available.length === 1) return { sound: available[0], nextIndex: 0 };
-      let idx: number;
-      do {
-        idx = Math.floor(Math.random() * available.length);
-      } while (idx === currentIndex && available.length > 1);
-      return { sound: available[idx], nextIndex: idx };
-    }
-  }
-}
-
 export function useKeyDetection() {
   const setLastKeyPressed = useAudioStore((s) => s.setLastKeyPressed);
+  const setLoopContext = useAudioStore((s) => s.setLoopContext);
   const toggleKeyDetection = useSettingsStore((s) => s.toggleKeyDetection);
   const toggleAutoMomentum = useSettingsStore((s) => s.toggleAutoMomentum);
   const browserKeyFallback = useRuntimeStore((s) => s.inputRuntime.browserKeyFallback);
   const lastTriggerTime = useRef(0);
+  const playbackPendingRef = useRef(false);
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const browserPendingComboRef = useRef<string | null>(null);
   const browserChordTimerRef = useRef<number | null>(null);
@@ -159,7 +123,7 @@ export function useKeyDetection() {
   const handleKeyPress = useCallback(
     async (payload: KeyPressedPayload) => {
       const config = useSettingsStore.getState().config;
-      if (!config.keyDetectionEnabled) return;
+      if (!config.keyDetectionEnabled || isKeyDetectionSuspended() || useProfileStore.getState().isLoading) return;
 
       setLastKeyPressed(payload.keyCode);
 
@@ -183,30 +147,27 @@ export function useKeyDetection() {
 
       if (bindings.length === 0) return;
 
-      // Cooldown: global per keyCode — one press triggers all tracks, cooldown prevents double-press
+      // Reserve the trigger before IPC: decoding may outlast the cooldown.
+      // Concurrent requests can otherwise advance the sequence and start out of order.
       const now = Date.now();
-      if (now - lastTriggerTime.current < config.keyCooldown) {
+      if (playbackPendingRef.current || now - lastTriggerTime.current < config.keyCooldown) {
         return;
       }
+      playbackPendingRef.current = true;
+      const previousTriggerTime = lastTriggerTime.current;
+      lastTriggerTime.current = now;
 
       const soundMap = new Map(currentProfile.sounds.map((s) => [s.id, s]));
 
       // Prepare all playback commands, then fire them concurrently for simultaneous multi-track playback
-      const playTasks = bindings.map(async (binding) => {
-        const { sound, nextIndex } = selectSound(
+      const playTasks = bindings.map((binding) => withTrackPlayback(binding.trackId, async () => {
+        const { sound, nextIndex } = selectLoopSound(
           binding.soundIds,
           soundMap,
           binding.loopMode,
           binding.currentIndex
         );
         if (!sound) return false;
-
-        // Update currentIndex for off/sequential/random
-        if (binding.loopMode !== "single") {
-          useProfileStore.getState().updateKeyBinding(binding.keyCode, binding.trackId, {
-            currentIndex: nextIndex,
-          });
-        }
 
         const startPosition =
           config.autoMomentum || useModifierForMomentum ? sound.momentum : 0;
@@ -221,25 +182,53 @@ export function useKeyDetection() {
             startPosition,
             sound.volume
           );
+
+          // A failed sound must remain next in the sequence for a retry.
+          // Do not overwrite a profile or binding edited while decoding.
+          const latestProfile = useProfileStore.getState().currentProfile;
+          const latestBinding = latestProfile?.keyBindings.find(
+            (kb) => kb.keyCode === binding.keyCode && kb.trackId === binding.trackId
+          );
+          if (latestProfile?.id !== currentProfile.id || latestBinding !== binding) {
+            return true;
+          }
+          useProfileStore.getState().updateKeyBinding(binding.keyCode, binding.trackId, {
+            currentIndex: nextIndex,
+          });
+
+          setLoopContext(
+            binding.trackId,
+            binding.loopMode === "off"
+              ? null
+              : {
+                  keyCode: binding.keyCode,
+                  trackId: binding.trackId,
+                  loopMode: binding.loopMode,
+                  momentumBehavior: "config_only",
+                  persistSingleMomentum: binding.loopMode === "single" && startPosition > 0,
+                }
+          );
           return true;
         } catch (e) {
           const errMsg = String(e);
-          if (!errMsg.includes("not found")) {
+          if (!errMsg.includes("not found") && !errMsg.includes("Playback cancelled")) {
             useToastStore.getState().addToast(formatErrorMessage(errMsg), "error");
           }
           return false;
         }
-      });
+      }));
 
-      const results = await Promise.allSettled(playTasks);
-      const anyPlayed = results.some((r) => r.status === "fulfilled" && r.value === true);
-
-      // Cooldown starts only if at least one sound played
-      if (anyPlayed) {
-        lastTriggerTime.current = Date.now();
+      try {
+        const results = await Promise.allSettled(playTasks);
+        const anyPlayed = results.some((r) => r.status === "fulfilled" && r.value === true);
+        if (!anyPlayed) {
+          lastTriggerTime.current = previousTriggerTime;
+        }
+      } finally {
+        playbackPendingRef.current = false;
       }
     },
-    [findBindingsForCandidates, setLastKeyPressed]
+    [findBindingsForCandidates, setLastKeyPressed, setLoopContext]
   );
 
   const triggerBrowserCombo = useCallback(
@@ -335,14 +324,14 @@ export function useKeyDetection() {
   useEffect(() => {
     const handleBrowserKeyDown = (e: KeyboardEvent) => {
       // Skip text inputs (but not sliders/checkboxes) to allow normal typing
-      if (isTextInput(e.target)) {
+      if (e.defaultPrevented || isKeyDetectionSuspended() || isTextInput(e.target)) {
         return;
       }
 
       const resolvedCode = getKeyCode(e);
       const isRepeat = pressedKeysRef.current.has(resolvedCode);
       pressedKeysRef.current.add(resolvedCode);
-      recordKeyLayout(resolvedCode, e.key);
+      recordKeyLayout(resolvedCode, e.key, e);
 
       // Read config via getState() to avoid dependency on config changes
       const config = useSettingsStore.getState().config;

@@ -96,10 +96,6 @@ export interface AppConfig {
   playlistImportEnabled: boolean;     // Remember "download entire playlist" checkbox state
   moodAiEnabled: boolean;             // Enable Manga Mood AI integration
   moodApiPort: number;                // HTTP API port for external tools (default: 8765)
-  moodEntryThreshold: number;         // Score threshold to enter a new mood (default: 0.55)
-  moodExitThreshold: number;          // Score threshold to exit current mood (default: 0.25)
-  moodDwellPages: number;             // Min pages before mood can change (default: 2)
-  moodWindowSize: number;             // Sliding window size for mood averaging (default: 5)
 }
 
 export interface InputRuntime {
@@ -131,6 +127,7 @@ export interface InitialState {
   profiles: { id: string; name: string; createdAt: string; updatedAt: string }[];
   currentProfile: Profile | null;
   inputRuntime: InputRuntime;
+  profileError?: string | null;
 }
 
 // Waveform data
@@ -189,7 +186,7 @@ export interface KeyGridFilter {
 // Événements émis par le backend vers le frontend
 export type BackendEvent =
   | { type: "sound_started"; trackId: TrackId; soundId: SoundId }
-  | { type: "sound_ended"; trackId: TrackId; soundId: SoundId }
+  | { type: "sound_ended"; trackId: TrackId; soundId: SoundId; reason?: "finished" | "stopped" }
   | { type: "playback_progress"; trackId: TrackId; position: number }
   | { type: "key_pressed"; keyCode: KeyCode }
   | { type: "download_progress"; url: string; progress: number }

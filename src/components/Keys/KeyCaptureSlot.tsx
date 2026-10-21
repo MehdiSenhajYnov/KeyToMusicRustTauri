@@ -108,7 +108,7 @@ export function KeyCaptureSlot({
 
       // Get key code (layout-aware, but preserves Numpad distinction)
       const code = getKeyCode(e);
-      recordKeyLayout(code, e.key);
+      recordKeyLayout(code, e.key, e);
 
       // Add to pressed keys
       pressedKeysRef.current.add(code);

@@ -1,0 +1,41 @@
+{
+  "baseline_id": "gemma4_e4b_wide5_selective_hold",
+  "baseline_intensity": 0,
+  "baseline_relaxed": 0,
+  "baseline_strict": 0,
+  "realtest_dir": "/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/test-images/RealTest",
+  "results_dir": "/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/results",
+  "selection_slug": null,
+  "summaries": [
+    {
+      "avg_window_s": 0.0,
+      "cache_path": null,
+      "decision": "wide5_selective_repair_hold",
+      "errors": 1,
+      "id": "gemma4_e4b_wide5_selective_hold",
+      "intensity": 0,
+      "label": "Gemma 4 E4B current-method showdown",
+      "max_window_s": 0.0,
+      "min_window_s": 0.0,
+      "model": "Gemma 4 E4B",
+      "notes": "Server start failed: Failed to start llama-server after 1 runtime candidate(s): c=8192 np=1 ngl=16 => llama-server crashed on startup (exit signal: 6 (SIGABRT) (core dumped)). Check logs at \"/home/mehdi/.local/share/keytomusic/logs/llama-server.log\"",
+      "page_results": [],
+      "per_mood": {},
+      "prep": "legacy_672_jpeg",
+      "quantization": "llm=Q4_K_M + mmproj=F16",
+      "relaxed": 0,
+      "runtime": "prod_8192x1 [c=8192 np=1 ngl=auto]",
+      "runtime_context_size": 8192,
+      "runtime_gpu_layers": null,
+      "runtime_parallel_slots": 1,
+      "sampling": "greedy_hist",
+      "second_pass_pages": 0,
+      "source": "live",
+      "status": "error",
+      "strict": 0,
+      "total": 0,
+      "vram_mib": null,
+      "weights_mib": 5692
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { useProfileStore } from "../../stores/profileStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useWheelSlider, getWheelActiveClass } from "../../hooks/useWheelSlider";
 
@@ -9,19 +9,9 @@ interface HeaderProps {
 
 export function Header({ onSettingsClick, onHelpClick }: HeaderProps) {
   const { config, setMasterVolume } = useSettingsStore();
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleVolumeChange = useCallback((volume: number) => {
-    // Update store immediately for responsive UI
-    useSettingsStore.setState((state) => ({
-      config: { ...state.config, masterVolume: volume },
-    }));
-    // Debounce the backend call
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setMasterVolume(volume);
-    }, 100);
-  }, [setMasterVolume]);
+  const saveStatus = useProfileStore((s) => s.saveStatus);
+  const retrySave = useProfileStore((s) => s.saveCurrentProfile);
+  const handleVolumeChange = (volume: number) => { void setMasterVolume(volume); };
 
   const { ref: masterVolWheelRef, isWheelActive: masterVolWheelActive } = useWheelSlider({
     value: Math.round(config.masterVolume * 100),
@@ -39,11 +29,17 @@ export function Header({ onSettingsClick, onHelpClick }: HeaderProps) {
       </div>
 
       <div className="flex-1" />
+      <div className="text-xs text-text-muted" aria-live="polite">
+        {saveStatus === "error" ? (
+          <button onClick={() => void retrySave()} className="text-accent-error underline">Unsaved changes · Retry</button>
+        ) : saveStatus === "saved" ? "Saved" : "Saving…"}
+      </div>
 
       <div className="flex items-center gap-2">
         <span className="text-text-muted text-xs">Vol</span>
         <input
           ref={masterVolWheelRef}
+          aria-label="Master volume"
           type="range"
           min="0"
           max="100"

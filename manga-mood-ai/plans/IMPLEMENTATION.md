@@ -10,20 +10,35 @@
 
 **Production app/extension (2026-03-08) : Qwen3-VL-4B-Thinking** (GGUF Q4_K_M, ~3.3 GB avec mmproj) — meme backbone que le winner benchmark, via un **noyau partage** `winner.rs` et un scheduler prod temps reel. **Plus de fallback single-page simpliste**.
 **Ancien baseline RealTest : Qwen3-VL-4B-Thinking historique** — protocole V12 3 pages, **47/70 strict et 60/70 relaxed (85.7%)** sur `BL/1`.
-**Winner benchmark local actuel : `t4b_wide5_selective_hold`** — `Qwen3-VL-4B-Thinking` + backbone `wide-5` + reprompts selectifs aux bords de runs + **delayed action bridge hold** zero-cost, **58/70 strict, 68/70 relaxed, 24/70 intensity** sur `BL/1`, **~11.9s/page**, `12` pages reanalysees.
+**Winner benchmark local actuel : `t4b_wide5_selective_hold`** — `Qwen3-VL-4B-Thinking` + backbone `wide-5` + reprompts selectifs aux bords de runs + **delayed action bridge hold** zero-cost, **59/70 strict, 68/70 relaxed, 24/70 intensity** sur `BL/1`, desormais **explicitement aligne sur le runtime prod `8192x1 + ngl auto`**, **~11.1s/page**, `12` pages reanalysees.
+**Showdown quantization gele (2026-03-24) :** seules les quants officielles `Qwen/Qwen3-VL-4B-Thinking-GGUF` ont ete testees sous **exactement** la methode prod actuelle. Fichiers officiels disponibles: LLM `Q4_K_M`, `Q8_0`, `F16`; mmproj `F16`, `Q8_0`; **aucune quant LLM plus legere officielle que `Q4_K_M`**. Verdict: **garder `Q4_K_M + mmproj F16`**. Resultats `BL/1`:
+- `Q4_K_M + mmproj F16` (baseline actuelle) → **59/70 strict**, **68/70 relaxed**, **24/70 intensity**, **~12.1s/page**, **~6437 MiB VRAM**
+- `Q4_K_M + mmproj Q8_0` → **47/70 strict**, **61/70 relaxed**, **22/70 intensity**, **~11.0s/page**, **~6567 MiB VRAM**
+- `Q8_0 + mmproj F16` → **49/70 strict**, **63/70 relaxed**, **24/70 intensity**, **~15.5s/page**, **~8264 MiB VRAM**
+- `F16 + mmproj F16` → **47/70 strict**, **65/70 relaxed**, **23/70 intensity**, **~23.7s/page**, **~11747 MiB VRAM**, avec sorties `???` occasionnelles
+**Showdown runtime gele (2026-03-24) :** meme modele `Qwen3-VL-4B-Thinking`, meme quantization `Q4_K_M + mmproj F16`, meme methode prod `wide-5 + selective repairs + action hold`; seules les options runtime llama-server ont change. Verdict: **garder / privilegier `8192x1 + ngl auto`** (deja le chemin runtime app actuel), et **aligner aussi la baseline benchmark** sur ce profil. Resultats `BL/1`:
+- `8192x1 + ngl auto(48)` (baseline benchmark + runtime app actuel) → **59/70 strict**, **68/70 relaxed**, **24/70 intensity**, **~11.1s/page**, **~6565 MiB VRAM**
+- `12288x1 + ngl auto(48)` (legacy benchmark reference) → **59/70 strict**, **68/70 relaxed**, **24/70 intensity**, **~11.6s/page**, **~6863 MiB VRAM**
+- `16384x1 + ngl auto(48)` → **59/70 strict**, **68/70 relaxed**, **24/70 intensity**, **~11.9s/page**, **~7279 MiB VRAM**
+- `12288x2 + ngl auto(48)` → **46/70 strict**, **66/70 relaxed**, **40/70 intensity**, **~7.8s/page**, **~7005 MiB VRAM**, **11 erreurs** / instable
+- `12288x1 + ngl64` → **59/70 strict**, **68/70 relaxed**, **24/70 intensity**, **~13.3s/page**, **~7250 MiB VRAM**
+- `12288x1 + ngl32` → smoke `BL/1 first3` seulement, **~54.3s/page**, trop lent pour un rerun complet prioritaire
 **Winner precedent / mini-amelioration importante : `t4b_wide5_selective`** — meme backbone sans hold structurel, **56/70 strict, 68/70 relaxed, 24/70 intensity** sur `BL/1`, **~11.8s/page** sur rerun comparable du 2026-03-07 (ancien artefact observe autour de `13.0s/page`).
 **Meilleur variant recherche non deployable : ensemble derive** — **47/70 strict, 62/70 relaxed, 41/70 intensity** sur `BL/1` en fusionnant `t4b_hist_live + t4b_focus_direct + q3vl_2b + q35_9b` avec Viterbi. **Utile pour la recherche, mais trop lent pour la prod**.
-**Meilleur challenger live observe : Qwen3.5-9B** — **36/70 strict, 57/70 relaxed, 26/70 intensity** sur `BL/1`, ~2.8s/window, ~9.5 GB VRAM.
+**Meilleur challenger live observe sous la methode prod actuelle : Qwen3.5-9B** — **47/70 strict, 57/70 relaxed, 19/70 intensity** sur `BL/1`, **~4.5s/page**. Toujours nettement sous le winner.
+**Meilleur challenger intensite observe sous la methode prod actuelle : Qwen3.5-4B** — **38/70 strict, 56/70 relaxed, 33/70 intensity** sur `BL/1`, **~4.1s/page**. Interessant uniquement comme tete auxiliaire d'intensite, pas comme classifieur principal.
+**Challenger distille non retenu : Jackrong Qwen3.5-4B Claude-4.6-Opus Distilled v2** — **34/70 strict, 55/70 relaxed, 28/70 intensity** sur `BL/1`, **~38.5s/page** avec sorties `???` occasionnelles. A ne pas prioriser.
 **Meilleur modele auxiliaire observe : Qwen3-VL-2B-Instruct** — **41/70 intensity** sur `BL/1`, ~1.2s/window, utile comme tete d'intensite ou expert `tension`.
 **Reference recherche 31 pages Blue Lock : Qwen3.5-VL 4B** (GGUF Q4_K_M, ~2.5 GB) — meilleur resultat sur le benchmark sequentiel 31 pages, avec V12 multi-image a **23/31 strict, 28/31 relaxed**.
 
 | Modele | Images isolees | Sequence (31 pages) | RealTest `BL/1` | Vitesse | VRAM |
 |--------|-----------------|---------------------|-----------------|---------|------|
 | Qwen3-VL 2B | 18/18 (100%) | Non teste | Non teste comme primaire en RealTest | ~1.1s | 38% |
-| Qwen3.5-VL 4B | Non teste | 23/31 strict (74%), 28/31 relaxed (90%) avec V12 | **23/70 strict, 32/70 relaxed** dans la suite comparative Mars 2026 | ~1.9s/window | ~58% |
-| Qwen3.5-9B | Non teste | Non teste | **36/70 strict, 57/70 relaxed, 26/70 intensity** | ~2.8s/window | ~79% |
+| Qwen3.5-VL 4B | Non teste | 23/31 strict (74%), 28/31 relaxed (90%) avec V12 | **23/70 strict, 32/70 relaxed** dans l'ancien protocole viterbi de Mars 2026 ; **38/70 strict, 56/70 relaxed, 33/70 intensity** sous la methode prod actuelle (`q35_4b_wide5_selective_hold`) | ~1.9s/window historique ; ~4.1s/page sur la methode prod | ~58% |
+| Qwen3.5-9B | Non teste | Non teste | **36/70 strict, 57/70 relaxed, 26/70 intensity** dans l'ancien protocole viterbi ; **47/70 strict, 57/70 relaxed, 19/70 intensity** sous la methode prod actuelle (`q35_9b_wide5_selective_hold`) | ~2.8s/window historique ; ~4.5s/page sur la methode prod | ~79% |
+| Jackrong Qwen3.5-4B Opus v2 | Non teste | Non teste | **34/70 strict, 55/70 relaxed, 28/70 intensity** sous la methode prod actuelle (`q35_4b_opus_v2_wide5_selective_hold`) | ~38.5s/page | ~58% + forte instabilite runtime |
 | Qwen3-VL-2B-Instruct | Non teste | Non teste | **32/70 strict, 55/70 relaxed, 41/70 intensity** | ~1.2s/window | ~55% |
-| Qwen3-VL-4B-Thinking | Non teste | Variante dediee thinking, pas winner sur le 31 pages | **58/70 strict, 68/70 relaxed** avec `wide5_selective_hold` ; winner precedent: `56/70` avec `wide5_selective` ; ancien historique: `47/70` | ~11.9s/page (`wide5_selective_hold`) ; ~11.8s/page (`wide5_selective`) | ~69% |
+| Qwen3-VL-4B-Thinking | Non teste | Variante dediee thinking, pas winner sur le 31 pages | **59/70 strict, 68/70 relaxed** avec `wide5_selective_hold` dans le showdown modele du 2026-03-24 ; winner precedent: `56/70` avec `wide5_selective` ; ancien historique: `47/70` | ~12.8s/page (`wide5_selective_hold` showdown) ; ~11.8s/page (`wide5_selective`) | ~69% |
 | Ensemble derive (4 signaux) | Non teste | Non teste | **47/70 strict, 62/70 relaxed, 41/70 intensity** | ~19-23s/page effectifs selon les dependances | VRAM pic = max du plus gros modele actif |
 
 - Thinking model : utilise des `<think>` tags internes pour raisonner avant de repondre
@@ -41,10 +56,13 @@
 - **Plan runtime hors CUDA :** `manga-mood-ai/plans/PLAN_RUNTIME_SIZING_NGL_SUPPORT.md`
 - **Runtime hors CUDA implemente (2026-03-07) :**
   - demarrage `llama-server` avec `context / np / ngl` dynamiques et fallback decroissant
-  - bench par defaut ramene de `32768x4` a `primary_12288x1`
+  - bench par defaut d'abord ramene de `32768x4` a `primary_12288x1`, puis aligne sur le runtime prod `8192x1 + ngl auto` apres validation sur `BL/1`
   - `research_32768x4` conserve seulement pour les runs historiques
   - CPU retire du chemin auto supporte sous Linux, garde uniquement via override explicite
 - **Attention :** sur `Qwen3-VL-4B-Thinking`, toutes les variantes activees avec grammar / PNG / Viterbi / OCR / semantic ont collapse en sortie quasi constante `sadness`; ces runs ne prouvent donc pas encore que ces axes sont mauvais, ils signalent d'abord un probleme de protocole/harness.
+- **Showdown modele gele (2026-03-24) :** le benchmark `REALTEST_EXPERIMENTS=current_method_showdown` a deja compare la methode prod actuelle contre `Qwen3.5-9B`, `Qwen3.5-4B` et `Jackrong Qwen3.5-4B Opus v2`. Conclusion: **aucun backbone ne bat `Qwen3-VL-4B-Thinking` sur le mood principal**. Ne pas rerun ce showdown sauf si changent: ground truth `BL/1`, methode prod (`wide-5`, repairs, hold, preprocessing), ou liste des modeles candidats.
+- **Showdown quantization gele (2026-03-24) :** le benchmark `REALTEST_EXPERIMENTS=current_quantization_showdown` a compare les quants officielles `Qwen3-VL-4B-Thinking-GGUF` sur la methode prod actuelle. Conclusion: **aucune quantization officielle ne bat `Q4_K_M + mmproj F16`**. Ne pas rerun sauf si changent: methode prod, ground truth `BL/1`, integration runtime llama.cpp, ou fichiers officiels publies par Qwen.
+- **Showdown runtime gele (2026-03-24) :** le benchmark `REALTEST_EXPERIMENTS=current_runtime_showdown` a compare le meme `Qwen3-VL-4B-Thinking` et la meme methode prod en ne variant que `context_size`, `parallel_slots` et `gpu_layers`. Conclusion: **`8192x1 + ngl auto` est le meilleur compromis pratique** et sert maintenant aussi de baseline benchmark; `12288x1` reste seulement comme reference legacy, `16384` et `ngl64` n'apportent rien, `parallel=2` degrade trop la precision/stabilite, `ngl32` est trop lent. Ne pas rerun sauf si changent: heuristique auto `ngl`, integration llama.cpp, hardware cible, ou methode prod.
 - **Observation cle :** les meilleurs gains pratiques viennent pour l'instant d'une **fusion conservative de plusieurs specialistes**, pas d'un unique prompt miracle.
 - **Nouveau gate de validation :** une variante n'est consideree comme gagnante que si elle reste dans un budget de cout proche du baseline historique et apporte **au moins +2 strict** ou **+4 relaxed** sur `BL/1`.
 - **Eliminations smoke deja actees :** les variantes `thinking4b` en prompt direct courant-page (`focus_short`, `focus_grammar_short`, `wide5_narrative`, `wide5_narrative_grammar`) sont trop instables ou trop mauvaises des les 3 premieres pages; elles ne doivent plus etre priorisees tant que leur parsing/protocole n'est pas repense.
@@ -391,16 +409,13 @@ Harness offline / recherche.
   - selective repairs
   - action bridge hold
 
-### MoodDirector (`director.rs`)
+### Emission finale cote app
 
-Smoothing algorithmique post-VLM. Evite le "zapping" d'OST.
+Le chemin produit n'utilise plus de couche locale separee type `MoodDirector`.
 
-- **Sliding window** (5 pages) avec scores moyennes
-- **Dwell counter** : min 2 pages dans le meme mood avant de changer l'OST
-- **Entry/exit thresholds** : 0.55 pour entrer dans un mood, 0.25 pour en sortir
-- **Transition matrix** : plausibilite narrative des transitions (ex: sadness → peaceful = ok, comedy → horror = rare)
-- **Strong override** : un score >0.85 ignore le dwell minimum
-- **Chapter reset** : premiere page d'un nouveau chapitre = commit immediat
+- le mood final est decide cote backend par le noyau winner + l'agregation locale + les selective repairs + le cache chapitre
+- l'app se contente ensuite de reemettre ce mood final via `POST /api/trigger` pour declencher le playback
+- il n'existe plus de commande Tauri parallele one-shot pour classer une page hors de ce flux
 
 ### NarrativeContext (`inference.rs`)
 
@@ -410,7 +425,6 @@ Struct pour enrichir le prompt VLM avec du contexte (previous moods, current OST
 
 Wrapper autour du subprocess llama-server :
 - `start()` : lance le serveur sur un port libre, attend qu'il soit ready
-- `analyze_mood()` : helper Tauri local / legacy, **pas le chemin HTTP de production de l'extension**
 - `describe_page()` : helper/reliquat de recherche des pipelines historiques
 - `classify_with_context()` : helper/reliquat de recherche des pipelines historiques
 - `summarize_descriptions()` : resume LLM de descriptions (teste en V11, abandonne — regresse)

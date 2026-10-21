@@ -1,0 +1,41 @@
+{
+  "baseline_id": "gemma4_e4b_wide5_selective_hold",
+  "baseline_intensity": 0,
+  "baseline_relaxed": 0,
+  "baseline_strict": 0,
+  "realtest_dir": "/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/test-images/RealTest",
+  "results_dir": "/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/results",
+  "selection_slug": null,
+  "summaries": [
+    {
+      "avg_window_s": 28.228751995,
+      "cache_path": "/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/results/realtest_suite_gemma4_e4b_wide5_selective_hold.json",
+      "decision": "wide5_selective_repair_hold",
+      "errors": 0,
+      "id": "gemma4_e4b_wide5_selective_hold",
+      "intensity": 0,
+      "label": "Gemma 4 E4B current-method showdown",
+      "max_window_s": 28.228751995,
+      "min_window_s": 28.228751995,
+      "model": "Gemma 4 E4B",
+      "notes": "Current production methodology applied unchanged to Gemma 4 E4B: same wide-5 prompt backbone, same legacy 672 JPEG prep, same selective repairs, same action bridge hold.",
+      "page_results": [],
+      "per_mood": {},
+      "prep": "legacy_672_jpeg",
+      "quantization": "llm=Q4_K_M + mmproj=F16",
+      "relaxed": 0,
+      "runtime": "prod_8192x1 [c=8192 np=1 ngl=24]",
+      "runtime_context_size": 8192,
+      "runtime_gpu_layers": 24,
+      "runtime_parallel_slots": 1,
+      "sampling": "greedy_hist",
+      "second_pass_pages": 0,
+      "source": "live",
+      "status": "ok",
+      "strict": 0,
+      "total": 0,
+      "vram_mib": 7231,
+      "weights_mib": 5692
+    }
+  ]
+}

@@ -31,11 +31,12 @@ rayon = "1.10"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tracing-appender = "0.2"
-image = { version = "0.25", features = ["jpeg", "png"] }
+image = { version = "0.25", features = ["jpeg", "png", "webp"] }
 base64 = "0.22"
 axum = "0.8"
 flate2 = "1"
 tar = "0.4"
+tempfile = "3"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-shell = "2"
@@ -46,6 +47,7 @@ rdev = { git = "https://github.com/fufesou/rdev", branch = "master" }
 
 [target."cfg(target_os = \"linux\")".dependencies]
 evdev = "0.13.2"
+gdk = "0.18"
 
 [target."cfg(target_os = \"windows\")".dependencies]
 # Use Windows API directly for keyboard input (Raw Input API for global key capture)
@@ -60,6 +62,7 @@ windows = { version = "0.58", features = [
 ] }
 
 [dev-dependencies]
+tracing-log = "0.2"
 rand = "0.8"
 
 [profile.release]

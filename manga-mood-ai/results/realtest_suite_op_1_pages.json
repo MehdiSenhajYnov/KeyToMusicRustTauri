@@ -1,0 +1,197 @@
+[
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 3,
+    "expected_mood": "horror",
+    "page": "OP/1/02.webp",
+    "page_number": 2,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "OP/1/03.webp",
+    "page_number": 3,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/1/04.webp",
+    "page_number": 4,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/1/05.webp",
+    "page_number": 5,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/1/06.webp",
+    "page_number": 6,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "OP/1/07.webp",
+    "page_number": 7,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "OP/1/08.webp",
+    "page_number": 8,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "OP/1/09.webp",
+    "page_number": 9,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "OP/1/10.webp",
+    "page_number": 10,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "OP/1/11.webp",
+    "page_number": 11,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/1/12.webp",
+    "page_number": 12,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/1/13.webp",
+    "page_number": 13,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/1",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "OP/1/14.webp",
+    "page_number": 14,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  }
+]

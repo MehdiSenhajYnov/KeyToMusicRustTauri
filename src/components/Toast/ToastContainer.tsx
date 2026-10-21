@@ -14,7 +14,7 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-14 right-4 z-50 space-y-2 w-72">
+    <div role="status" aria-live="polite" className="fixed top-14 right-4 z-[110] space-y-2 w-72">
       {toasts.map((toast) => (
         <div
           key={toast.id}
@@ -22,6 +22,7 @@ export function ToastContainer() {
         >
           <p className="text-text-primary text-sm flex-1">{toast.message}</p>
           <button
+            aria-label="Dismiss notification"
             onClick={() => removeToast(toast.id)}
             className="text-text-muted hover:text-text-primary text-xs shrink-0"
           >

@@ -1,0 +1,10 @@
+[
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "epic",
+    "page": "BL/1/03.jpg",
+    "page_number": 3,
+    "predictions": {}
+  }
+]

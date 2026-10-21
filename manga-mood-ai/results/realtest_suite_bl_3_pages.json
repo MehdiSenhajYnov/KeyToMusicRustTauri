@@ -1,0 +1,362 @@
+[
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "epic",
+    "page": "BL/3/01.jpg",
+    "page_number": 1,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "BL/3/02.jpg",
+    "page_number": 2,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "peaceful",
+    "page": "BL/3/03.jpg",
+    "page_number": 3,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "BL/3/04.jpg",
+    "page_number": 4,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "comedy",
+    "page": "BL/3/05.jpg",
+    "page_number": 5,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "comedy",
+    "page": "BL/3/06.jpg",
+    "page_number": 6,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "peaceful",
+    "page": "BL/3/07.jpg",
+    "page_number": 7,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "BL/3/08.jpg",
+    "page_number": 8,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "comedy",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "BL/3/09.jpg",
+    "page_number": 9,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "peaceful",
+    "page": "BL/3/10.jpg",
+    "page_number": 10,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "horror",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "mystery",
+    "page": "BL/3/11.jpg",
+    "page_number": 11,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "BL/3/12.jpg",
+    "page_number": 12,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "horror",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "mystery",
+    "page": "BL/3/13.jpg",
+    "page_number": 13,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "BL/3/14.jpg",
+    "page_number": 14,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "mystery",
+    "page": "BL/3/15.jpg",
+    "page_number": 15,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "BL/3/16.jpg",
+    "page_number": 16,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "peaceful",
+    "page": "BL/3/17.jpg",
+    "page_number": 17,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 1,
+    "expected_mood": "epic",
+    "page": "BL/3/18.jpg",
+    "page_number": 18,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/3/19.jpg",
+    "page_number": 19,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/3/20.jpg",
+    "page_number": 20,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/3/21.jpg",
+    "page_number": 21,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/3/22.jpg",
+    "page_number": 22,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/3/23.jpg",
+    "page_number": 23,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/3",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "BL/3/24.jpg",
+    "page_number": 24,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  }
+]

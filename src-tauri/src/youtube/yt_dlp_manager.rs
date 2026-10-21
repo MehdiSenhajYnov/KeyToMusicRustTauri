@@ -58,7 +58,10 @@ pub async fn is_installed() -> bool {
 }
 
 /// Download yt-dlp to the app's data directory.
+static INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 pub async fn download_yt_dlp() -> Result<PathBuf, String> {
+    let _install = INSTALL_LOCK.lock().await;
     let target_path = get_yt_dlp_path();
 
     // Create bin directory
@@ -87,7 +90,8 @@ pub async fn download_yt_dlp() -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to read download: {}", e))?;
 
     // Write to file using std::fs to ensure handle is released synchronously
-    std::fs::write(&target_path, &bytes).map_err(|e| format!("Failed to write yt-dlp: {}", e))?;
+    crate::storage::atomic_write(&target_path, &bytes)
+        .map_err(|e| format!("Failed to write yt-dlp: {}", e))?;
 
     // Make executable on Unix
     #[cfg(unix)]

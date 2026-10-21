@@ -1,11 +1,12 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { acquireKeyDetectionSuspension } from "../../utils/keyDetectionSuspension";
+import { lazy, Suspense, useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useProfileStore } from "../../stores/profileStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useConfirmStore } from "../../stores/confirmStore";
 import { useWheelSlider } from "../../hooks/useWheelSlider";
 import { keyCodeToDisplay, getKeyCode, recordKeyLayout, buildComboFromPressedKeys } from "../../utils/keyMapping";
 import { formatDuration } from "../../utils/fileHelpers";
-import { AddSoundModal } from "./AddSoundModal";
+const AddSoundModal = lazy(() => import("./AddSoundModal").then((m) => ({ default: m.AddSoundModal })));
 import * as commands from "../../utils/tauriCommands";
 import { getSoundFilePath } from "../../utils/soundHelpers";
 import type { LoopMode, BaseMood, MoodIntensity, Sound, WaveformData } from "../../types";
@@ -33,7 +34,7 @@ interface SoundDetailsProps {
 }
 
 export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetailsProps) {
-  const { currentProfile, updateKeyBinding, removeKeyBinding, addKeyBinding, removeSound, updateSound, saveCurrentProfile } =
+  const { currentProfile, updateKeyBinding, removeKeyBinding, reassignKey, removeSoundFromBinding, updateSound, saveCurrentProfile } =
     useProfileStore();
   const addToast = useToastStore((s) => s.addToast);
   const showConfirm = useConfirmStore((s) => s.confirm);
@@ -43,8 +44,12 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [localWaveforms, setLocalWaveforms] = useState<Map<string, WaveformData>>(new Map());
 
+  const [selectedTrack, setSelectedTrack] = useState<string | null>(null);
+  const keyBindings = currentProfile?.keyBindings.filter((kb) => kb.keyCode === selectedKey) ?? [];
+  const activeBinding = keyBindings.find((kb) => kb.trackId === selectedTrack) ?? keyBindings[0];
+
   // Subscribe only to the track entry for this binding's track (not all tracks)
-  const bindingTrackId = currentProfile?.keyBindings.find((kb) => kb.keyCode === selectedKey)?.trackId;
+  const bindingTrackId = activeBinding?.trackId;
   const trackPlayback = useAudioStore((s) =>
     bindingTrackId ? s.playingTracks.get(bindingTrackId) ?? null : null
   );
@@ -61,16 +66,17 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+      if (volumeDebounceRef.current) clearTimeout(volumeDebounceRef.current);
     };
   // volumeDebounceRef is created later (after binding check), cleared in that scope
   }, []);
 
   // Build a stable dependency string for the sounds relevant to this binding
-  const bindingSoundIds = currentProfile?.keyBindings.find((kb) => kb.keyCode === selectedKey)?.soundIds.join(",") ?? "";
+  const bindingSoundIds = activeBinding?.soundIds.join(",") ?? "";
   const soundsDepsRef = useRef("");
   const soundsDepsKey = currentProfile?.sounds
     .filter((s) => bindingSoundIds.includes(s.id))
-    .map((s) => `${s.id}:${s.duration}`)
+    .map((s) => `${s.id}:${s.duration}:${getSoundFilePath(s)}`)
     .join(",") ?? "";
   // Only update when the dependency string actually changes
   if (soundsDepsKey !== soundsDepsRef.current) {
@@ -80,7 +86,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   // Derive stable list of sound paths that need waveforms
   const waveformPaths = useMemo(() => {
     if (!currentProfile) return [];
-    const binding = currentProfile.keyBindings.find((kb) => kb.keyCode === selectedKey);
+    const binding = activeBinding;
     if (!binding) return [];
     const paths: { soundId: string; path: string }[] = [];
     for (const soundId of binding.soundIds) {
@@ -122,72 +128,21 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
   }, [waveformPaths]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCapturedKey = useCallback(async (newKeyCode: string) => {
-    if (!currentProfile) return;
-    const binding = currentProfile.keyBindings.find((kb) => kb.keyCode === selectedKey);
-    if (!binding) return;
-
-    if (newKeyCode === selectedKey) {
+    if (!currentProfile || !activeBinding || !capturingKeyFor) return;
+    const target = currentProfile.keyBindings.find((kb) => kb.keyCode === newKeyCode && kb.trackId === activeBinding.trackId);
+    if (newKeyCode !== selectedKey && target && !await showConfirm(`Merge into [${keyCodeToDisplay(newKeyCode)}] on this track?`)) {
       setCapturingKeyFor(null);
       return;
     }
-
-    const existingTarget = currentProfile.keyBindings.find((kb) => kb.keyCode === newKeyCode);
-
-    if (capturingKeyFor === "binding") {
-      // Reassign the entire binding to a new key
-      if (existingTarget) {
-        if (!await showConfirm(`Key [${keyCodeToDisplay(newKeyCode)}] already has sounds assigned. Merge into it?`)) {
-          setCapturingKeyFor(null);
-          return;
-        }
-        // Merge: add current binding's sounds into target
-        const mergedSoundIds = [...existingTarget.soundIds, ...binding.soundIds.filter((id) => !existingTarget.soundIds.includes(id))];
-        updateKeyBinding(newKeyCode, existingTarget.trackId, { soundIds: mergedSoundIds });
-        removeKeyBinding(selectedKey);
-      } else {
-        // Move binding to new key - add first to prevent orphaning sounds
-        addKeyBinding({ ...binding, keyCode: newKeyCode });
-        removeKeyBinding(selectedKey);
-      }
-      setTimeout(() => saveCurrentProfile(), 100);
-      addToast(`Key changed: [${keyCodeToDisplay(selectedKey)}] → [${keyCodeToDisplay(newKeyCode)}]`, "success");
-      onKeyChanged?.(newKeyCode);
-    } else {
-      // Move individual sound to another key
-      const soundId = capturingKeyFor!;
-      const newSoundIds = binding.soundIds.filter((id) => id !== soundId);
-
-      if (existingTarget) {
-        // Add sound to existing target binding
-        if (!existingTarget.soundIds.includes(soundId)) {
-          updateKeyBinding(newKeyCode, existingTarget.trackId, { soundIds: [...existingTarget.soundIds, soundId] });
-        }
-      } else {
-        // Create new binding for the target key
-        addKeyBinding({
-          keyCode: newKeyCode,
-          trackId: binding.trackId,
-          soundIds: [soundId],
-          loopMode: "off",
-          currentIndex: 0,
-        });
-      }
-
-      // Remove from current binding
-      if (newSoundIds.length === 0) {
-        removeKeyBinding(selectedKey);
-        onClose();
-      } else {
-        updateKeyBinding(selectedKey, binding.trackId, { soundIds: newSoundIds });
-      }
-
-      setTimeout(() => saveCurrentProfile(), 100);
-      const sound = currentProfile.sounds.find((s) => s.id === soundId);
-      addToast(`"${sound?.name}" moved to [${keyCodeToDisplay(newKeyCode)}]`, "success");
+    const latest = useProfileStore.getState().currentProfile;
+    if (latest?.id !== currentProfile.id || !latest.keyBindings.includes(activeBinding)) {
+      setCapturingKeyFor(null);
+      return;
     }
-
+    reassignKey(selectedKey, activeBinding.trackId, newKeyCode, capturingKeyFor === "binding" ? undefined : capturingKeyFor);
     setCapturingKeyFor(null);
-  }, [currentProfile, selectedKey, capturingKeyFor, updateKeyBinding, removeKeyBinding, addKeyBinding, saveCurrentProfile, addToast, showConfirm, onKeyChanged, onClose]);
+    onKeyChanged?.(newKeyCode);
+  }, [currentProfile, activeBinding, capturingKeyFor, selectedKey, reassignKey, showConfirm, onKeyChanged]);
 
   useEffect(() => {
     if (!capturingKeyFor) {
@@ -196,6 +151,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
       return;
     }
 
+    const release = acquireKeyDetectionSuspension();
     const handleKeyDown = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
@@ -204,7 +160,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
         return;
       }
       const code = getKeyCode(e);
-      recordKeyLayout(code, e.key);
+      recordKeyLayout(code, e.key, e);
       pressedKeysRef.current.add(code);
       const combo = buildComboFromPressedKeys(pressedKeysRef.current);
       if (combo) {
@@ -226,6 +182,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     window.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("keyup", handleKeyUp, true);
     return () => {
+      release();
       window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("keyup", handleKeyUp, true);
     };
@@ -233,9 +190,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
 
   if (!currentProfile) return null;
 
-  const binding = currentProfile.keyBindings.find(
-    (kb) => kb.keyCode === selectedKey
-  );
+  const binding = activeBinding;
   if (!binding) return null;
 
   const boundSounds = binding.soundIds
@@ -253,7 +208,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
 
   const handleDeleteKey = async () => {
     if (!await showConfirm(`Delete key binding [${keyCodeToDisplay(selectedKey)}]?`)) return;
-    removeKeyBinding(selectedKey);
+    removeKeyBinding(selectedKey, binding.trackId);
     setTimeout(() => saveCurrentProfile(), 100);
     addToast(`Key [${keyCodeToDisplay(selectedKey)}] removed`, "info");
     onClose();
@@ -271,9 +226,12 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
 
   const handleRemoveSound = async (soundId: string, name: string) => {
     if (!await showConfirm(`Remove "${name}" from this key?`)) return;
-    removeSound(soundId);
+    removeSoundFromBinding(selectedKey, binding.trackId, soundId);
     setTimeout(() => saveCurrentProfile(), 100);
     addToast(`Sound "${name}" removed`, "info");
+    if (!useProfileStore.getState().currentProfile?.keyBindings.some((kb) => kb.keyCode === selectedKey)) {
+      onClose();
+    }
   };
 
   const handleVolumeChange = (soundId: string, volume: number) => {
@@ -295,6 +253,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
       const sound = currentProfile!.sounds.find((s) => s.id === soundId);
       if (sound) {
         seekTimerRef.current = setTimeout(() => {
+          useAudioStore.getState().clearLoopContext(binding.trackId);
           commands.playSound(binding.trackId, sound.id, getSoundFilePath(sound), momentum, sound.volume).catch(() => {});
         }, 150);
       }
@@ -305,6 +264,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
     if (previewingSoundId === sound.id) {
       // Stop preview
       try {
+        useAudioStore.getState().clearLoopContext(binding!.trackId);
         await commands.stopSound(binding!.trackId);
       } catch (e) {
         console.error("Failed to stop preview:", e);
@@ -314,6 +274,7 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
       // Play preview at momentum position
       const filePath = getSoundFilePath(sound);
       try {
+        useAudioStore.getState().clearLoopContext(binding!.trackId);
         await commands.playSound(
           binding!.trackId,
           sound.id,
@@ -367,13 +328,23 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
         </div>
       </div>
 
+      {keyBindings.length > 1 && (
+        <div className="flex gap-2 flex-wrap" aria-label="Tracks assigned to this key">
+          {keyBindings.map((kb) => (
+            <button key={kb.trackId} onClick={() => setSelectedTrack(kb.trackId)} aria-pressed={kb === binding}
+              className={`text-xs px-2 py-1 rounded ${kb === binding ? "bg-accent-primary/20 text-accent-primary" : "bg-bg-secondary text-text-secondary"}`}>
+              {currentProfile.tracks.find((track) => track.id === kb.trackId)?.name ?? "Track"}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="flex items-center gap-2">
-        <span className="text-text-muted text-xs whitespace-nowrap">Nom:</span>
+        <span className="text-text-muted text-xs whitespace-nowrap">Name:</span>
         <input
           type="text"
           value={displayName}
           onChange={(e) => handleNameChange(e.target.value)}
-          placeholder="Nom du groupe"
+          placeholder="Group name"
           className="flex-1 bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary focus:border-border-focus outline-none"
         />
       </div>
@@ -617,10 +588,12 @@ export function SoundDetails({ selectedKey, onClose, onKeyChanged }: SoundDetail
       </div>
 
       {showAddModal && (
-        <AddSoundModal
-          targetKey={selectedKey}
-          onClose={() => setShowAddModal(false)}
-        />
+        <Suspense fallback={null}>
+          <AddSoundModal
+            targetKey={selectedKey}
+            onClose={() => setShowAddModal(false)}
+          />
+        </Suspense>
       )}
     </div>
   );

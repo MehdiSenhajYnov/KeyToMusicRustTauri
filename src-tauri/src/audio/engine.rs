@@ -44,6 +44,7 @@ pub enum AudioCommand {
     },
     /// Play a sound with a pre-created source (avoids file I/O on the audio thread).
     PlaySoundPrepared {
+        reply: tokio::sync::oneshot::Sender<Result<(), String>>,
         track_id: TrackId,
         sound_id: SoundId,
         file_path: String,
@@ -79,6 +80,21 @@ pub enum AudioCommand {
 }
 
 /// Events emitted by the audio thread.
+#[derive(Debug, Clone, Copy)]
+pub enum SoundEndedReason {
+    Finished,
+    Stopped,
+}
+
+impl SoundEndedReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SoundEndedReason::Finished => "finished",
+            SoundEndedReason::Stopped => "stopped",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum AudioEvent {
     SoundStarted {
@@ -88,6 +104,7 @@ pub enum AudioEvent {
     SoundEnded {
         track_id: TrackId,
         sound_id: SoundId,
+        reason: SoundEndedReason,
     },
     PlaybackProgress {
         track_id: TrackId,
@@ -98,10 +115,27 @@ pub enum AudioEvent {
     },
 }
 
+#[derive(Default)]
+struct PlaybackRequests {
+    next: u64,
+    tracks: HashMap<TrackId, u64>,
+}
+
+impl PlaybackRequests {
+    fn begin(&mut self, track_id: &str) -> u64 {
+        self.next = self.next.wrapping_add(1);
+        self.tracks.insert(track_id.to_string(), self.next);
+        self.next
+    }
+    fn is_current(&self, track_id: &str, request: u64) -> bool {
+        self.tracks.get(track_id) == Some(&request)
+    }
+}
+
 /// Handle to communicate with the audio engine thread.
-#[derive(Clone)]
 pub struct AudioEngineHandle {
     command_tx: Sender<AudioCommand>,
+    playback_requests: Mutex<PlaybackRequests>,
     pub event_rx: Arc<Mutex<Receiver<AudioEvent>>>,
     pub master_volume: Arc<AtomicU32>,
 }
@@ -122,6 +156,7 @@ impl AudioEngineHandle {
 
         Ok(Self {
             command_tx,
+            playback_requests: Mutex::new(PlaybackRequests::default()),
             event_rx: Arc::new(Mutex::new(event_rx)),
             master_volume,
         })
@@ -155,9 +190,18 @@ impl AudioEngineHandle {
         })
     }
 
+    /// Reserve before decoding so Stop and newer requests invalidate slow preparations.
+    pub fn begin_playback(&self, track_id: &str) -> u64 {
+        self.playback_requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .begin(track_id)
+    }
+
     /// Play a pre-created source on a track (no file I/O on the audio thread).
-    pub fn play_sound_prepared(
+    pub async fn play_sound_prepared(
         &self,
+        request: u64,
         track_id: TrackId,
         sound_id: SoundId,
         file_path: String,
@@ -166,24 +210,48 @@ impl AudioEngineHandle {
         sound_volume: f32,
         crossfade_duration_ms: u32,
     ) -> Result<(), String> {
-        self.send_command(AudioCommand::PlaySoundPrepared {
-            track_id,
-            sound_id,
-            file_path,
-            start_position,
-            source,
-            sound_volume,
-            crossfade_duration_ms,
-        })
+        let (reply, response) = tokio::sync::oneshot::channel();
+        {
+            let requests = self
+                .playback_requests
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if !requests.is_current(&track_id, request) {
+                return Err("Playback cancelled".into());
+            }
+            self.send_command(AudioCommand::PlaySoundPrepared {
+                reply,
+                track_id,
+                sound_id,
+                file_path,
+                start_position,
+                source,
+                sound_volume,
+                crossfade_duration_ms,
+            })?;
+        }
+        response
+            .await
+            .map_err(|_| "Audio engine stopped before playback could start".to_string())?
     }
 
     /// Stop a specific track.
     pub fn stop_track(&self, track_id: TrackId) -> Result<(), String> {
+        let mut requests = self
+            .playback_requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        requests.tracks.remove(&track_id);
         self.send_command(AudioCommand::StopTrack { track_id })
     }
 
     /// Stop all tracks.
     pub fn stop_all(&self) -> Result<(), String> {
+        let mut requests = self
+            .playback_requests
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        requests.tracks.clear();
         self.send_command(AudioCommand::StopAll)
     }
 
@@ -274,6 +342,10 @@ fn get_default_device_name() -> Option<String> {
     host.default_output_device().and_then(|d| d.name().ok())
 }
 
+fn is_preview_track(track_id: &str) -> bool {
+    track_id == "__preview__" || track_id.starts_with("preview-")
+}
+
 /// The main loop of the audio thread.
 fn audio_thread_main(
     command_rx: Receiver<AudioCommand>,
@@ -295,6 +367,7 @@ fn audio_thread_main(
     let mut tracks: HashMap<TrackId, AudioTrack> = HashMap::new();
     let mut sound_volumes: HashMap<SoundId, f32> = HashMap::new();
     let mut track_sounds: HashMap<TrackId, SoundId> = HashMap::new();
+    let mut track_volumes: HashMap<TrackId, f32> = HashMap::new();
     let mut error_sound_path: Option<String> = None;
 
     // Device management state
@@ -333,13 +406,17 @@ fn audio_thread_main(
 
                 // Create track if it doesn't exist
                 if !tracks.contains_key(&track_id) {
-                    if tracks.len() >= 20 {
+                    if tracks.keys().filter(|id| !is_preview_track(id)).count() >= 20
+                        && !is_preview_track(&track_id)
+                    {
                         let _ = event_tx.send(AudioEvent::Error {
                             message: "Maximum number of tracks (20) reached".to_string(),
                         });
                         continue;
                     }
-                    tracks.insert(track_id.clone(), AudioTrack::new(stream_handle.clone()));
+                    let mut track = AudioTrack::new(stream_handle.clone());
+                    track.volume = track_volumes.get(&track_id).copied().unwrap_or(1.0);
+                    tracks.insert(track_id.clone(), track);
                 }
 
                 if let Some(track) = tracks.get_mut(&track_id) {
@@ -367,6 +444,7 @@ fn audio_thread_main(
                 }
             }
             Ok(AudioCommand::PlaySoundPrepared {
+                reply,
                 track_id,
                 sound_id,
                 file_path,
@@ -378,13 +456,18 @@ fn audio_thread_main(
                 let mv = atomic_load_f32(&master_volume);
 
                 if !tracks.contains_key(&track_id) {
-                    if tracks.len() >= 20 {
+                    if tracks.keys().filter(|id| !is_preview_track(id)).count() >= 20
+                        && !is_preview_track(&track_id)
+                    {
                         let _ = event_tx.send(AudioEvent::Error {
                             message: "Maximum number of tracks (20) reached".to_string(),
                         });
+                        let _ = reply.send(Err("Maximum number of tracks (20) reached".into()));
                         continue;
                     }
-                    tracks.insert(track_id.clone(), AudioTrack::new(stream_handle.clone()));
+                    let mut track = AudioTrack::new(stream_handle.clone());
+                    track.volume = track_volumes.get(&track_id).copied().unwrap_or(1.0);
+                    tracks.insert(track_id.clone(), track);
                 }
 
                 if let Some(track) = tracks.get_mut(&track_id) {
@@ -401,25 +484,27 @@ fn audio_thread_main(
                         crossfade_duration_ms,
                     ) {
                         Ok(()) => {
+                            let _ = reply.send(Ok(()));
                             let _ = event_tx.send(AudioEvent::SoundStarted {
                                 track_id: track_id.clone(),
                                 sound_id,
                             });
                         }
                         Err(e) => {
-                            let _ = event_tx.send(AudioEvent::Error { message: e });
+                            let _ = reply.send(Err(e));
                         }
                     }
                 }
             }
             Ok(AudioCommand::StopTrack { track_id }) => {
-                if let Some(track) = tracks.get_mut(&track_id) {
+                if let Some(mut track) = tracks.remove(&track_id) {
                     let sound_id = track.currently_playing.clone();
                     track.stop();
                     if let Some(sid) = sound_id {
                         let _ = event_tx.send(AudioEvent::SoundEnded {
                             track_id: track_id.clone(),
                             sound_id: sid,
+                            reason: SoundEndedReason::Stopped,
                         });
                     }
                 }
@@ -432,9 +517,13 @@ fn audio_thread_main(
                         let _ = event_tx.send(AudioEvent::SoundEnded {
                             track_id: tid.clone(),
                             sound_id: sid,
+                            reason: SoundEndedReason::Stopped,
                         });
                     }
                 }
+                tracks.clear();
+                track_sounds.clear();
+                sound_volumes.clear();
             }
             Ok(AudioCommand::SetMasterVolume { volume }) => {
                 let mv = volume;
@@ -448,6 +537,7 @@ fn audio_thread_main(
                 }
             }
             Ok(AudioCommand::SetTrackVolume { track_id, volume }) => {
+                track_volumes.insert(track_id.clone(), volume);
                 if let Some(track) = tracks.get_mut(&track_id) {
                     let mv = atomic_load_f32(&master_volume);
                     let sv = track_sounds
@@ -464,11 +554,13 @@ fn audio_thread_main(
                 volume,
             }) => {
                 // Update stored sound volume
-                sound_volumes.insert(sound_id, volume);
+                sound_volumes.insert(sound_id.clone(), volume);
                 // Recalculate final volume on the track's sink
                 if let Some(track) = tracks.get_mut(&track_id) {
                     let mv = atomic_load_f32(&master_volume);
-                    if track.crossfade.is_none() {
+                    if track.currently_playing.as_ref() == Some(&sound_id)
+                        && track.crossfade.is_none()
+                    {
                         track.update_master_volume(volume, mv);
                     }
                 }
@@ -607,6 +699,7 @@ fn audio_thread_main(
             let _ = event_tx.send(AudioEvent::SoundEnded {
                 track_id: tid,
                 sound_id: sid,
+                reason: SoundEndedReason::Finished,
             });
         }
 
@@ -684,5 +777,32 @@ fn resume_tracks(
         tracks.insert(info.track_id.clone(), new_track);
         sound_volumes.insert(info.sound_id.clone(), info.sound_volume);
         track_sounds.insert(info.track_id, info.sound_id);
+    }
+}
+
+#[cfg(test)]
+mod request_tests {
+    use super::PlaybackRequests;
+
+    #[test]
+    fn stop_invalidates_decoding_even_if_track_was_not_playing() {
+        let mut requests = PlaybackRequests::default();
+        let request = requests.begin("a");
+        requests.tracks.clear();
+        assert!(!requests.is_current("a", request));
+        let next = requests.begin("a");
+        assert_ne!(request, next);
+        assert!(!requests.is_current("a", request));
+        assert!(requests.is_current("a", next));
+    }
+
+    #[test]
+    fn newer_playback_only_supersedes_the_same_track() {
+        let mut requests = PlaybackRequests::default();
+        let a = requests.begin("a");
+        let b = requests.begin("b");
+        requests.begin("a");
+        assert!(!requests.is_current("a", a));
+        assert!(requests.is_current("b", b));
     }
 }

@@ -28,6 +28,7 @@ Tasks/
 | Nom | Statut | Fichier |
 |---|---|---|
 | Polish & Optimisations | Partiel | [Tasks/todo/POLISH_OPTIMIZATIONS.md](/home/mehdi/Dev/KeyToMusicRustTauri/Tasks/todo/POLISH_OPTIMIZATIONS.md) |
+| Mood playback entry mode | Ouvert | [Tasks/todo/MOOD_PLAYBACK_ENTRY_MODE.md](/home/mehdi/Dev/KeyToMusicRustTauri/Tasks/todo/MOOD_PLAYBACK_ENTRY_MODE.md) |
 | UI/UX improvements | Ouvert | [Tasks/todo/ui-ux-improvements.md](/home/mehdi/Dev/KeyToMusicRustTauri/Tasks/todo/ui-ux-improvements.md) |
 | UI redesign warm | Ouvert | [Tasks/todo/ui-redesign-warm.md](/home/mehdi/Dev/KeyToMusicRustTauri/Tasks/todo/ui-redesign-warm.md) |
 | UI redesign complete | Ouvert | [Tasks/todo/ui-redesign-complete.md](/home/mehdi/Dev/KeyToMusicRustTauri/Tasks/todo/ui-redesign-complete.md) |

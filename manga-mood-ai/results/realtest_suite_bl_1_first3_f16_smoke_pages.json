@@ -1,0 +1,17 @@
+[
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "epic",
+    "page": "BL/1/03.jpg",
+    "page_number": 3,
+    "predictions": {
+      "t4b_wide5_selective_hold_f16": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  }
+]

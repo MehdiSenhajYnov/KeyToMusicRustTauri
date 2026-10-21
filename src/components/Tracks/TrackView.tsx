@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useProfileStore } from "../../stores/profileStore";
-import { setTrackVolume } from "../../utils/tauriCommands";
+import { stopSound, setTrackVolume } from "../../utils/tauriCommands";
 import { useToastStore } from "../../stores/toastStore";
 import { useConfirmStore } from "../../stores/confirmStore";
 import { useWheelSlider, getWheelActiveClass } from "../../hooks/useWheelSlider";
@@ -55,10 +55,9 @@ export function TrackView() {
     saveTimerRef.current = setTimeout(() => saveCurrentProfile(), 200);
   };
 
-  if (!currentProfile) return null;
 
   const handleAddTrack = async () => {
-    if (!newTrackName.trim()) return;
+    if (!newTrackName.trim() || !currentProfile) return;
     if (currentProfile.tracks.length >= 20) {
       addToast("Maximum 20 tracks allowed", "warning");
       return;
@@ -77,22 +76,18 @@ export function TrackView() {
 
   const handleDeleteTrack = async (trackId: string, trackName: string) => {
     if (!await showConfirm(`Delete track "${trackName}"?`)) return;
+    await stopSound(trackId).catch(() => {});
     removeTrack(trackId);
     setTimeout(() => saveCurrentProfile(), 100);
     addToast(`Track "${trackName}" deleted`, "info");
   };
 
-  const volumeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const handleVolumeChange = useCallback((trackId: string, volume: number) => {
-    // Update store immediately for responsive UI
     updateTrack(trackId, { volume });
-    // Debounce the backend call
-    if (volumeDebounceRef.current) clearTimeout(volumeDebounceRef.current);
-    volumeDebounceRef.current = setTimeout(() => {
-      setTrackVolume(trackId, volume).catch(console.error);
-    }, 100);
-  }, [updateTrack]);
+    setTrackVolume(trackId, volume).catch((error) => addToast(`Could not change volume: ${error}`, "error"));
+  }, [updateTrack, addToast]);
+
+  if (!currentProfile) return null;
 
   return (
     <div className="space-y-2">

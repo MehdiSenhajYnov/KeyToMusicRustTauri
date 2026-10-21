@@ -1,3 +1,4 @@
+import { mergeKeyBindings } from "../../utils/keyBindings";
 import { useProfileStore } from "../../stores/profileStore";
 import { useConfirmStore } from "../../stores/confirmStore";
 import { useHistoryStore, captureProfileState } from "../../stores/historyStore";
@@ -35,16 +36,17 @@ export function MultiKeyDetails({ selectedKeys, onClose }: MultiKeyDetailsProps)
   const commonLoopMode = allSameLoop ? loopModes[0] : null;
 
   const handleTrackChange = (newTrackId: string) => {
-    const profile = useProfileStore.getState().currentProfile!;
+    const profile = useProfileStore.getState().currentProfile;
+    if (!profile || profile.id !== currentProfile.id) return;
     const before = captureProfileState(profile);
 
     // Direct state update to produce a single history entry
     useProfileStore.setState({
       currentProfile: {
         ...profile,
-        keyBindings: profile.keyBindings.map((kb) =>
+        keyBindings: mergeKeyBindings(profile.keyBindings.map((kb) =>
           selectedKeys.has(kb.keyCode) ? { ...kb, trackId: newTrackId } : kb
-        ),
+        )),
       },
     });
 
@@ -59,7 +61,8 @@ export function MultiKeyDetails({ selectedKeys, onClose }: MultiKeyDetailsProps)
   };
 
   const handleLoopModeChange = (newMode: LoopMode) => {
-    const profile = useProfileStore.getState().currentProfile!;
+    const profile = useProfileStore.getState().currentProfile;
+    if (!profile || profile.id !== currentProfile.id) return;
     const before = captureProfileState(profile);
 
     useProfileStore.setState({
@@ -84,7 +87,8 @@ export function MultiKeyDetails({ selectedKeys, onClose }: MultiKeyDetailsProps)
   const handleDeleteAll = async () => {
     if (!await showConfirm(`Delete ${count} key bindings?`)) return;
 
-    const profile = useProfileStore.getState().currentProfile!;
+    const profile = useProfileStore.getState().currentProfile;
+    if (!profile || profile.id !== currentProfile.id) return;
     const before = captureProfileState(profile);
 
     const remainingBindings = profile.keyBindings.filter(
@@ -94,11 +98,12 @@ export function MultiKeyDetails({ selectedKeys, onClose }: MultiKeyDetailsProps)
       remainingBindings.flatMap((kb) => kb.soundIds)
     );
 
+    const removedIds = new Set(profile.keyBindings.filter((kb) => selectedKeys.has(kb.keyCode)).flatMap((kb) => kb.soundIds));
     useProfileStore.setState({
       currentProfile: {
         ...profile,
         keyBindings: remainingBindings,
-        sounds: profile.sounds.filter((s) => referencedSoundIds.has(s.id)),
+        sounds: profile.sounds.filter((s) => !removedIds.has(s.id) || referencedSoundIds.has(s.id)),
       },
     });
 

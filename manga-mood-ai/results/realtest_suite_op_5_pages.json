@@ -1,0 +1,167 @@
+[
+  {
+    "chapter": "OP/5",
+    "expected_intensity": 1,
+    "expected_mood": "mystery",
+    "page": "OP/5/02.webp",
+    "page_number": 2,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "horror",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/5",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "OP/5/03.webp",
+    "page_number": 3,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "OP/5",
+    "expected_intensity": 1,
+    "expected_mood": "peaceful",
+    "page": "OP/5/04.webp",
+    "page_number": 4,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "OP/5",
+    "expected_intensity": 1,
+    "expected_mood": "peaceful",
+    "page": "OP/5/05.webp",
+    "page_number": 5,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "OP/5",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/5/06.webp",
+    "page_number": 6,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/5",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "OP/5/07.webp",
+    "page_number": 7,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/5",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "OP/5/08.webp",
+    "page_number": 8,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "OP/5",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "OP/5/09.webp",
+    "page_number": 9,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "comedy",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "OP/5",
+    "expected_intensity": 1,
+    "expected_mood": "sadness",
+    "page": "OP/5/10.webp",
+    "page_number": 10,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "OP/5",
+    "expected_intensity": 1,
+    "expected_mood": "peaceful",
+    "page": "OP/5/11.webp",
+    "page_number": 11,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "OP/5",
+    "expected_intensity": 3,
+    "expected_mood": "tension",
+    "page": "OP/5/12.webp",
+    "page_number": 12,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "wrong"
+      }
+    }
+  }
+]

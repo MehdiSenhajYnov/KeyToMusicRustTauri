@@ -6,29 +6,24 @@ import { formatDuration } from "../../utils/fileHelpers";
 import * as commands from "../../utils/tauriCommands";
 import { getSoundFilePath } from "../../utils/soundHelpers";
 import { useWheelSlider, getWheelActiveClass } from "../../hooks/useWheelSlider";
+import type { Sound } from "../../types";
 
 interface NowPlayingTrackProps {
   trackId: string;
-  soundId: string;
+  trackName: string;
+  sound: Sound;
 }
 
-function NowPlayingTrack({ trackId, soundId }: NowPlayingTrackProps) {
-  const currentProfile = useProfileStore((s) => s.currentProfile);
+function NowPlayingTrack({ trackId, trackName, sound }: NowPlayingTrackProps) {
   const position = useTrackPosition(trackId);
   const [seekingTrack, setSeekingTrack] = useState(false);
   const [seekPosition, setSeekPosition] = useState(0);
-
-  if (!currentProfile) return null;
-
-  const track = currentProfile.tracks.find((t) => t.id === trackId);
-  const sound = currentProfile.sounds.find((s) => s.id === soundId);
-  if (!sound) return null;
 
   const handleSeek = async (pos: number) => {
     const filePath = getSoundFilePath(sound);
     useAudioStore.getState().updateProgress(trackId, pos);
     try {
-      await commands.playSound(trackId, soundId, filePath, pos, sound.volume);
+      await commands.playSound(trackId, sound.id, filePath, pos, sound.volume);
     } catch (e) {
       console.error("Seek failed:", e);
     }
@@ -52,7 +47,7 @@ function NowPlayingTrack({ trackId, soundId }: NowPlayingTrackProps) {
     <div className="space-y-1">
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0">
-          <p className="text-text-muted text-xs">{track?.name || "Track"}</p>
+          <p className="text-text-muted text-xs">{trackName}</p>
           <p className="text-text-primary text-sm truncate">{sound.name}</p>
         </div>
         <button
@@ -105,11 +100,17 @@ export function NowPlaying() {
   const playingTracks = useAudioStore((s) => s.playingTracks);
   const currentProfile = useProfileStore((s) => s.currentProfile);
 
-  const hasNonPreviewTracks = Array.from(playingTracks.keys()).some(
-    (id) => id !== "__preview__"
-  );
+  // A profile edit can remove a sound before its playback-ended event arrives.
+  // Unmount that row instead of changing the hooks called inside it.
+  const entries = Array.from(playingTracks.values()).flatMap((entry) => {
+    if (entry.trackId === "__preview__") return [];
+    const sound = currentProfile?.sounds.find((s) => s.id === entry.soundId);
+    if (!sound) return [];
+    const track = currentProfile?.tracks.find((t) => t.id === entry.trackId);
+    return [{ trackId: entry.trackId, trackName: track?.name || "Track", sound }];
+  });
 
-  if (!currentProfile || !hasNonPreviewTracks) {
+  if (entries.length === 0) {
     return (
       <div className="p-3">
         <h3 className="text-text-muted text-xs font-semibold uppercase tracking-wider mb-2">
@@ -120,10 +121,6 @@ export function NowPlaying() {
     );
   }
 
-  const entries = Array.from(playingTracks.values()).filter(
-    (entry) => entry.trackId !== "__preview__"
-  );
-
   return (
     <div className="p-3 space-y-2">
       <h3 className="text-text-muted text-xs font-semibold uppercase tracking-wider">
@@ -131,9 +128,10 @@ export function NowPlaying() {
       </h3>
       {entries.map((entry) => (
         <NowPlayingTrack
-          key={entry.trackId}
+          key={`${entry.trackId}:${entry.sound.id}`}
           trackId={entry.trackId}
-          soundId={entry.soundId}
+          trackName={entry.trackName}
+          sound={entry.sound}
         />
       ))}
     </div>

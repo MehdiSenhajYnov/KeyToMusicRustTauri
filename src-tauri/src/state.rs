@@ -5,7 +5,6 @@ use crate::audio::analysis::WaveformCache;
 use crate::audio::AudioEngineHandle;
 use crate::keys::KeyDetector;
 use crate::mood::cache::MoodCache;
-use crate::mood::director::{DirectorConfig, MoodDirector};
 use crate::mood::inference::LlamaServer;
 use crate::storage;
 use crate::types::AppConfig;
@@ -21,7 +20,7 @@ pub struct AppState {
     pub key_detector: KeyDetector,
     pub youtube_cache: Arc<Mutex<YouTubeCache>>,
     pub waveform_cache: Arc<Mutex<WaveformCache>>,
-    pub discovery_cancel: Arc<AtomicBool>,
+    pub discovery_cancel: Mutex<Arc<AtomicBool>>,
     /// Shared Rayon thread pool (4 threads) for CPU-bound audio operations
     /// (waveform computation, duration reading). Limits concurrent CPU work.
     pub cpu_pool: Arc<rayon::ThreadPool>,
@@ -32,13 +31,12 @@ pub struct AppState {
     /// Dirty flag for debounced config writes (flushed every 2s by background thread).
     pub config_dirty: Arc<AtomicBool>,
     /// Running llama-server instance for mood inference.
+    pub mood_lifecycle: tokio::sync::Mutex<()>,
     pub llama_server: Arc<tokio::sync::Mutex<Option<LlamaServer>>>,
     /// Running mood API HTTP server handle.
     pub mood_api_server: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// Ephemeral mood cache for pre-calculated page moods.
     pub mood_cache: Arc<Mutex<MoodCache>>,
-    /// MoodDirector for contextual mood transitions (sliding window + hysteresis).
-    pub mood_director: Arc<Mutex<MoodDirector>>,
 }
 
 impl AppState {
@@ -54,26 +52,20 @@ impl AppState {
                 .expect("Failed to build CPU thread pool"),
         );
         tracing::info!("CPU thread pool created (4 threads)");
-        let director_config = DirectorConfig {
-            entry_threshold: config.mood_entry_threshold,
-            exit_threshold: config.mood_exit_threshold,
-            min_dwell_pages: config.mood_dwell_pages,
-            window_size: config.mood_window_size,
-        };
         Self {
             config: Mutex::new(config),
             audio_engine: Arc::new(std::sync::OnceLock::new()),
             key_detector,
             youtube_cache: Arc::new(Mutex::new(youtube_cache)),
             waveform_cache: Arc::new(Mutex::new(WaveformCache::new_with_disk(50, cache_path))),
-            discovery_cancel: Arc::new(AtomicBool::new(false)),
+            discovery_cancel: Mutex::new(Arc::new(AtomicBool::new(false))),
             cpu_pool,
             profile_load_gen: Arc::new(AtomicU64::new(0)),
             config_dirty: Arc::new(AtomicBool::new(false)),
+            mood_lifecycle: tokio::sync::Mutex::new(()),
             llama_server: Arc::new(tokio::sync::Mutex::new(None)),
             mood_api_server: Arc::new(Mutex::new(None)),
             mood_cache: Arc::new(Mutex::new(MoodCache::new())),
-            mood_director: Arc::new(Mutex::new(MoodDirector::new(director_config))),
         }
     }
 
@@ -114,8 +106,11 @@ impl AppState {
             .config_dirty
             .swap(false, std::sync::atomic::Ordering::Relaxed)
         {
-            let config = self.get_config();
-            crate::storage::save_config(&config)?;
+            let config = self.config.lock().unwrap_or_else(|e| e.into_inner());
+            if let Err(error) = crate::storage::save_config(&config) {
+                self.schedule_config_save();
+                return Err(error);
+            }
         }
         Ok(())
     }

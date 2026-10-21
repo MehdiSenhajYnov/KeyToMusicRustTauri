@@ -42,223 +42,80 @@ const defaultConfig: AppConfig = {
   playlistImportEnabled: false,
   moodAiEnabled: false,
   moodApiPort: 8765,
-  moodEntryThreshold: 0.55,
-  moodExitThreshold: 0.25,
-  moodDwellPages: 2,
-  moodWindowSize: 5,
 };
+
+let confirmedConfig = { ...defaultConfig };
+let writeQueue = Promise.resolve();
+const revisions = new Map<keyof AppConfig, number>();
+
+function changeSettings(updates: Partial<AppConfig>, write: () => Promise<void>): Promise<void> {
+  const keys = Object.keys(updates) as (keyof AppConfig)[];
+  const requestRevisions = new Map(keys.map((key) => {
+    const revision = (revisions.get(key) ?? 0) + 1;
+    revisions.set(key, revision);
+    return [key, revision];
+  }));
+  useSettingsStore.setState((state) => ({ config: { ...state.config, ...updates } }));
+  const result = writeQueue.then(async () => {
+    try {
+      await write();
+      confirmedConfig = { ...confirmedConfig, ...updates };
+    } catch (error) {
+      // Revert only fields still owned by this request; keep subsequent edits visible.
+      const rollback = Object.fromEntries(keys.filter((key) => revisions.get(key) === requestRevisions.get(key))
+        .map((key) => [key, confirmedConfig[key]]));
+      useSettingsStore.setState((state) => ({ config: { ...state.config, ...rollback } }));
+      useToastStore.getState().addToast(`Could not save settings: ${error}`, "error");
+    }
+  });
+  writeQueue = result;
+  return result;
+}
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   config: defaultConfig,
   isInitialized: false,
-
-  setConfig: (config) => set({ config, isInitialized: true }),
-
+  setConfig: (config) => {
+    confirmedConfig = { ...config };
+    set({ config, isInitialized: true });
+  },
   loadConfig: async () => {
-    try {
-      const config = await commands.getConfig();
-      set({ config, isInitialized: true });
-    } catch (e) {
-      console.error("Failed to load config:", e);
-    }
+    try { get().setConfig(await commands.getConfig()); }
+    catch (error) { useToastStore.getState().addToast(`Could not load settings: ${error}`, "error"); }
   },
-
-  updateConfig: async (updates) => {
-    const prev = get().config;
-    set({ config: { ...prev, ...updates } });
-    try {
-      await commands.updateConfig(updates);
-    } catch (e) {
-      set({ config: prev });
-      useToastStore.getState().addToast("Failed to save settings", "error");
-    }
+  updateConfig: (updates) => changeSettings(updates, () => commands.updateConfig(updates)),
+  setMasterVolume: (volume) => changeSettings({ masterVolume: volume }, () => commands.setMasterVolume(volume)),
+  toggleAutoMomentum: () => get().updateConfig({ autoMomentum: !get().config.autoMomentum }),
+  toggleKeyDetection: () => {
+    const enabled = !get().config.keyDetectionEnabled;
+    return changeSettings({ keyDetectionEnabled: enabled }, () => commands.setKeyDetection(enabled));
   },
-
-  setMasterVolume: async (volume) => {
-    const prev = get().config.masterVolume;
-    set((state) => ({ config: { ...state.config, masterVolume: volume } }));
-    try {
-      await commands.setMasterVolume(volume);
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, masterVolume: prev } }));
-      useToastStore.getState().addToast("Failed to set master volume", "error");
-    }
-  },
-
-  toggleAutoMomentum: async () => {
-    const prev = get().config.autoMomentum;
-    const newValue = !prev;
-    set((state) => ({
-      config: { ...state.config, autoMomentum: newValue },
-    }));
-    try {
-      await commands.updateConfig({ autoMomentum: newValue });
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, autoMomentum: prev } }));
-      useToastStore.getState().addToast("Failed to toggle auto momentum", "error");
-    }
-  },
-
-  toggleKeyDetection: async () => {
-    const prev = get().config.keyDetectionEnabled;
-    const newValue = !prev;
-    set((state) => ({
-      config: { ...state.config, keyDetectionEnabled: newValue },
-    }));
-    try {
-      await commands.setKeyDetection(newValue);
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, keyDetectionEnabled: prev } }));
-      useToastStore.getState().addToast("Failed to toggle key detection", "error");
-    }
-  },
-
-  setStopAllShortcut: async (keys) => {
-    const prev = get().config.stopAllShortcut;
-    set((state) => ({
-      config: { ...state.config, stopAllShortcut: keys },
-    }));
-    try {
-      await commands.setStopAllShortcut(keys);
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, stopAllShortcut: prev } }));
-      useToastStore.getState().addToast("Failed to set stop all shortcut", "error");
-    }
-  },
-
-  setAutoMomentumShortcut: async (keys) => {
-    const prev = get().config.autoMomentumShortcut;
-    set((state) => ({
-      config: { ...state.config, autoMomentumShortcut: keys },
-    }));
-    try {
-      await commands.updateConfig({ autoMomentumShortcut: keys });
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, autoMomentumShortcut: prev } }));
-      useToastStore.getState().addToast("Failed to set auto momentum shortcut", "error");
-    }
-  },
-
-  setKeyDetectionShortcut: async (keys) => {
-    const prev = get().config.keyDetectionShortcut;
-    set((state) => ({
-      config: { ...state.config, keyDetectionShortcut: keys },
-    }));
-    try {
-      await commands.updateConfig({ keyDetectionShortcut: keys });
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, keyDetectionShortcut: prev } }));
-      useToastStore.getState().addToast("Failed to set key detection shortcut", "error");
-    }
-  },
-
-  setCrossfadeDuration: async (duration) => {
-    const prev = get().config.crossfadeDuration;
-    set((state) => ({
-      config: { ...state.config, crossfadeDuration: duration },
-    }));
-    try {
-      await commands.updateConfig({ crossfadeDuration: duration });
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, crossfadeDuration: prev } }));
-      useToastStore.getState().addToast("Failed to set crossfade duration", "error");
-    }
-  },
-
-  setKeyCooldown: async (cooldown) => {
-    const prev = get().config.keyCooldown;
-    set((state) => ({
-      config: { ...state.config, keyCooldown: cooldown },
-    }));
-    try {
-      await commands.setKeyCooldown(cooldown);
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, keyCooldown: prev } }));
-      useToastStore.getState().addToast("Failed to set key cooldown", "error");
-    }
-  },
-
-  setAudioDevice: async (device) => {
-    const prev = get().config.audioDevice;
-    set((state) => ({
-      config: { ...state.config, audioDevice: device },
-    }));
-    try {
-      await commands.setAudioDevice(device);
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, audioDevice: prev } }));
-      useToastStore.getState().addToast("Failed to set audio device", "error");
-    }
-  },
-
-  setChordWindowMs: async (ms) => {
-    const prev = get().config.chordWindowMs;
-    set((state) => ({
-      config: { ...state.config, chordWindowMs: ms },
-    }));
-    try {
-      await commands.updateConfig({ chordWindowMs: ms });
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, chordWindowMs: prev } }));
-      useToastStore.getState().addToast("Failed to set chord window", "error");
-    }
-  },
-
-  setMomentumModifier: async (modifier) => {
-    const prev = get().config.momentumModifier;
-    set((state) => ({
-      config: { ...state.config, momentumModifier: modifier },
-    }));
-    try {
-      await commands.updateConfig({ momentumModifier: modifier });
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, momentumModifier: prev } }));
-      useToastStore.getState().addToast("Failed to set momentum modifier", "error");
-    }
-  },
-
-  setPlaylistImportEnabled: async (enabled) => {
-    const prev = get().config.playlistImportEnabled;
-    set((state) => ({
-      config: { ...state.config, playlistImportEnabled: enabled },
-    }));
-    try {
-      await commands.updateConfig({ playlistImportEnabled: enabled });
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, playlistImportEnabled: prev } }));
-    }
-  },
-
+  setStopAllShortcut: (keys) => changeSettings({ stopAllShortcut: keys }, () => commands.setStopAllShortcut(keys)),
+  setAutoMomentumShortcut: (keys) => get().updateConfig({ autoMomentumShortcut: keys }),
+  setKeyDetectionShortcut: (keys) => get().updateConfig({ keyDetectionShortcut: keys }),
+  setCrossfadeDuration: (duration) => get().updateConfig({ crossfadeDuration: duration }),
+  setKeyCooldown: (cooldown) => changeSettings({ keyCooldown: cooldown }, () => commands.setKeyCooldown(cooldown)),
+  setAudioDevice: (device) => changeSettings({ audioDevice: device }, () => commands.setAudioDevice(device)),
+  setChordWindowMs: (ms) => get().updateConfig({ chordWindowMs: ms }),
+  setMomentumModifier: (modifier) => get().updateConfig({ momentumModifier: modifier }),
+  setPlaylistImportEnabled: (enabled) => get().updateConfig({ playlistImportEnabled: enabled }),
   setMoodAiEnabled: async (enabled) => {
-    const prev = get().config.moodAiEnabled;
-    set((state) => ({
-      config: { ...state.config, moodAiEnabled: enabled },
-    }));
-    try {
-      await commands.updateConfig({ moodAiEnabled: enabled });
-      await useMoodStore.getState().refreshServiceStatus();
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, moodAiEnabled: prev } }));
-      await useMoodStore.getState().refreshServiceStatus();
-      useToastStore.getState().addToast("Failed to toggle Mood AI", "error");
-    }
+    await get().updateConfig({ moodAiEnabled: enabled });
+    await useMoodStore.getState().refreshServiceStatus();
   },
-
   setMoodApiPort: async (port) => {
-    const prev = get().config.moodApiPort;
-    set((state) => ({
-      config: { ...state.config, moodApiPort: port },
-    }));
-    try {
-      await commands.updateConfig({ moodApiPort: port });
-      await useMoodStore.getState().refreshServiceStatus();
-    } catch (e) {
-      set((state) => ({ config: { ...state.config, moodApiPort: prev } }));
-      await useMoodStore.getState().refreshServiceStatus();
-      useToastStore.getState().addToast("Failed to set API port", "error");
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+      useToastStore.getState().addToast("API port must be between 1024 and 65535", "error");
+      return;
     }
+    await get().updateConfig({ moodApiPort: port });
+    await useMoodStore.getState().refreshServiceStatus();
   },
 }));
+
+export function flushSettings(): Promise<void> {
+  return writeQueue;
+}
 
 export const useMasterVolume = () => useSettingsStore(s => s.config.masterVolume);
 export const useCrossfadeDuration = () => useSettingsStore(s => s.config.crossfadeDuration);

@@ -4,23 +4,10 @@ use std::path::Path;
 use std::process::Stdio;
 use tokio::process::{Child, Command};
 
-use crate::mood::director::MoodScores;
+use crate::mood::shared::MoodScores;
 use crate::types::{BaseMood, MoodCategory, MoodIntensity, MoodTag};
 
 use super::llama_manager;
-
-/// Dimensional prompt: 8 base moods + 3 intensity levels.
-pub(crate) const MOOD_INTENSITY_PROMPT: &str = "\
-Analyze this manga page step by step:
-1. What are the characters expressing? (faces, posture, gestures)
-2. What feeling does the author want the reader to experience?
-3. Classify as ONE mood from the list below.
-4. Rate the intensity from 1 (low) to 3 (high).
-
-Moods: epic, tension, sadness, comedy, romance, horror, peaceful, mystery
-
-Reply format: mood intensity
-Example: tension 2";
 
 pub const ACTIVE_MOOD_MODEL_NAME: &str = "Qwen3-VL-4B-Thinking";
 
@@ -51,6 +38,7 @@ pub struct HybridResult {
 pub struct LlamaServer {
     process: Child,
     pub port: u16,
+    runtime: ResolvedRuntimeProfile,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -75,6 +63,12 @@ struct ResolvedRuntimeProfile {
     context_size: u32,
     parallel_slots: u32,
     gpu_layers: u32,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+struct VisionTokenProfile {
+    image_min_tokens: u32,
+    image_max_tokens: Option<u32>,
 }
 
 fn parse_env_u32(key: &str) -> Option<u32> {
@@ -106,6 +100,22 @@ fn derive_runtime_intent(options: &LlamaServerStartOptions) -> LlamaRuntimeInten
         LlamaRuntimeIntent::ResearchLarge
     } else {
         LlamaRuntimeIntent::AppDefault
+    }
+}
+
+fn vision_token_profile(model_path: &str, mmproj_path: &str) -> VisionTokenProfile {
+    let id = format!("{model_path}\n{mmproj_path}").to_ascii_lowercase();
+
+    if id.contains("gemma-4") || id.contains("gemma4") {
+        return VisionTokenProfile {
+            image_min_tokens: 280,
+            image_max_tokens: Some(280),
+        };
+    }
+
+    VisionTokenProfile {
+        image_min_tokens: 1024,
+        image_max_tokens: None,
     }
 }
 
@@ -314,16 +324,22 @@ impl LlamaServer {
         let port = find_free_port().map_err(|e| format!("Failed to find free port: {}", e))?;
         let stderr_file = std::fs::File::create(log_path)
             .map_err(|e| format!("Failed to create llama-server log: {}", e))?;
+        let vision_tokens = vision_token_profile(model_path, mmproj_path);
 
         tracing::info!(
-            "Starting llama-server: {:?} -m {} --mmproj {} --port {} -c {} -np {} -ngl {}",
+            "Starting llama-server: {:?} -m {} --mmproj {} --port {} -c {} -np {} -ngl {} --image-min-tokens {}{}",
             server_path,
             model_path,
             mmproj_path,
             port,
             runtime.context_size,
             runtime.parallel_slots,
-            runtime.gpu_layers
+            runtime.gpu_layers,
+            vision_tokens.image_min_tokens,
+            vision_tokens
+                .image_max_tokens
+                .map(|value| format!(" --image-max-tokens {}", value))
+                .unwrap_or_default()
         );
 
         let mut cmd = Command::new(server_path);
@@ -347,8 +363,13 @@ impl LlamaServer {
             "-ngl",
             &runtime.gpu_layers.to_string(),
             "--image-min-tokens",
-            "1024",
+            &vision_tokens.image_min_tokens.to_string(),
         ]);
+
+        if let Some(max_tokens) = vision_tokens.image_max_tokens {
+            let max_tokens = max_tokens.to_string();
+            cmd.args(["--image-max-tokens", max_tokens.as_str()]);
+        }
 
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -372,7 +393,11 @@ impl LlamaServer {
             lower_process_priority(pid);
         }
 
-        let mut server = Self { process, port };
+        let mut server = Self {
+            process,
+            port,
+            runtime,
+        };
         if let Err(err) = server.wait_for_ready(120).await {
             server.stop();
             return Err(err);
@@ -532,83 +557,6 @@ impl LlamaServer {
                 }
             }
         }
-    }
-
-    /// Analyze a manga page image and detect the mood + intensity (dimensional system).
-    pub async fn analyze_mood(&self, image_base64: &str) -> Result<MoodTag, String> {
-        tracing::info!(
-            "analyze_mood: sending image ({} bytes b64) to llama-server port {}",
-            image_base64.len(),
-            self.port
-        );
-
-        let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
-
-        let body = serde_json::json!({
-            "model": ACTIVE_MOOD_MODEL_NAME,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": format!("data:image/jpeg;base64,{}", image_base64)
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": MOOD_INTENSITY_PROMPT
-                        }
-                    ]
-                }
-            ],
-            "max_tokens": 8192,
-            "temperature": 0.0
-        });
-
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .build()
-            .map_err(|e| format!("HTTP client error: {}", e))?;
-        tracing::debug!("analyze_mood: POST {}", url);
-        let response: reqwest::Response =
-            client.post(&url).json(&body).send().await.map_err(|e| {
-                tracing::error!(
-                    "analyze_mood: failed to send request to llama-server: {}",
-                    e
-                );
-                format!("Failed to send to llama-server: {}", e)
-            })?;
-
-        tracing::debug!(
-            "analyze_mood: llama-server responded with HTTP {}",
-            response.status()
-        );
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text: String = response.text().await.unwrap_or_default();
-            tracing::error!("analyze_mood: llama-server error HTTP {}: {}", status, text);
-            return Err(format!("llama-server returned HTTP {}: {}", status, text));
-        }
-
-        let json: serde_json::Value = response.json::<serde_json::Value>().await.map_err(|e| {
-            tracing::error!("analyze_mood: failed to parse JSON response: {}", e);
-            format!("Failed to parse response: {}", e)
-        })?;
-
-        tracing::debug!(
-            "analyze_mood: raw response: {}",
-            serde_json::to_string(&json).unwrap_or_default()
-        );
-
-        let result = parse_mood_intensity_response(&json);
-        match &result {
-            Ok(tag) => tracing::info!("analyze_mood: detected {:?} {:?}", tag.mood, tag.intensity),
-            Err(e) => tracing::error!("analyze_mood: failed to parse mood from response: {}", e),
-        }
-        result
     }
 
     /// Pipeline V2 — Stage 1: VLM describes the page visually (no classification).
@@ -1773,6 +1721,14 @@ impl LlamaServer {
     pub fn is_running(&mut self) -> bool {
         matches!(self.process.try_wait(), Ok(None))
     }
+
+    pub fn resolved_runtime(&self) -> (u32, u32, u32) {
+        (
+            self.runtime.context_size,
+            self.runtime.parallel_slots,
+            self.runtime.gpu_layers,
+        )
+    }
 }
 
 pub(crate) fn reasoning_format_from_env() -> Option<String> {
@@ -1836,6 +1792,34 @@ mod tests {
         assert_eq!(
             derive_runtime_intent(&options),
             LlamaRuntimeIntent::BenchmarkPrimary
+        );
+    }
+
+    #[test]
+    fn gemma4_uses_fixed_image_token_budget() {
+        assert_eq!(
+            vision_token_profile(
+                "/tmp/unsloth_gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf",
+                "/tmp/unsloth_gemma-4-E4B-it-GGUF/mmproj-F16.gguf"
+            ),
+            VisionTokenProfile {
+                image_min_tokens: 280,
+                image_max_tokens: Some(280),
+            }
+        );
+    }
+
+    #[test]
+    fn qwen_keeps_legacy_image_token_budget() {
+        assert_eq!(
+            vision_token_profile(
+                "/tmp/Qwen3-VL-4B-Thinking/Qwen3VL-4B-Thinking-Q4_K_M.gguf",
+                "/tmp/Qwen3-VL-4B-Thinking/mmproj-Qwen3VL-4B-Thinking-F16.gguf"
+            ),
+            VisionTokenProfile {
+                image_min_tokens: 1024,
+                image_max_tokens: None,
+            }
         );
     }
 

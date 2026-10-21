@@ -1,13 +1,11 @@
 import { useState, useRef } from "react";
 import { useProfileStore } from "../../stores/profileStore";
-import { useSettingsStore } from "../../stores/settingsStore";
 import { useToastStore } from "../../stores/toastStore";
 import { useConfirmStore } from "../../stores/confirmStore";
 
 export function ProfileSelector() {
-  const { profiles, currentProfile, loadProfile, createProfile, deleteProfile, loadProfiles, renameProfile, duplicateProfile } =
+  const { profiles, currentProfile, loadProfile, createProfile, deleteProfile, renameProfile, duplicateProfile } =
     useProfileStore();
-  const { updateConfig } = useSettingsStore();
   const addToast = useToastStore((s) => s.addToast);
   const showConfirm = useConfirmStore((s) => s.confirm);
   const [isCreating, setIsCreating] = useState(false);
@@ -18,7 +16,6 @@ export function ProfileSelector() {
 
   const handleSelect = async (id: string) => {
     await loadProfile(id);
-    await updateConfig({ currentProfileId: id });
   };
 
   const handleCreate = async () => {
@@ -26,7 +23,6 @@ export function ProfileSelector() {
     const profile = await createProfile(newName.trim());
     if (profile) {
       await loadProfile(profile.id);
-      await updateConfig({ currentProfileId: profile.id });
       addToast(`Profile "${newName.trim()}" created`, "success");
     }
     setNewName("");
@@ -35,9 +31,7 @@ export function ProfileSelector() {
 
   const handleDelete = async (id: string, name: string) => {
     if (!await showConfirm(`Delete profile "${name}"?`)) return;
-    await deleteProfile(id);
-    await updateConfig({ currentProfileId: null });
-    await loadProfiles();
+    if (!await deleteProfile(id)) return;
     addToast(`Profile "${name}" deleted`, "info");
   };
 
@@ -60,7 +54,6 @@ export function ProfileSelector() {
     const newProfile = await duplicateProfile(id);
     if (newProfile) {
       await loadProfile(newProfile.id);
-      await updateConfig({ currentProfileId: newProfile.id });
       addToast(`Profile "${name}" duplicated`, "success");
     }
   };
@@ -71,10 +64,17 @@ export function ProfileSelector() {
         Profiles
       </h3>
 
-      <div className="space-y-1">
+      <div className="space-y-1 max-h-[30vh] overflow-y-auto">
         {profiles.map((p) => (
           <div
             key={p.id}
+            role="button" tabIndex={0} aria-pressed={currentProfile?.id === p.id}
+            onKeyDown={(event) => {
+              if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+                event.preventDefault();
+                void handleSelect(p.id);
+              }
+            }}
             className={`group flex items-center gap-1 px-2 py-1.5 rounded text-sm cursor-pointer transition-colors ${
               currentProfile?.id === p.id
                 ? "bg-accent-primary/20 text-accent-primary"
@@ -114,7 +114,7 @@ export function ProfileSelector() {
                 e.stopPropagation();
                 handleDuplicate(p.id, p.name);
               }}
-              className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-accent-primary w-5 h-5 flex items-center justify-center"
+              className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted hover:text-accent-primary w-5 h-5 flex items-center justify-center"
               title="Duplicate"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -126,7 +126,7 @@ export function ProfileSelector() {
                 e.stopPropagation();
                 handleDelete(p.id, p.name);
               }}
-              className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-accent-error w-5 h-5 flex items-center justify-center"
+              className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-text-muted hover:text-accent-error w-5 h-5 flex items-center justify-center"
               title="Delete"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

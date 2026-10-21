@@ -6,6 +6,8 @@
   "permissions": ["storage", "scripting", "activeTab"],
   "host_permissions": [
     "http://127.0.0.1/*",
+    "*://sushiscan.fr/*",
+    "*://*.sushiscan.fr/*",
     "*://sushiscan.net/*",
     "*://*.sushiscan.net/*",
     "*://sushiscan.com/*",
@@ -30,6 +32,8 @@
   "content_scripts": [
     {
       "matches": [
+        "*://sushiscan.fr/*",
+        "*://*.sushiscan.fr/*",
         "*://sushiscan.net/*",
         "*://*.sushiscan.net/*",
         "*://sushiscan.com/*",

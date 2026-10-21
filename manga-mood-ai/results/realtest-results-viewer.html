@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RealTest Results Viewer</title>
+  <style>
+    :root {
+      --bg: #0b0e13;
+      --surface: #131821;
+      --surface-muted: #181e28;
+      --line: #262d38;
+      --line-strong: #384252;
+      --inspector-width: 360px;
+      --inspector-min-width: 280px;
+      --workspace-resizer-size: 20px;
+      --text: #f3f4f6;
+      --muted: #98a2b3;
+      --strict: #47cd89;
+      --strict-soft: rgba(71, 205, 137, 0.16);
+      --relaxed: #60a5fa;
+      --relaxed-soft: rgba(96, 165, 250, 0.16);
+      --fail: #f97066;
+      --fail-soft: rgba(249, 112, 102, 0.16);
+      --font-body: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+      --font-head: "Aptos Display", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+      --font-mono: "Cascadia Code", "Fira Code", Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      overflow: hidden;
+    }
+
+    body {
+      padding: 12px;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+      color: inherit;
+    }
+
+    .app {
+      height: calc(100vh - 24px);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .topbar {
+      display: grid;
+      gap: 6px;
+      padding: 0 0 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .topbar-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .nav-group,
+    .tool-group {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+
+    .nav-link,
+    .nav-button {
+      color: var(--muted);
+      font-weight: 700;
+      border: 0;
+      background: transparent;
+      padding: 0;
+      min-height: 24px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .nav-button {
+      min-height: 30px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted);
+    }
+
+    .nav-button.is-active {
+      border-color: var(--line);
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+    }
+
+    .nav-link:hover,
+    .nav-link:focus-visible,
+    .nav-button:hover,
+    .nav-button:focus-visible {
+      color: var(--text);
+      outline: none;
+    }
+
+    .nav-button:hover,
+    .nav-button:focus-visible {
+      border-color: var(--line);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .status-line,
+    .note,
+    .count-line {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .meta-strip {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+
+    .meta-strip .note,
+    .meta-strip .status-line {
+      min-width: 0;
+    }
+
+    .scope-strip {
+      display: flex;
+      gap: 10px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+
+    .scope-control {
+      min-width: 170px;
+      max-width: 220px;
+    }
+
+    .status-line[data-tone="warn"] {
+      color: var(--fail);
+    }
+
+    .status-line[data-tone="ok"] {
+      color: var(--strict);
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+
+    .control {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .span-2 { grid-column: span 2; }
+    .span-3 { grid-column: span 3; }
+    .span-4 { grid-column: span 4; }
+    .span-6 { grid-column: span 6; }
+    .span-12 { grid-column: span 12; }
+
+    label {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    input,
+    select,
+    .button-primary,
+    .button-muted {
+      width: 100%;
+      min-width: 0;
+      height: 36px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface-muted);
+    }
+
+    input::placeholder {
+      color: #79879a;
+    }
+
+    .button-primary,
+    .button-muted {
+      cursor: pointer;
+    }
+
+    .button-primary {
+      background: #f3f4f6;
+      border-color: #f3f4f6;
+      color: #0f1418;
+      font-weight: 800;
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .drawer-row {
+      display: grid;
+      gap: 8px;
+    }
+
+    details.drawer,
+    details.inline {
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+    }
+
+    details.drawer:not([open]) {
+      display: none;
+    }
+
+    details.drawer > summary {
+      display: none;
+    }
+
+    details.inline summary {
+      cursor: pointer;
+      list-style: none;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+    }
+
+    details.inline summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .drawer-body {
+      display: grid;
+      gap: 10px;
+      padding-top: 0;
+    }
+
+    .drawer-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .drawer-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .drawer-actions .button-primary,
+    .drawer-actions .button-muted,
+    .drawer-actions .nav-button {
+      width: auto;
+    }
+
+    .workspace {
+      min-height: 0;
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      position: relative;
+    }
+
+    .workspace.is-resizing,
+    body.is-resizing {
+      cursor: col-resize;
+      user-select: none;
+    }
+
+    .results {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 10px;
+      padding-right: 8px;
+    }
+
+    .page-marker {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      font-family: var(--font-head);
+      line-height: 1.02;
+      letter-spacing: -0.03em;
+    }
+
+    h1 {
+      font-size: clamp(22px, 3vw, 30px);
+    }
+
+    h2 {
+      font-size: 20px;
+    }
+
+    h3 {
+      font-size: 16px;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .results-head {
+      display: none;
+    }
+
+    .results-title-row,
+    .results-subhead {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: end;
+      flex-wrap: wrap;
+    }
+
+    .results-copy {
+      display: grid;
+      gap: 6px;
+    }
+
+    .hero-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface-muted);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .summaryCards {
+      display: none;
+    }
+
+    .stat {
+      display: grid;
+      gap: 3px;
+      min-width: 92px;
+    }
+
+    .stat .label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .stat strong {
+      font-size: 22px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    .stat .detail {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+      max-width: 140px;
+    }
+
+    .sub-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .table-wrap,
+    .method-list {
+      min-height: 0;
+      overflow: auto;
+      border-top: 1px solid var(--line);
+      background: transparent;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #0f141c;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    tbody tr:nth-child(even) {
+      background: rgba(255, 255, 255, 0.01);
+    }
+
+    tbody tr[data-selected="true"] {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    tbody tr:hover {
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    tbody tr {
+      cursor: pointer;
+    }
+
+    tbody tr.spacer-row,
+    tbody tr.spacer-row:hover,
+    tbody tr.spacer-row:nth-child(even),
+    tbody tr.spacer-row[data-selected="true"] {
+      background: transparent;
+      cursor: default;
+    }
+
+    tbody tr.spacer-row td {
+      padding: 0;
+      border-bottom: 0;
+      height: 0;
+    }
+
+    .thumb {
+      width: 54px;
+      height: 74px;
+      object-fit: cover;
+      background: #090d12;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .pill,
+    .badge,
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .pill,
+    .tag {
+      background: var(--surface-muted);
+      color: var(--text);
+    }
+
+    .badge {
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border-color: transparent;
+    }
+
+    .status-strict {
+      background: var(--strict-soft);
+      color: #d9ffee;
+      border-color: rgba(71, 205, 137, 0.28);
+    }
+
+    .status-relaxed {
+      background: var(--relaxed-soft);
+      color: #dcebff;
+      border-color: rgba(96, 165, 250, 0.28);
+    }
+
+    .status-fail {
+      background: var(--fail-soft);
+      color: #ffd7d2;
+      border-color: rgba(249, 112, 102, 0.28);
+    }
+
+    .delta-better {
+      background: var(--strict-soft);
+      color: #d9ffee;
+      border-color: rgba(71, 205, 137, 0.28);
+    }
+
+    .delta-worse {
+      background: var(--fail-soft);
+      color: #ffd7d2;
+      border-color: rgba(249, 112, 102, 0.28);
+    }
+
+    .delta-same {
+      background: var(--surface-muted);
+      color: var(--muted);
+      border-color: var(--line);
+    }
+
+    .workspace-resizer {
+      flex: 0 0 var(--workspace-resizer-size);
+      position: relative;
+      min-height: 0;
+      cursor: col-resize;
+      touch-action: none;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      border: 0;
+      background: transparent;
+      padding: 0;
+    }
+
+    .workspace-resizer::before {
+      content: "";
+      width: 2px;
+      margin: 12px 0;
+      border-radius: 999px;
+      background: var(--line);
+      transition: background 120ms ease, box-shadow 120ms ease;
+      pointer-events: none;
+    }
+
+    .workspace-resizer:hover::before,
+    .workspace-resizer:focus-visible::before,
+    .workspace.is-resizing .workspace-resizer::before {
+      background: #7f8ca2;
+      box-shadow: 0 0 0 4px rgba(127, 140, 162, 0.12);
+    }
+
+    .workspace-resizer:focus-visible {
+      outline: none;
+    }
+
+    .workspace.is-resizing .workspace-resizer {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      right: calc(var(--drag-inspector-width, var(--inspector-width)) - (var(--workspace-resizer-size) / 2));
+      z-index: 4;
+    }
+
+    .inspector {
+      flex: 0 0 var(--inspector-width);
+      width: var(--inspector-width);
+      min-width: var(--inspector-min-width);
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 12px;
+      padding-left: 14px;
+    }
+
+    .workspace.is-resizing .results {
+      overflow: hidden;
+      contain: layout paint;
+    }
+
+    .workspace.is-resizing .inspector {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: var(--drag-inspector-width, var(--inspector-width));
+      z-index: 3;
+      background: var(--bg);
+      box-shadow: -1px 0 0 var(--line);
+      pointer-events: none;
+    }
+
+    .inspector-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .inspector-copy {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .preview-figure {
+      margin: 0;
+      min-height: 0;
+      overflow: hidden;
+      position: relative;
+      display: grid;
+      place-items: center;
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+    }
+
+    .preview-shell {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 10px;
+    }
+
+    .preview-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .preview-actions,
+    .preview-pills {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .preview-pill,
+    .info-button {
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface-muted);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .info-button {
+      width: 32px;
+      min-width: 32px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .preview-media {
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .preview-media img {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      user-select: none;
+    }
+
+    .info-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .info-popover {
+      position: absolute;
+      top: calc(100% + 10px);
+      right: 0;
+      z-index: 10;
+      width: min(420px, calc(100vw - 48px));
+      max-height: 320px;
+      overflow: auto;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--line-strong);
+      background: #171d27;
+      box-shadow: 0 18px 36px rgba(0, 0, 0, 0.34);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.55;
+      opacity: 0;
+      transform: translateY(-4px);
+      pointer-events: none;
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    .info-wrap:hover .info-popover,
+    .info-wrap:focus-within .info-popover {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .info-title {
+      margin: 0 0 10px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 800;
+      color: var(--muted);
+    }
+
+    .info-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .info-row {
+      display: grid;
+      grid-template-columns: 84px minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+      font-size: 12px;
+    }
+
+    .info-key {
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 10px;
+      font-weight: 800;
+      padding-top: 2px;
+    }
+
+    .info-value {
+      min-width: 0;
+      color: var(--text);
+      line-height: 1.5;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    .info-reasoning {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .placeholder,
+    .empty {
+      padding: 28px;
+      text-align: center;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .method-actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .method-actions button {
+      width: auto;
+      height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      font-size: 11px;
+    }
+
+    .method-list tr.method-a {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .method-list tr.method-b {
+      background: rgba(96, 165, 250, 0.08);
+    }
+
+    .catalog-search {
+      max-width: 380px;
+    }
+
+    .row-page {
+      display: grid;
+      gap: 4px;
+    }
+
+    .row-page-title {
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .row-page-meta {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    @media (max-width: 1180px) {
+      .workspace {
+        --inspector-width: 320px;
+      }
+
+      .controls-grid {
+        grid-template-columns: repeat(8, minmax(0, 1fr));
+      }
+
+      .drawer-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 960px) {
+      html,
+      body {
+        overflow: auto;
+      }
+
+      .app {
+        height: auto;
+        min-height: calc(100vh - 24px);
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      .workspace-resizer {
+        display: none;
+      }
+
+      .results {
+        padding-right: 0;
+      }
+
+      .inspector {
+        flex: none;
+        width: auto;
+        min-width: 0;
+        padding-left: 0;
+        border-left: 0;
+        border-top: 1px solid var(--line);
+        padding-top: 14px;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .controls-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .span-2,
+      .span-3,
+      .span-4,
+      .span-6,
+      .span-12 {
+        grid-column: span 2;
+      }
+
+      .topbar-row,
+      .meta-strip,
+      .scope-strip,
+      .results-title-row,
+      .results-subhead,
+      .inspector-head {
+        align-items: stretch;
+      }
+
+      .button-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="topbar-row">
+        <div class="nav-group">
+          <a href="/realtest" class="nav-link">Accueil</a>
+          <button id="focusCompareButton" class="nav-button is-active" type="button">Comparer</button>
+          <a href="/ground-truth" class="nav-link">Ground truth</a>
+        </div>
+        <div class="tool-group">
+          <button id="toggleSetupButton" class="nav-button" type="button">Configurer</button>
+          <button id="toggleFiltersButton" class="nav-button" type="button">Filtres</button>
+          <button id="toggleCatalogButton" class="nav-button" type="button">Catalogue</button>
+          <button id="toggleImportButton" class="nav-button" type="button">Import</button>
+        </div>
+      </div>
+
+      <div class="meta-strip">
+        <div id="catalogSummary" class="note">Aucune donnee.</div>
+        <div id="catalogStatus" class="status-line" data-tone="neutral">Chargement du catalogue...</div>
+      </div>
+
+      <div class="scope-strip">
+        <label class="scope-control">
+          Manga
+          <select id="seriesFilter">
+            <option value="all">Tous</option>
+          </select>
+        </label>
+        <label class="scope-control">
+          Chapitre
+          <select id="chapterFilter">
+            <option value="all">Tous</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="drawer-row">
+        <details id="setupDrawer" class="drawer">
+          <summary>Configurer</summary>
+          <div class="drawer-body">
+            <div class="drawer-title">Configurer la comparaison</div>
+            <div class="controls-grid">
+              <div class="control span-4">
+                <label>
+                  Methode A
+                  <select id="methodASelect">
+                    <option value="">Aucune</option>
+                  </select>
+                </label>
+              </div>
+              <div class="control span-4">
+                <label>
+                  Methode B
+                  <select id="methodBSelect">
+                    <option value="">Aucune</option>
+                  </select>
+                </label>
+              </div>
+              <div class="control span-4">
+                <div class="button-row">
+                  <button id="swapMethodsButton" class="button-primary" type="button">Swap A / B</button>
+                  <button id="clearCompareButton" class="button-muted" type="button">Vider B</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details id="filtersDrawer" class="drawer">
+          <summary>Filtres</summary>
+          <div class="drawer-body">
+            <div class="drawer-title">Filtrer et naviguer</div>
+            <div class="controls-grid">
+              <div class="control span-6">
+                <label>
+                  Recherche page
+                  <input id="pageSearchInput" type="search" placeholder="BL/1/24.jpg, sadness, mystery...">
+                </label>
+              </div>
+              <div class="control span-3">
+                <label>
+                  Etat A
+                  <select id="statusFilter">
+                    <option value="all">Tous</option>
+                    <option value="strict">Strict</option>
+                    <option value="relaxed">Relaxed</option>
+                    <option value="fail">Fail</option>
+                  </select>
+                </label>
+              </div>
+              <div class="control span-3">
+                <label>
+                  Delta A / B
+                  <select id="compareFilter">
+                    <option value="all">Tous</option>
+                    <option value="changed">Prediction differente</option>
+                    <option value="b_better">B meilleur</option>
+                    <option value="a_better">A meilleur</option>
+                    <option value="same">Equivalent</option>
+                  </select>
+                </label>
+              </div>
+              <div class="control span-3">
+                <label>
+                  Bench
+                  <select id="benchFilter">
+                    <option value="all">Tous</option>
+                    <option value="counted">Counted</option>
+                    <option value="skipped">Skipped</option>
+                  </select>
+                </label>
+              </div>
+              <div class="control span-3">
+                <label>
+                  Tri
+                  <select id="sortFilter">
+                    <option value="page">Page</option>
+                    <option value="delta">Delta</option>
+                    <option value="status">Etat A</option>
+                    <option value="confidence">Confidence</option>
+                  </select>
+                </label>
+              </div>
+              <div class="control span-12">
+                <div class="drawer-actions">
+                  <button id="resetFiltersButton" class="button-muted" type="button">Reset</button>
+                  <button id="firstDiffButton" class="button-primary" type="button">Premier delta</button>
+                  <button id="firstFailButton" class="button-muted" type="button">Premier fail A</button>
+                  <button id="exportCsvButton" class="button-muted" type="button">Exporter CSV</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <details id="catalogDrawer" class="drawer">
+          <summary>Catalogue</summary>
+          <div class="drawer-body">
+            <div class="drawer-title">Choisir les methodes</div>
+            <div class="drawer-actions">
+              <button id="reloadCatalogButton" class="nav-button" type="button">Reload</button>
+            </div>
+            <label class="catalog-search">
+              Recherche methode
+              <input id="methodSearchInput" type="search" placeholder="hold, selective, viterbi, q35...">
+            </label>
+            <div class="method-list">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Methode</th>
+                    <th>Pages</th>
+                    <th>Choix</th>
+                  </tr>
+                </thead>
+                <tbody id="methodsTableBody">
+                  <tr>
+                    <td colspan="3" class="empty">Aucune methode.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+
+        <details id="importDrawer" class="drawer">
+          <summary>Import manuel</summary>
+          <div class="drawer-body">
+            <div class="drawer-title">Importer des JSON</div>
+            <label>
+              Ground truth JSON
+              <input id="groundTruthInput" type="file" accept=".json,application/json">
+            </label>
+            <label>
+              Result maps JSON
+              <input id="methodFilesInput" type="file" accept=".json,application/json" multiple>
+            </label>
+            <label>
+              Image root
+              <input id="imageRootInput" type="text" value="../test-images/RealTest/" spellcheck="false">
+            </label>
+            <div class="note">Utile surtout pour charger un JSON externe hors mode serveur.</div>
+          </div>
+        </details>
+      </div>
+    </header>
+
+    <main id="workspace" class="workspace">
+      <section class="results">
+        <div class="results-head">
+          <div class="results-title-row">
+            <div class="results-copy">
+              <div class="page-marker">Compare</div>
+              <h1 id="heroTitle">Aucune methode A selectionnee</h1>
+              <p id="heroSubtitle">Choisis une methode A dans Configurer.</p>
+            </div>
+            <div id="heroChip" class="hero-chip">Comparer</div>
+          </div>
+          <div id="summaryCards" class="summaryCards">
+            <div class="stat">
+              <span class="label">Visible</span>
+              <strong>0</strong>
+              <span class="detail">Charge des donnees.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="results-subhead">
+          <div>
+            <div class="page-marker">Pages</div>
+            <h3 id="resultsTitle">Toutes les pages</h3>
+          </div>
+          <div id="resultsCountLine" class="count-line">0 page visible.</div>
+        </div>
+
+        <div id="resultsTableWrap" class="table-wrap">
+          <table>
+            <thead id="resultsTableHead">
+              <tr>
+                <th>Img</th>
+                <th>Page</th>
+                <th>GT</th>
+                <th>A</th>
+              </tr>
+            </thead>
+            <tbody id="resultsTableBody">
+              <tr>
+                <td colspan="4" class="empty">Charge des donnees.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div
+        id="workspaceResizer"
+        class="workspace-resizer"
+        role="separator"
+        aria-label="Redimensionner le panneau de previsualisation"
+        aria-orientation="vertical"
+        tabindex="0"
+      ></div>
+
+      <aside id="inspectorPanel" class="inspector">
+        <div class="inspector-head">
+          <div class="inspector-copy">
+            <div class="page-marker">Selection</div>
+            <h2 id="previewTitle">Aucune page selectionnee</h2>
+          </div>
+          <div id="previewCounter" class="count-line">0 / 0</div>
+        </div>
+
+        <figure id="previewFigure" class="preview-figure">
+          <div class="placeholder">Selectionne une ligne du tableau pour voir la page ici.</div>
+        </figure>
+
+        <details class="inline">
+          <summary>Toutes les methodes sur cette page</summary>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Methode</th>
+                  <th>Prediction</th>
+                  <th>Etat</th>
+                  <th>Int</th>
+                </tr>
+              </thead>
+              <tbody id="pageMethodTableBody">
+                <tr>
+                  <td colspan="4" class="empty">Aucune methode chargee.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </aside>
+    </main>
+  </div>
+
+  <script src="./realtest-results-viewer.js"></script>
+</body>
+</html>

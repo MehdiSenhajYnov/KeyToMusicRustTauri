@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashSet};
 
 use crate::mood::cache::CachedMoodSource;
-use crate::mood::director::{MoodScores, NarrativeRole};
 use crate::mood::inference::{extract_content, LlamaServer};
+use crate::mood::shared::{MoodScores, NarrativeRole};
 use crate::mood::winner::{self, ImageRole, PrepMode, RepairPlan};
 use crate::types::{MoodCategory, MoodIntensity};
 

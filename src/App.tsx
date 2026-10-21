@@ -1,3 +1,5 @@
+import { useKeyboardLayout } from "./hooks/useKeyboardLayout";
+import { isKeyDetectionSuspended } from "./utils/keyDetectionSuspension";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Header } from "./components/Layout/Header";
@@ -7,7 +9,7 @@ import { ToastContainer } from "./components/Toast/ToastContainer";
 import { ExportProgress } from "./components/Export/ExportProgress";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { useConfirmStore } from "./stores/confirmStore";
-import { useSettingsStore } from "./stores/settingsStore";
+import { useSettingsStore, flushSettings } from "./stores/settingsStore";
 import { useProfileStore } from "./stores/profileStore";
 import { useExportStore } from "./stores/exportStore";
 import { useRuntimeStore } from "./stores/runtimeStore";
@@ -19,39 +21,21 @@ import { useTextInputFocus } from "./hooks/useTextInputFocus";
 import { useUndoRedo } from "./hooks/useUndoRedo";
 import { useDiscovery } from "./hooks/useDiscovery";
 import { useDiscoveryPredownload } from "./hooks/useDiscoveryPredownload";
+import { useLoopPlayback } from "./hooks/useLoopPlayback";
 import { useMoodPlayback } from "./hooks/useMoodPlayback";
 import { isTextInput } from "./utils/inputHelpers";
-import { getSoundFilePath } from "./utils/soundHelpers";
-import { useWaveformStore } from "./stores/waveformStore";
-
-/** Preload waveforms for the initial profile (mirrors profileStore's preloadWaveforms). */
-import type { Sound } from "./types";
-function preloadWaveformsForProfile(sounds: Sound[]) {
-  const entries = sounds
-    .filter((s) => s.duration > 0)
-    .map((s) => ({ path: getSoundFilePath(s), numPoints: 100 }));
-  if (entries.length === 0) return;
-  const wfStore = useWaveformStore.getState();
-  const needed = entries.filter((e) => !wfStore.waveforms.has(e.path));
-  if (needed.length === 0) return;
-  wfStore.setLoading(true);
-  commands.getWaveformsBatch(needed).then((result) => {
-    useWaveformStore.getState().setBatch(result);
-  }).catch(() => {
-    useWaveformStore.getState().setLoading(false);
-  });
-}
-
 // Code splitting: lazy load modals and heavy components not needed at startup
 const SettingsModal = lazy(() => import("./components/Settings/SettingsModal").then(m => ({ default: m.SettingsModal })));
 const FileNotFoundModal = lazy(() => import("./components/Errors/FileNotFoundModal").then(m => ({ default: m.FileNotFoundModal })));
 const KeyboardShortcutsModal = lazy(() => import("./components/common/KeyboardShortcutsModal").then(m => ({ default: m.KeyboardShortcutsModal })));
 
 function App() {
+  useKeyboardLayout();
   const [showSettings, setShowSettings] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const currentProfileId = useSettingsStore((s) => s.config.currentProfileId);
-  const { loadProfile, currentProfile } = useProfileStore();
+  const currentProfile = useProfileStore((s) => s.currentProfile);
+  const [startupError, setStartupError] = useState<string | null>(null);
+  const [startupAttempt, setStartupAttempt] = useState(0);
   const inputRuntime = useRuntimeStore((s) => s.inputRuntime);
   const addToast = useToastStore((s) => s.addToast);
   const backgroundSetupPromptedRef = useRef(false);
@@ -63,12 +47,13 @@ function App() {
   useUndoRedo();
   useDiscovery();
   useDiscoveryPredownload();
+  useLoopPlayback();
   useMoodPlayback();
 
   // Global shortcut: ? or F1 to toggle help modal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isTextInput(e.target)) return;
+      if (e.defaultPrevented || isKeyDetectionSuspended() || isTextInput(e.target)) return;
       if (e.key === "?" || e.key === "F1") {
         e.preventDefault();
         setShowHelp((prev) => !prev);
@@ -80,7 +65,10 @@ function App() {
 
   // Unified initial state load — replaces 3 sequential IPC calls with 1
   useEffect(() => {
+    let cancelled = false;
+    setStartupError(null);
     commands.getInitialState().then((state) => {
+      if (cancelled) return;
       useSettingsStore.getState().setConfig(state.config);
       useRuntimeStore.getState().setInputRuntime(state.inputRuntime);
       useProfileStore.setState({
@@ -88,11 +76,16 @@ function App() {
         currentProfile: state.currentProfile,
         isLoading: false,
       });
+      if (state.profileError) useToastStore.getState().addToast(`Could not restore the last profile: ${state.profileError}`, "error");
+      if (state.currentProfile) void useProfileStore.getState().prepareProfile(state.currentProfile);
     }).catch((e) => {
+      if (cancelled) return;
+      setStartupError(String(e));
       console.error("Failed to load initial state:", e);
       useProfileStore.setState({ isLoading: false });
     });
-  }, []);
+    return () => { cancelled = true; };
+  }, [startupAttempt]);
 
   useEffect(() => {
     if (!inputRuntime.isLinux || !inputRuntime.isWayland) return;
@@ -137,19 +130,6 @@ function App() {
     };
   }, [inputRuntime.isLinux, inputRuntime.isWayland, addToast]);
 
-  // Load current profile when ID changes (after initial load, e.g. user switches profile)
-  const initialLoadDone = useRef(false);
-  useEffect(() => {
-    if (!initialLoadDone.current) {
-      // Skip the first trigger — initial profile was loaded by getInitialState
-      initialLoadDone.current = true;
-      return;
-    }
-    if (currentProfileId) {
-      loadProfile(currentProfileId);
-    }
-  }, [currentProfileId, loadProfile]);
-
   // Sync profile bindings to backend for multi-key chord detection
   // Deduplicate keyCodes since multi-track bindings share the same keyCode
   useEffect(() => {
@@ -161,69 +141,31 @@ function App() {
     }
   }, [currentProfile?.keyBindings]);
 
-  // Fire-and-forget background tasks after initial profile is available
-  const bgTasksDone = useRef(false);
-  useEffect(() => {
-    if (currentProfile && !bgTasksDone.current) {
-      bgTasksDone.current = true;
-      // Trigger verification + duration computation + waveform preload
-      // These are handled inside profileStore's loadProfile flow,
-      // but for the initial load via getInitialState we need to trigger them manually
-      commands.verifyProfileSounds(currentProfile).catch(() => {});
-
-      // Compute missing durations and preload waveforms (same flow as loadProfile)
-      const entries = currentProfile.sounds
-        .filter((s) => s.duration === 0)
-        .map((s) => ({
-          soundId: s.id,
-          filePath: getSoundFilePath(s),
-          needsDuration: true,
-        }));
-      if (entries.length > 0) {
-        commands.preloadProfileSounds(entries).then((durations) => {
-          if (Object.keys(durations).length > 0) {
-            useProfileStore.setState((state) => {
-              if (!state.currentProfile) return state;
-              return {
-                currentProfile: {
-                  ...state.currentProfile,
-                  sounds: state.currentProfile.sounds.map((s) =>
-                    durations[s.id] != null ? { ...s, duration: durations[s.id] } : s
-                  ),
-                },
-              };
-            });
-          }
-          // Preload waveforms for sounds that now have durations
-          const updatedProfile = useProfileStore.getState().currentProfile;
-          if (updatedProfile) {
-            preloadWaveformsForProfile(updatedProfile.sounds);
-          }
-        }).catch(() => {});
-      } else {
-        // All durations already known — just preload waveforms
-        preloadWaveformsForProfile(currentProfile.sounds);
-      }
-    }
-  }, [currentProfile]);
-
   // Intercept window close during export
   const forceCloseRef = useRef(false);
   useEffect(() => {
     const appWindow = getCurrentWindow();
     const unlisten = appWindow.onCloseRequested(async (event) => {
       if (forceCloseRef.current) return;
+      event.preventDefault();
       if (useExportStore.getState().isExporting) {
-        event.preventDefault();
         const confirmed = await useConfirmStore.getState().confirm(
-          "An export is in progress. If you close, the export will be cancelled and the file will be incomplete. Close anyway?"
+          "An export is in progress. Cancel it and close the application?"
         );
-        if (confirmed) {
-          await commands.cleanupExportTemp();
-          forceCloseRef.current = true;
-          appWindow.close();
+        if (!confirmed) return;
+        try { await useExportStore.getState().cancelExport(); } catch (error) {
+          useToastStore.getState().addToast(`Could not cancel export: ${error}`, "error");
+          return;
         }
       }
+      if (!await useProfileStore.getState().saveCurrentProfile()) return;
+      await flushSettings();
+      try { await commands.flushConfig(); } catch (error) {
+        useToastStore.getState().addToast(`Could not save settings before closing: ${error}`, "error");
+        return;
+      }
+      forceCloseRef.current = true;
+      await appWindow.close();
     });
     return () => {
       unlisten.then((f) => f());
@@ -236,7 +178,13 @@ function App() {
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <MainContent />
+        {startupError ? (
+          <main className="flex-1 flex flex-col items-center justify-center gap-4 p-8" role="alert">
+            <h1 className="text-lg font-semibold">Could not open your library</h1>
+            <p className="text-text-secondary text-sm max-w-lg break-words">{startupError}</p>
+            <button className="px-4 py-2 rounded bg-accent-primary text-white" onClick={() => setStartupAttempt((n) => n + 1)}>Retry</button>
+          </main>
+        ) : <MainContent />}
       </div>
 
       <Suspense fallback={null}>

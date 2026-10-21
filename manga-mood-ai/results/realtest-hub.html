@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RealTest Hub</title>
+  <style>
+    :root {
+      --bg: #0b0e13;
+      --surface: #131821;
+      --surface-muted: #181e28;
+      --line: #262d38;
+      --line-strong: #384252;
+      --text: #f3f4f6;
+      --muted: #98a2b3;
+      --font-body: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+      --font-head: "Aptos Display", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+      --font-mono: "Cascadia Code", "Fira Code", Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+    }
+
+    body {
+      min-height: 100vh;
+      padding: 14px;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .shell {
+      max-width: 1080px;
+      margin: 0 auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .topbar {
+      padding: 0 0 12px;
+      display: grid;
+      gap: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .topbar-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .nav {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .nav-link {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .nav-link:hover,
+    .nav-link:focus-visible {
+      color: var(--text);
+      outline: none;
+    }
+
+    .page-marker {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    h1,
+    h2 {
+      margin: 0;
+      font-family: var(--font-head);
+      line-height: 1.02;
+      letter-spacing: -0.03em;
+    }
+
+    h1 {
+      font-size: clamp(28px, 4vw, 42px);
+    }
+
+    h2 {
+      font-size: 20px;
+    }
+
+    p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+      max-width: 720px;
+    }
+
+    .intro {
+      display: grid;
+      gap: 8px;
+    }
+
+    .views {
+      display: grid;
+      gap: 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .view-link {
+      display: grid;
+      grid-template-columns: 54px minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 18px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .view-link:hover {
+      border-bottom-color: var(--line-strong);
+    }
+
+    .view-index {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-weight: 800;
+    }
+
+    .view-copy {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .view-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface-muted);
+      color: var(--text);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .meta {
+      display: grid;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      color: var(--text);
+    }
+
+    @media (max-width: 760px) {
+      .view-link {
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="topbar-row">
+        <nav class="nav">
+          <a class="nav-link" href="/realtest">Accueil</a>
+          <a class="nav-link" href="/compare">Comparer</a>
+          <a class="nav-link" href="/ground-truth">Ground truth</a>
+        </nav>
+        <div class="page-marker">Hub local</div>
+      </div>
+
+      <div class="intro">
+        <h1>RealTest</h1>
+        <p>Un seul mini serveur pour comparer les méthodes, relire le ground truth, et rester dans le même environnement de debug sans ouvrir des pages dispersées.</p>
+      </div>
+    </header>
+
+    <main class="views">
+      <a class="view-link" href="/compare">
+        <div class="view-index">01</div>
+        <div class="view-copy">
+          <h2>Comparer les méthodes</h2>
+          <p>Choisis A/B, filtre les pages, inspecte les deltas, et regarde les prédictions sur une planche précise.</p>
+        </div>
+        <div class="view-action">Ouvrir</div>
+      </a>
+
+      <a class="view-link" href="/ground-truth">
+        <div class="view-index">02</div>
+        <div class="view-copy">
+          <h2>Parcourir le ground truth</h2>
+          <p>Feuillette les planches annotées, filtre par manga ou mood, et corrige localement une annotation avant export.</p>
+        </div>
+        <div class="view-action">Ouvrir</div>
+      </a>
+    </main>
+
+    <section class="meta">
+      <div>Entrée recommandée: <span class="mono">http://127.0.0.1:8765/realtest</span></div>
+      <div>Serveur: <span class="mono">python scripts/serve-realtest-viewer.py</span></div>
+    </section>
+  </div>
+</body>
+</html>

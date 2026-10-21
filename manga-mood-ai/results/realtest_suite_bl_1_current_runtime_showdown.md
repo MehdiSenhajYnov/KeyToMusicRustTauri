@@ -1,0 +1,7 @@
+| experiment | model | quantization | runtime | prep | decision | strict | delta_strict | relaxed | delta_relaxed | intensity | errors | avg_window_s | vram_mib | weights_mib |
+|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| t4b_wide5_selective_hold | Qwen3-VL-4B-Thinking | llm=Q4_K_M + mmproj=F16 | prod_8192x1 [c=8192 np=1 ngl=48] | legacy_672_jpeg | wide5_selective_repair_hold | 59/70 | +0 | 68/70 | +0 | 24/70 | 0 | 11.1 | 6565 | 3180 |
+| t4b_wide5_selective_hold_runtime_legacy_12288 | Qwen3-VL-4B-Thinking | llm=Q4_K_M + mmproj=F16 | primary_12288x1 [c=12288 np=1 ngl=48] | legacy_672_jpeg | wide5_selective_repair_hold | 59/70 | +0 | 68/70 | +0 | 24/70 | 0 | 11.6 | 6863 | 3180 |
+| t4b_wide5_selective_hold_runtime_ctx_16384 | Qwen3-VL-4B-Thinking | llm=Q4_K_M + mmproj=F16 | ctx_16384x1 [c=16384 np=1 ngl=48] | legacy_672_jpeg | wide5_selective_repair_hold | 59/70 | +0 | 68/70 | +0 | 24/70 | 0 | 11.9 | 7279 | 3180 |
+| t4b_wide5_selective_hold_runtime_parallel_2 | Qwen3-VL-4B-Thinking | llm=Q4_K_M + mmproj=F16 | parallel_12288x2 [c=12288 np=2 ngl=48] | legacy_672_jpeg | wide5_selective_repair_hold | 46/70 | -13 | 66/70 | -2 | 40/70 | 11 | 7.8 | 7005 | 3180 |
+| t4b_wide5_selective_hold_runtime_gpu_64 | Qwen3-VL-4B-Thinking | llm=Q4_K_M + mmproj=F16 | gpu_12288x1_ngl64 [c=12288 np=1 ngl=64] | legacy_672_jpeg | wide5_selective_repair_hold | 59/70 | +0 | 68/70 | +0 | 24/70 | 0 | 13.3 | 7250 | 3180 |

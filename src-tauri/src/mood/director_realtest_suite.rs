@@ -1,9 +1,10 @@
-use super::super::*;
 use crate::mood::inference::{
     self, extract_content, LlamaRuntimeIntent, LlamaServer, LlamaServerStartOptions,
 };
+use crate::mood::shared::MoodScores;
+use crate::mood::soundtrack_commit::{SoundtrackCommitter, SoundtrackObservation};
 use crate::mood::winner;
-use crate::types::BaseMood;
+use crate::types::{BaseMood, MoodIntensity};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -19,6 +20,17 @@ const RESET: &str = "\x1b[0m";
 const MOOD_GRAMMAR: &str = r#"root ::= mood " " intensity
 mood ::= "epic" | "tension" | "sadness" | "comedy" | "romance" | "horror" | "peaceful" | "mystery"
 intensity ::= "1" | "2" | "3""#;
+
+const TRANSITION_MATRIX: [[f32; 8]; 8] = [
+    [1.0, 0.7, 0.5, 0.2, 0.2, 0.4, 0.3, 0.3],
+    [0.9, 1.0, 0.5, 0.3, 0.3, 0.7, 0.4, 0.8],
+    [0.3, 0.5, 1.0, 0.2, 0.6, 0.3, 0.7, 0.4],
+    [0.3, 0.3, 0.3, 1.0, 0.7, 0.2, 0.8, 0.3],
+    [0.2, 0.3, 0.6, 0.7, 1.0, 0.2, 0.8, 0.3],
+    [0.4, 0.8, 0.5, 0.1, 0.1, 1.0, 0.3, 0.7],
+    [0.4, 0.4, 0.6, 0.8, 0.7, 0.3, 1.0, 0.5],
+    [0.4, 0.8, 0.4, 0.3, 0.3, 0.7, 0.4, 1.0],
+];
 
 #[derive(Clone)]
 struct PageEntry {
@@ -95,9 +107,8 @@ impl ContextWindow {
     }
 
     fn indices(self, center: usize, total: usize) -> Vec<usize> {
-        let clamp = |idx: isize| -> usize {
-            idx.clamp(0, total.saturating_sub(1) as isize) as usize
-        };
+        let clamp =
+            |idx: isize| -> usize { idx.clamp(0, total.saturating_sub(1) as isize) as usize };
         match self {
             Self::Triad => vec![
                 clamp(center as isize - 1),
@@ -161,12 +172,15 @@ struct RuntimeProfile {
     intent: LlamaRuntimeIntent,
     context_size: u32,
     parallel_slots: u32,
+    gpu_layers: Option<u32>,
 }
 
 #[derive(Clone, Debug)]
 struct ModelCandidate {
     key: &'static str,
     label: &'static str,
+    quantization: &'static str,
+    weights_mib: Option<u64>,
     model_path: PathBuf,
     mmproj_path: PathBuf,
     reasoning_format: Option<&'static str>,
@@ -234,16 +248,33 @@ struct MoodBreakdown {
 }
 
 #[derive(Clone, Debug, Serialize)]
+struct PageResult {
+    rel_path: String,
+    chapter: String,
+    page_number: u32,
+    expected_mood: String,
+    expected_intensity: u8,
+    predicted_mood: String,
+    predicted_intensity: u8,
+    verdict: String,
+    intensity_match: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
 struct ExperimentSummary {
     id: String,
     label: String,
     source: String,
     status: String,
     model: String,
+    quantization: String,
     prep: String,
     decision: String,
     sampling: String,
     runtime: String,
+    runtime_context_size: Option<u32>,
+    runtime_parallel_slots: Option<u32>,
+    runtime_gpu_layers: Option<u32>,
     strict: u32,
     relaxed: u32,
     intensity: u32,
@@ -254,9 +285,11 @@ struct ExperimentSummary {
     min_window_s: f64,
     max_window_s: f64,
     vram_mib: Option<u32>,
+    weights_mib: Option<u64>,
     cache_path: Option<String>,
     notes: String,
     per_mood: BTreeMap<String, MoodBreakdown>,
+    page_results: Vec<PageResult>,
 }
 
 pub async fn run() {
@@ -299,7 +332,7 @@ pub async fn run() {
         skipped
     );
     println!(
-        "  {DIM}Default mode now runs the comparison suite. Use REALTEST_EXPERIMENTS=id1,id2 to narrow it or REALTEST_PAGE_LIMIT=N for a smoke run.{RESET}\n"
+        "  {DIM}Default mode now runs the comparison suite. Use REALTEST_EXPERIMENTS=id1,id2, REALTEST_EXPERIMENTS=current_runtime_showdown, or REALTEST_EXPERIMENTS=current_method_showdown to narrow it, and REALTEST_PAGE_LIMIT=N for a smoke run.{RESET}\n"
     );
     if strict_prod_timing {
         println!(
@@ -331,15 +364,9 @@ pub async fn run() {
                 summaries.push(summary);
             }
             ExperimentMode::Live(live) => {
-                let summary = run_live_experiment(
-                    &spec,
-                    live,
-                    &models,
-                    &chapters,
-                    &results_dir,
-                    verbose,
-                )
-                .await;
+                let summary =
+                    run_live_experiment(&spec, live, &models, &chapters, &results_dir, verbose)
+                        .await;
                 print_experiment_summary(&summary);
                 summaries.push(summary);
             }
@@ -364,7 +391,14 @@ pub async fn run() {
         .unwrap_or_else(|| summaries[0].clone());
 
     print_comparison_table(&summaries, &baseline);
-    save_suite_summary(&results_dir, &realtest_dir, &summaries, &baseline);
+    print_page_comparison(&summaries, &chapters);
+    save_suite_summary(
+        &results_dir,
+        &realtest_dir,
+        &summaries,
+        &baseline,
+        &chapters,
+    );
 }
 
 fn load_realtest_dataset() -> (BTreeMap<String, Vec<PageEntry>>, u32, Option<usize>) {
@@ -419,6 +453,11 @@ fn load_realtest_dataset() -> (BTreeMap<String, Vec<PageEntry>>, u32, Option<usi
 
         let raw_bytes = std::fs::read(&full_path)
             .unwrap_or_else(|e| panic!("Failed to read {}: {}", rel_path, e));
+        if let Err(err) = image::load_from_memory(&raw_bytes) {
+            tracing::warn!("Skipping unreadable RealTest page {}: {}", rel_path, err);
+            skipped += 1;
+            continue;
+        }
         let mood = entry["mood"].as_str().unwrap().to_string();
         let intensity = entry["intensity"].as_u64().unwrap() as u8;
         let confidence = entry["confidence"].as_f64().unwrap();
@@ -464,6 +503,72 @@ fn strict_prod_timing_enabled() -> bool {
     env_truthy("REALTEST_STRICT_PROD_TIMING")
 }
 
+fn file_size_bytes(path: &Path) -> Option<u64> {
+    std::fs::metadata(path).ok().map(|meta| meta.len())
+}
+
+fn combined_file_size_mib(model_path: &Path, mmproj_path: &Path) -> Option<u64> {
+    let total_bytes = file_size_bytes(model_path)? + file_size_bytes(mmproj_path)?;
+    Some(total_bytes.div_ceil(1024 * 1024))
+}
+
+fn push_unique_selection(selected: &mut Vec<String>, ids: impl IntoIterator<Item = &'static str>) {
+    for id in ids {
+        if !selected.iter().any(|value| value == id) {
+            selected.push(id.to_string());
+        }
+    }
+}
+
+fn selection_output_slug() -> Option<String> {
+    if let Some(explicit) = std::env::var("REALTEST_OUTPUT_SLUG")
+        .ok()
+        .map(|value| sanitize_slug(&value))
+        .filter(|value| !value.is_empty())
+    {
+        return Some(explicit);
+    }
+
+    let raw = std::env::var("REALTEST_EXPERIMENTS").ok()?;
+    let values = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+
+    if values.contains(&"current_quantization_showdown") {
+        return Some("current_quantization_showdown".to_string());
+    }
+    if values.contains(&"current_runtime_showdown") {
+        return Some("current_runtime_showdown".to_string());
+    }
+
+    None
+}
+
+fn requested_runtime_label(runtime: RuntimeProfile) -> String {
+    let gpu_layers = runtime
+        .gpu_layers
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "auto".to_string());
+    format!(
+        "{} [c={} np={} ngl={}]",
+        runtime.name, runtime.context_size, runtime.parallel_slots, gpu_layers
+    )
+}
+
+fn resolved_runtime_label(
+    name: &str,
+    context_size: u32,
+    parallel_slots: u32,
+    gpu_layers: u32,
+) -> String {
+    format!(
+        "{} [c={} np={} ngl={}]",
+        name, context_size, parallel_slots, gpu_layers
+    )
+}
+
 fn build_suite() -> Vec<ExperimentSpec> {
     const GREEDY_HIST: SamplingConfig = SamplingConfig {
         name: "greedy_hist",
@@ -486,19 +591,76 @@ fn build_suite() -> Vec<ExperimentSpec> {
         intent: LlamaRuntimeIntent::BenchmarkPrimary,
         context_size: 12288,
         parallel_slots: 1,
+        gpu_layers: None,
     };
     const RUNTIME_QUIET: RuntimeProfile = RuntimeProfile {
         name: "quiet_8192x1",
         intent: LlamaRuntimeIntent::BenchmarkPrimary,
         context_size: 8192,
         parallel_slots: 1,
+        gpu_layers: None,
+    };
+    const RUNTIME_PROD_CURRENT: RuntimeProfile = RuntimeProfile {
+        name: "prod_8192x1",
+        intent: LlamaRuntimeIntent::BenchmarkPrimary,
+        context_size: 8192,
+        parallel_slots: 1,
+        gpu_layers: None,
+    };
+    const RUNTIME_CONTEXT_16384: RuntimeProfile = RuntimeProfile {
+        name: "ctx_16384x1",
+        intent: LlamaRuntimeIntent::BenchmarkPrimary,
+        context_size: 16384,
+        parallel_slots: 1,
+        gpu_layers: None,
+    };
+    const RUNTIME_PARALLEL_2: RuntimeProfile = RuntimeProfile {
+        name: "parallel_12288x2",
+        intent: LlamaRuntimeIntent::BenchmarkPrimary,
+        context_size: 12288,
+        parallel_slots: 2,
+        gpu_layers: None,
+    };
+    const RUNTIME_GPU_32: RuntimeProfile = RuntimeProfile {
+        name: "gpu_12288x1_ngl32",
+        intent: LlamaRuntimeIntent::BenchmarkPrimary,
+        context_size: 12288,
+        parallel_slots: 1,
+        gpu_layers: Some(32),
+    };
+    const RUNTIME_GPU_64: RuntimeProfile = RuntimeProfile {
+        name: "gpu_12288x1_ngl64",
+        intent: LlamaRuntimeIntent::BenchmarkPrimary,
+        context_size: 12288,
+        parallel_slots: 1,
+        gpu_layers: Some(64),
     };
     const RUNTIME_RESEARCH: RuntimeProfile = RuntimeProfile {
         name: "research_32768x4",
         intent: LlamaRuntimeIntent::ResearchLarge,
         context_size: 32768,
         parallel_slots: 4,
+        gpu_layers: None,
     };
+
+    let current_method_runtime =
+        |id: &'static str, label: &'static str, notes: &'static str, runtime: RuntimeProfile| {
+            ExperimentSpec {
+                id,
+                label,
+                notes,
+                mode: ExperimentMode::Live(LiveExperiment {
+                    model_key: "thinking4b",
+                    prep: ImagePrepMode::Legacy672Jpeg,
+                    context: ContextWindow::Wide5,
+                    prompt_style: PromptStyle::WideSequenceWindow,
+                    sampling: GREEDY_HIST,
+                    runtime,
+                    grammar: false,
+                    decision: DecisionStrategy::Wide5SelectiveRepairHold,
+                }),
+            }
+        };
 
     vec![
         ExperimentSpec {
@@ -507,6 +669,14 @@ fn build_suite() -> Vec<ExperimentSpec> {
             notes: "Historical BL/1 winner loaded from cache, no rerun.",
             mode: ExperimentMode::Cached {
                 cache_filename: "realtest_v12_thinking4b.json",
+            },
+        },
+        ExperimentSpec {
+            id: "production_cache",
+            label: "Current production cache",
+            notes: "Current production cumulative result map loaded from cache, no rerun.",
+            mode: ExperimentMode::Cached {
+                cache_filename: "realtests/realtest_suite_t4b_wide5_selective_hold.json",
             },
         },
         ExperimentSpec {
@@ -709,17 +879,164 @@ fn build_suite() -> Vec<ExperimentSpec> {
                 decision: DecisionStrategy::Wide5SelectiveRepair,
             }),
         },
+        current_method_runtime(
+            "t4b_wide5_selective_hold",
+            "Qwen3-VL-4B-Thinking wide-5 selective repair + action hold",
+            "Wide-5 selective repairs plus a zero-cost delayed epic->tension switch when a short tension bridge is sandwiched between confirmed epic runs. This benchmark baseline is explicitly aligned with the current production runtime (`8192x1`, GPU layers auto).",
+            RUNTIME_PROD_CURRENT,
+        ),
+        current_method_runtime(
+            "t4b_wide5_selective_hold_runtime_prod_8192",
+            "Qwen3-VL-4B-Thinking current-runtime showdown: prod 8192x1",
+            "Exact current winner method on the app-default BenchmarkPrimary runtime sizing (`8192x1`, GPU layers auto). Kept as an explicit prod-runtime alias even though the main benchmark baseline is now aligned to the same runtime.",
+            RUNTIME_PROD_CURRENT,
+        ),
+        current_method_runtime(
+            "t4b_wide5_selective_hold_runtime_legacy_12288",
+            "Qwen3-VL-4B-Thinking current-runtime showdown: legacy benchmark 12288x1",
+            "Exact current winner method on the pre-alignment benchmark runtime (`12288x1`, GPU layers auto). Kept as a legacy reference after aligning the main benchmark baseline to production.",
+            RUNTIME_DEFAULT,
+        ),
+        current_method_runtime(
+            "t4b_wide5_selective_hold_runtime_ctx_16384",
+            "Qwen3-VL-4B-Thinking current-runtime showdown: larger context 16384x1",
+            "Exact current winner method, same model and prompt stack, but with a larger single-slot context budget to test whether wide-5 gains anything from extra KV headroom.",
+            RUNTIME_CONTEXT_16384,
+        ),
+        current_method_runtime(
+            "t4b_wide5_selective_hold_runtime_parallel_2",
+            "Qwen3-VL-4B-Thinking current-runtime showdown: parallel 12288x2",
+            "Exact current winner method, same model and prompt stack, but with two llama-server slots to measure any stability/latency/VRAM tradeoff on a sequential benchmark workload.",
+            RUNTIME_PARALLEL_2,
+        ),
+        current_method_runtime(
+            "t4b_wide5_selective_hold_runtime_gpu_32",
+            "Qwen3-VL-4B-Thinking current-runtime showdown: lower GPU offload ngl32",
+            "Exact current winner method, same model and prompt stack, but with an explicit lower GPU offload (`-ngl 32`) to approximate a weaker-memory profile.",
+            RUNTIME_GPU_32,
+        ),
+        current_method_runtime(
+            "t4b_wide5_selective_hold_runtime_gpu_64",
+            "Qwen3-VL-4B-Thinking current-runtime showdown: higher GPU offload ngl64",
+            "Exact current winner method, same model and prompt stack, but with a more aggressive explicit GPU offload (`-ngl 64`) to test whether the RTX 4070 stack benefits from pushing more layers on GPU than the current auto heuristic.",
+            RUNTIME_GPU_64,
+        ),
         ExperimentSpec {
-            id: "t4b_wide5_selective_hold",
-            label: "Qwen3-VL-4B-Thinking wide-5 selective repair + action hold",
-            notes: "Wide-5 selective repairs plus a zero-cost delayed epic->tension switch when a short tension bridge is sandwiched between confirmed epic runs.",
+            id: "t4b_wide5_selective_hold_mmproj_q8_0",
+            label: "Qwen3-VL-4B-Thinking current-method quant showdown: Q4_K_M + mmproj Q8_0",
+            notes: "Current production methodology applied unchanged to the official Qwen3-VL-4B-Thinking GGUF files, keeping the LLM at Q4_K_M while quantizing the official mmproj from F16 to Q8_0. This is the only lighter official stack variant around the current baseline.",
             mode: ExperimentMode::Live(LiveExperiment {
-                model_key: "thinking4b",
+                model_key: "thinking4b_mmproj_q8_0",
                 prep: ImagePrepMode::Legacy672Jpeg,
                 context: ContextWindow::Wide5,
                 prompt_style: PromptStyle::WideSequenceWindow,
                 sampling: GREEDY_HIST,
-                runtime: RUNTIME_DEFAULT,
+                runtime: RUNTIME_PROD_CURRENT,
+                grammar: false,
+                decision: DecisionStrategy::Wide5SelectiveRepairHold,
+            }),
+        },
+        ExperimentSpec {
+            id: "t4b_wide5_selective_hold_q8_0",
+            label: "Qwen3-VL-4B-Thinking current-method quant showdown: Q8_0",
+            notes: "Current production methodology applied unchanged to the official Qwen3-VL-4B-Thinking Q8_0 GGUF, with the same prompt backbone, preprocessing, selective repairs, and action bridge hold as production.",
+            mode: ExperimentMode::Live(LiveExperiment {
+                model_key: "thinking4b_q8_0",
+                prep: ImagePrepMode::Legacy672Jpeg,
+                context: ContextWindow::Wide5,
+                prompt_style: PromptStyle::WideSequenceWindow,
+                sampling: GREEDY_HIST,
+                runtime: RUNTIME_PROD_CURRENT,
+                grammar: false,
+                decision: DecisionStrategy::Wide5SelectiveRepairHold,
+            }),
+        },
+        ExperimentSpec {
+            id: "t4b_wide5_selective_hold_f16",
+            label: "Qwen3-VL-4B-Thinking current-method quant showdown: F16",
+            notes: "Current production methodology applied unchanged to the official Qwen3-VL-4B-Thinking F16 GGUF, with the same prompt backbone, preprocessing, selective repairs, and action bridge hold as production.",
+            mode: ExperimentMode::Live(LiveExperiment {
+                model_key: "thinking4b_f16",
+                prep: ImagePrepMode::Legacy672Jpeg,
+                context: ContextWindow::Wide5,
+                prompt_style: PromptStyle::WideSequenceWindow,
+                sampling: GREEDY_HIST,
+                runtime: RUNTIME_PROD_CURRENT,
+                grammar: false,
+                decision: DecisionStrategy::Wide5SelectiveRepairHold,
+            }),
+        },
+        ExperimentSpec {
+            id: "q35_9b_wide5_selective_hold",
+            label: "Qwen3.5-9B current-method showdown",
+            notes: "Current production methodology applied unchanged to Qwen3.5-9B: same wide-5 prompt backbone, same legacy 672 JPEG prep, same selective repairs, same action bridge hold.",
+            mode: ExperimentMode::Live(LiveExperiment {
+                model_key: "qwen35_9b",
+                prep: ImagePrepMode::Legacy672Jpeg,
+                context: ContextWindow::Wide5,
+                prompt_style: PromptStyle::WideSequenceWindow,
+                sampling: GREEDY_HIST,
+                runtime: RUNTIME_PROD_CURRENT,
+                grammar: false,
+                decision: DecisionStrategy::Wide5SelectiveRepairHold,
+            }),
+        },
+        ExperimentSpec {
+            id: "q35_4b_wide5_selective_hold",
+            label: "Qwen3.5-4B current-method showdown",
+            notes: "Current production methodology applied unchanged to Qwen3.5-4B: same wide-5 prompt backbone, same legacy 672 JPEG prep, same selective repairs, same action bridge hold.",
+            mode: ExperimentMode::Live(LiveExperiment {
+                model_key: "qwen35_4b",
+                prep: ImagePrepMode::Legacy672Jpeg,
+                context: ContextWindow::Wide5,
+                prompt_style: PromptStyle::WideSequenceWindow,
+                sampling: GREEDY_HIST,
+                runtime: RUNTIME_PROD_CURRENT,
+                grammar: false,
+                decision: DecisionStrategy::Wide5SelectiveRepairHold,
+            }),
+        },
+        ExperimentSpec {
+            id: "q35_4b_opus_v2_wide5_selective_hold",
+            label: "Qwen3.5-4B Opus-distilled v2 current-method showdown",
+            notes: "Current production methodology applied unchanged to Jackrong's Qwen3.5-4B Claude-4.6-Opus distilled v2 GGUF.",
+            mode: ExperimentMode::Live(LiveExperiment {
+                model_key: "q35_4b_opus_v2",
+                prep: ImagePrepMode::Legacy672Jpeg,
+                context: ContextWindow::Wide5,
+                prompt_style: PromptStyle::WideSequenceWindow,
+                sampling: GREEDY_HIST,
+                runtime: RUNTIME_PROD_CURRENT,
+                grammar: false,
+                decision: DecisionStrategy::Wide5SelectiveRepairHold,
+            }),
+        },
+        ExperimentSpec {
+            id: "gemma4_e4b_wide5_selective_hold",
+            label: "Gemma 4 E4B current-method showdown",
+            notes: "Current production methodology applied unchanged to Gemma 4 E4B: same wide-5 prompt backbone, same legacy 672 JPEG prep, same selective repairs, same action bridge hold.",
+            mode: ExperimentMode::Live(LiveExperiment {
+                model_key: "gemma4_e4b",
+                prep: ImagePrepMode::Legacy672Jpeg,
+                context: ContextWindow::Wide5,
+                prompt_style: PromptStyle::WideSequenceWindow,
+                sampling: GREEDY_HIST,
+                runtime: RUNTIME_PROD_CURRENT,
+                grammar: false,
+                decision: DecisionStrategy::Wide5SelectiveRepairHold,
+            }),
+        },
+        ExperimentSpec {
+            id: "gemma4_e2b_wide5_selective_hold",
+            label: "Gemma 4 E2B current-method showdown",
+            notes: "Current production methodology applied unchanged to Gemma 4 E2B: same wide-5 prompt backbone, same legacy 672 JPEG prep, same selective repairs, same action bridge hold.",
+            mode: ExperimentMode::Live(LiveExperiment {
+                model_key: "gemma4_e2b",
+                prep: ImagePrepMode::Legacy672Jpeg,
+                context: ContextWindow::Wide5,
+                prompt_style: PromptStyle::WideSequenceWindow,
+                sampling: GREEDY_HIST,
+                runtime: RUNTIME_PROD_CURRENT,
                 grammar: false,
                 decision: DecisionStrategy::Wide5SelectiveRepairHold,
             }),
@@ -956,11 +1273,70 @@ fn parse_experiment_filter() -> Vec<&'static str> {
     let Some(raw) = std::env::var("REALTEST_EXPERIMENTS").ok() else {
         return Vec::new();
     };
-    let selected: Vec<String> = raw
+    let mut selected: Vec<String> = raw
         .split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
+
+    if selected
+        .iter()
+        .any(|value| value == "current_method_showdown")
+    {
+        selected.retain(|value| value != "current_method_showdown");
+        push_unique_selection(
+            &mut selected,
+            [
+                "t4b_wide5_selective_hold",
+                "q35_9b_wide5_selective_hold",
+                "q35_4b_wide5_selective_hold",
+                "q35_4b_opus_v2_wide5_selective_hold",
+            ],
+        );
+    }
+    if selected.iter().any(|value| value == "gemma4_showdown") {
+        selected.retain(|value| value != "gemma4_showdown");
+        push_unique_selection(
+            &mut selected,
+            [
+                "t4b_wide5_selective_hold",
+                "gemma4_e4b_wide5_selective_hold",
+                "gemma4_e2b_wide5_selective_hold",
+            ],
+        );
+    }
+    if selected
+        .iter()
+        .any(|value| value == "current_runtime_showdown")
+    {
+        selected.retain(|value| value != "current_runtime_showdown");
+        push_unique_selection(
+            &mut selected,
+            [
+                "t4b_wide5_selective_hold",
+                "t4b_wide5_selective_hold_runtime_legacy_12288",
+                "t4b_wide5_selective_hold_runtime_ctx_16384",
+                "t4b_wide5_selective_hold_runtime_parallel_2",
+                "t4b_wide5_selective_hold_runtime_gpu_32",
+                "t4b_wide5_selective_hold_runtime_gpu_64",
+            ],
+        );
+    }
+    if selected
+        .iter()
+        .any(|value| value == "current_quantization_showdown")
+    {
+        selected.retain(|value| value != "current_quantization_showdown");
+        push_unique_selection(
+            &mut selected,
+            [
+                "t4b_wide5_selective_hold",
+                "t4b_wide5_selective_hold_mmproj_q8_0",
+                "t4b_wide5_selective_hold_q8_0",
+                "t4b_wide5_selective_hold_f16",
+            ],
+        );
+    }
     build_suite()
         .into_iter()
         .map(|spec| spec.id)
@@ -975,13 +1351,39 @@ fn discover_models(models_dir: &Path) -> HashMap<&'static str, ModelCandidate> {
         (
             "thinking4b",
             "Qwen3-VL-4B-Thinking",
+            "llm=Q4_K_M + mmproj=F16",
             models_dir.join("Qwen3-VL-4B-Thinking/Qwen3VL-4B-Thinking-Q4_K_M.gguf"),
+            models_dir.join("Qwen3-VL-4B-Thinking/mmproj-Qwen3VL-4B-Thinking-F16.gguf"),
+            Some("none"),
+        ),
+        (
+            "thinking4b_mmproj_q8_0",
+            "Qwen3-VL-4B-Thinking",
+            "llm=Q4_K_M + mmproj=Q8_0",
+            models_dir.join("Qwen3-VL-4B-Thinking/Qwen3VL-4B-Thinking-Q4_K_M.gguf"),
+            models_dir.join("Qwen3-VL-4B-Thinking/mmproj-Qwen3VL-4B-Thinking-Q8_0.gguf"),
+            Some("none"),
+        ),
+        (
+            "thinking4b_q8_0",
+            "Qwen3-VL-4B-Thinking",
+            "llm=Q8_0 + mmproj=F16",
+            models_dir.join("Qwen3-VL-4B-Thinking/Qwen3VL-4B-Thinking-Q8_0.gguf"),
+            models_dir.join("Qwen3-VL-4B-Thinking/mmproj-Qwen3VL-4B-Thinking-F16.gguf"),
+            Some("none"),
+        ),
+        (
+            "thinking4b_f16",
+            "Qwen3-VL-4B-Thinking",
+            "llm=F16 + mmproj=F16",
+            models_dir.join("Qwen3-VL-4B-Thinking/Qwen3VL-4B-Thinking-F16.gguf"),
             models_dir.join("Qwen3-VL-4B-Thinking/mmproj-Qwen3VL-4B-Thinking-F16.gguf"),
             Some("none"),
         ),
         (
             "qwen35_4b",
             "Qwen3.5-4B",
+            "llm=Q4_K_M + mmproj=F16",
             models_dir.join("unsloth_Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_K_M.gguf"),
             models_dir.join("unsloth_Qwen3.5-4B-GGUF/mmproj-F16.gguf"),
             Some("none"),
@@ -989,6 +1391,7 @@ fn discover_models(models_dir: &Path) -> HashMap<&'static str, ModelCandidate> {
         (
             "qwen35_9b",
             "Qwen3.5-9B",
+            "llm=Q4_K_M + mmproj=F16",
             models_dir.join("unsloth_Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf"),
             models_dir.join("unsloth_Qwen3.5-9B-GGUF/mmproj-F16.gguf"),
             Some("none"),
@@ -996,19 +1399,22 @@ fn discover_models(models_dir: &Path) -> HashMap<&'static str, ModelCandidate> {
         (
             "qwen3vl_2b",
             "Qwen3-VL-2B-Instruct",
+            "llm=Q4_K_M + mmproj=F16",
             models_dir.join("Qwen_Qwen3-VL-2B-Instruct-GGUF/Qwen3VL-2B-Instruct-Q4_K_M.gguf"),
             models_dir.join("Qwen_Qwen3-VL-2B-Instruct-GGUF/mmproj-Qwen3VL-2B-Instruct-F16.gguf"),
             Some("none"),
         ),
     ];
 
-    for (key, label, model_path, mmproj_path, reasoning_format) in known {
+    for (key, label, quantization, model_path, mmproj_path, reasoning_format) in known {
         if model_path.exists() && mmproj_path.exists() {
             models.insert(
                 key,
                 ModelCandidate {
                     key,
                     label,
+                    quantization,
+                    weights_mib: combined_file_size_mib(&model_path, &mmproj_path),
                     model_path,
                     mmproj_path,
                     reasoning_format,
@@ -1021,12 +1427,71 @@ fn discover_models(models_dir: &Path) -> HashMap<&'static str, ModelCandidate> {
         models.insert(winner::WINNER_MODEL_KEY, thinking4b);
     }
 
+    maybe_insert_known_model(
+        &mut models,
+        "q35_4b_opus_v2",
+        "Qwen3.5-4B Claude-4.6-Opus Distilled v2",
+        "llm=Q4_K_M + mmproj=BF16/F16",
+        &[
+            models_dir.join(
+                "Jackrong_Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-v2-GGUF/Qwen3.5-4B.Q4_K_M.gguf",
+            ),
+            models_dir.join(
+                "Jackrong_Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-v2-GGUF/Qwen3.5-4B-Q4_K_M.gguf",
+            ),
+        ],
+        &[
+            models_dir.join(
+                "Jackrong_Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-v2-GGUF/mmproj-BF16.gguf",
+            ),
+            models_dir.join(
+                "Jackrong_Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-v2-GGUF/mmproj-F16.gguf",
+            ),
+        ],
+        Some("none"),
+    );
+    maybe_insert_known_model(
+        &mut models,
+        "gemma4_e4b",
+        "Gemma 4 E4B",
+        "llm=Q4_K_M + mmproj=F16",
+        &[
+            models_dir.join("unsloth_gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf"),
+            models_dir.join("gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf"),
+            models_dir.join("Gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf"),
+        ],
+        &[
+            models_dir.join("unsloth_gemma-4-E4B-it-GGUF/mmproj-F16.gguf"),
+            models_dir.join("gemma-4-E4B-it-GGUF/mmproj-F16.gguf"),
+            models_dir.join("Gemma-4-E4B-it-GGUF/mmproj-F16.gguf"),
+        ],
+        None,
+    );
+    maybe_insert_known_model(
+        &mut models,
+        "gemma4_e2b",
+        "Gemma 4 E2B",
+        "llm=Q4_K_M + mmproj=F16",
+        &[
+            models_dir.join("unsloth_gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf"),
+            models_dir.join("gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf"),
+            models_dir.join("Gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf"),
+        ],
+        &[
+            models_dir.join("unsloth_gemma-4-E2B-it-GGUF/mmproj-F16.gguf"),
+            models_dir.join("gemma-4-E2B-it-GGUF/mmproj-F16.gguf"),
+            models_dir.join("Gemma-4-E2B-it-GGUF/mmproj-F16.gguf"),
+        ],
+        None,
+    );
+
     maybe_insert_env_model(
         &mut models,
         "glm41v_9b",
         "GLM-4.1V-9B-Thinking",
         "REALTEST_MODEL_GLM41V_9B",
         "REALTEST_MMPROJ_GLM41V_9B",
+        "env",
         Some("none"),
     );
     maybe_insert_env_model(
@@ -1035,10 +1500,68 @@ fn discover_models(models_dir: &Path) -> HashMap<&'static str, ModelCandidate> {
         "MangaLMM",
         "REALTEST_MODEL_MANGALMM",
         "REALTEST_MMPROJ_MANGALMM",
+        "env",
         Some("none"),
+    );
+    maybe_insert_env_model(
+        &mut models,
+        "q35_4b_opus_v2",
+        "Qwen3.5-4B Claude-4.6-Opus Distilled v2",
+        "REALTEST_MODEL_Q35_4B_OPUS_V2",
+        "REALTEST_MMPROJ_Q35_4B_OPUS_V2",
+        "env",
+        Some("none"),
+    );
+    maybe_insert_env_model(
+        &mut models,
+        "gemma4_e4b",
+        "Gemma 4 E4B",
+        "REALTEST_MODEL_GEMMA4_E4B",
+        "REALTEST_MMPROJ_GEMMA4_E4B",
+        "env",
+        None,
+    );
+    maybe_insert_env_model(
+        &mut models,
+        "gemma4_e2b",
+        "Gemma 4 E2B",
+        "REALTEST_MODEL_GEMMA4_E2B",
+        "REALTEST_MMPROJ_GEMMA4_E2B",
+        "env",
+        None,
     );
 
     models
+}
+
+fn maybe_insert_known_model(
+    models: &mut HashMap<&'static str, ModelCandidate>,
+    key: &'static str,
+    label: &'static str,
+    quantization: &'static str,
+    model_candidates: &[PathBuf],
+    mmproj_candidates: &[PathBuf],
+    reasoning_format: Option<&'static str>,
+) {
+    let Some(model_path) = model_candidates.iter().find(|path| path.exists()).cloned() else {
+        return;
+    };
+    let Some(mmproj_path) = mmproj_candidates.iter().find(|path| path.exists()).cloned() else {
+        return;
+    };
+
+    models.insert(
+        key,
+        ModelCandidate {
+            key,
+            label,
+            quantization,
+            weights_mib: combined_file_size_mib(&model_path, &mmproj_path),
+            model_path,
+            mmproj_path,
+            reasoning_format,
+        },
+    );
 }
 
 fn maybe_insert_env_model(
@@ -1047,6 +1570,7 @@ fn maybe_insert_env_model(
     label: &'static str,
     model_env: &str,
     mmproj_env: &str,
+    quantization: &'static str,
     reasoning_format: Option<&'static str>,
 ) {
     let Some(model_path) = std::env::var(model_env).ok().map(PathBuf::from) else {
@@ -1061,6 +1585,8 @@ fn maybe_insert_env_model(
             ModelCandidate {
                 key,
                 label,
+                quantization,
+                weights_mib: combined_file_size_mib(&model_path, &mmproj_path),
                 model_path,
                 mmproj_path,
                 reasoning_format,
@@ -1084,10 +1610,14 @@ async fn run_live_experiment(
             source: "live".to_string(),
             status: "skipped".to_string(),
             model: live.model_key.to_string(),
+            quantization: "unavailable".to_string(),
             prep: live.prep.as_str().to_string(),
             decision: live.decision.as_str().to_string(),
             sampling: live.sampling.name.to_string(),
-            runtime: live.runtime.name.to_string(),
+            runtime: requested_runtime_label(live.runtime),
+            runtime_context_size: Some(live.runtime.context_size),
+            runtime_parallel_slots: Some(live.runtime.parallel_slots),
+            runtime_gpu_layers: live.runtime.gpu_layers,
             strict: 0,
             relaxed: 0,
             intensity: 0,
@@ -1098,21 +1628,24 @@ async fn run_live_experiment(
             min_window_s: 0.0,
             max_window_s: 0.0,
             vram_mib: None,
+            weights_mib: None,
             cache_path: None,
             notes: format!("Model '{}' not found locally", live.model_key),
             per_mood: BTreeMap::new(),
+            page_results: Vec::new(),
         };
     };
 
     println!(
-        "  {CYAN}{BOLD}▶ {}{RESET} {DIM}[{} | {} | {} | {} | {} | {}]{RESET}",
+        "  {CYAN}{BOLD}▶ {}{RESET} {DIM}[{} | {} | {} | {} | {} | {} | {}]{RESET}",
         spec.label,
         model.label,
+        model.quantization,
         live.prep.as_str(),
         live.context.as_str(),
         live.prompt_style.as_str(),
         live.decision.as_str(),
-        live.runtime.name
+        requested_runtime_label(live.runtime)
     );
 
     let server_result = LlamaServer::start_with_options(
@@ -1122,7 +1655,7 @@ async fn run_live_experiment(
             reasoning_format: model.reasoning_format.map(str::to_string),
             context_size: Some(live.runtime.context_size),
             parallel_slots: Some(live.runtime.parallel_slots),
-            gpu_layers: None,
+            gpu_layers: live.runtime.gpu_layers,
             runtime_intent: Some(live.runtime.intent),
         },
     )
@@ -1137,10 +1670,14 @@ async fn run_live_experiment(
                 source: "live".to_string(),
                 status: "error".to_string(),
                 model: model.label.to_string(),
+                quantization: model.quantization.to_string(),
                 prep: live.prep.as_str().to_string(),
                 decision: live.decision.as_str().to_string(),
                 sampling: live.sampling.name.to_string(),
-                runtime: live.runtime.name.to_string(),
+                runtime: requested_runtime_label(live.runtime),
+                runtime_context_size: Some(live.runtime.context_size),
+                runtime_parallel_slots: Some(live.runtime.parallel_slots),
+                runtime_gpu_layers: live.runtime.gpu_layers,
                 strict: 0,
                 relaxed: 0,
                 intensity: 0,
@@ -1151,12 +1688,16 @@ async fn run_live_experiment(
                 min_window_s: 0.0,
                 max_window_s: 0.0,
                 vram_mib: None,
+                weights_mib: model.weights_mib,
                 cache_path: None,
                 notes: format!("Server start failed: {err}"),
                 per_mood: BTreeMap::new(),
+                page_results: Vec::new(),
             };
         }
     };
+    let (resolved_context_size, resolved_parallel_slots, resolved_gpu_layers) =
+        server.resolved_runtime();
 
     let server_url = format!("http://127.0.0.1:{}/v1/chat/completions", server.port);
     let http = reqwest::Client::builder()
@@ -1170,6 +1711,17 @@ async fn run_live_experiment(
     let mut second_pass_pages = 0u32;
     let mut extra_time_total = 0.0f64;
     let mut result_map = HashMap::new();
+    let cache_path = results_dir.join(format!("realtest_suite_{}.json", spec.id));
+
+    // Reset stale outputs before starting so interrupted reruns don't keep an old completed map.
+    persist_result_map_snapshot(
+        results_dir,
+        spec.id,
+        chapters,
+        &cache_path,
+        &result_map,
+        true,
+    );
 
     for (chapter_index, (chapter_key, pages)) in chapters.iter().enumerate() {
         println!(
@@ -1186,6 +1738,8 @@ async fn run_live_experiment(
             pages,
             live,
             &mut encoding_cache,
+            &mut result_map,
+            &cache_path,
             verbose,
         )
         .await;
@@ -1201,8 +1755,7 @@ async fn run_live_experiment(
             DecisionStrategy::Majority => aggregate_majority(pages, &vote_stats),
             DecisionStrategy::CenterOverride => aggregate_center_override(pages, &vote_stats),
             DecisionStrategy::Direct => aggregate_direct(&window_results, pages.len()),
-            DecisionStrategy::Wide5SelectiveRepair
-            | DecisionStrategy::Wide5SelectiveRepairHold => {
+            DecisionStrategy::Wide5SelectiveRepair | DecisionStrategy::Wide5SelectiveRepairHold => {
                 aggregate_majority(pages, &vote_stats)
             }
             DecisionStrategy::Viterbi
@@ -1254,15 +1807,8 @@ async fn run_live_experiment(
                         .await
                     }
                     DecisionStrategy::OcrReprompt => {
-                        reprompt_with_ocr(
-                            &http,
-                            &server_url,
-                            pages,
-                            idx,
-                            live,
-                            &mut encoding_cache,
-                        )
-                        .await
+                        reprompt_with_ocr(&http, &server_url, pages, idx, live, &mut encoding_cache)
+                            .await
                     }
                     DecisionStrategy::SemanticReprompt => {
                         reprompt_semantic_axes(
@@ -1291,15 +1837,28 @@ async fn run_live_experiment(
                 format!("{}:{}", prediction.mood, prediction.intensity),
             );
         }
+
+        // Replace provisional center-page checkpoints with finalized chapter predictions.
+        persist_result_map_snapshot(
+            results_dir,
+            spec.id,
+            chapters,
+            &cache_path,
+            &result_map,
+            true,
+        );
     }
 
     server.stop();
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-    let cache_path = results_dir.join(format!("realtest_suite_{}.json", spec.id));
-    let _ = std::fs::write(
+    persist_result_map_snapshot(
+        results_dir,
+        spec.id,
+        chapters,
         &cache_path,
-        serde_json::to_string_pretty(&result_map).unwrap(),
+        &result_map,
+        true,
     );
 
     let effective_durations = if extra_time_total > 0.0 {
@@ -1311,23 +1870,34 @@ async fn run_live_experiment(
         window_durations.clone()
     };
 
-    build_summary_from_results(
+    let mut summary = build_summary_from_results(
         spec,
         "live",
         model.label,
+        model.quantization,
         live.prep.as_str(),
         live.decision.as_str(),
         live.sampling.name,
-        live.runtime.name,
+        &resolved_runtime_label(
+            live.runtime.name,
+            resolved_context_size,
+            resolved_parallel_slots,
+            resolved_gpu_layers,
+        ),
         total_errors,
         second_pass_pages,
         &effective_durations,
         vram_mib,
+        model.weights_mib,
         &cache_path,
         spec.notes,
         chapters,
         &result_map,
-    )
+    );
+    summary.runtime_context_size = Some(resolved_context_size);
+    summary.runtime_parallel_slots = Some(resolved_parallel_slots);
+    summary.runtime_gpu_layers = Some(resolved_gpu_layers);
+    summary
 }
 
 fn run_derived_experiment(
@@ -1355,10 +1925,14 @@ fn run_derived_experiment(
                 source: "derived".to_string(),
                 status: "skipped".to_string(),
                 model: "ensemble".to_string(),
+                quantization: "mixed".to_string(),
                 prep: "mixed".to_string(),
                 decision: "weighted_viterbi".to_string(),
                 sampling: "derived".to_string(),
                 runtime: "sequential_ensemble".to_string(),
+                runtime_context_size: None,
+                runtime_parallel_slots: None,
+                runtime_gpu_layers: None,
                 strict: 0,
                 relaxed: 0,
                 intensity: 0,
@@ -1369,9 +1943,11 @@ fn run_derived_experiment(
                 min_window_s: 0.0,
                 max_window_s: 0.0,
                 vram_mib: None,
+                weights_mib: None,
                 cache_path: None,
                 notes: format!("Missing dependency result map: {}", cache_path.display()),
                 per_mood: BTreeMap::new(),
+                page_results: Vec::new(),
             };
         };
         inputs.insert(input_id, result_map);
@@ -1401,7 +1977,11 @@ fn run_derived_experiment(
     }
 
     let cache_path = results_dir.join(format!("realtest_suite_{}.json", spec.id));
-    let _ = std::fs::write(&cache_path, serde_json::to_string_pretty(&result_map).unwrap());
+    let _ = std::fs::write(
+        &cache_path,
+        serde_json::to_string_pretty(&result_map).unwrap(),
+    );
+    let _ = write_soundtrack_commit_companion(results_dir, spec.id, chapters, &result_map);
 
     let effective_avg = previous_summaries
         .iter()
@@ -1426,6 +2006,7 @@ fn run_derived_experiment(
         "derived",
         "ensemble(weighted_viterbi)",
         "mixed",
+        "mixed",
         "weighted_viterbi",
         "derived",
         "sequential_ensemble",
@@ -1433,6 +2014,7 @@ fn run_derived_experiment(
         0,
         &durations,
         effective_vram,
+        None,
         &cache_path,
         &format!(
             "{} weights(hist=3, focus=2, q3=2, q35=1), lambda={:.2}",
@@ -1454,6 +2036,86 @@ fn parse_tag(tag: &str) -> Option<(String, u8)> {
     let mood = parts.next()?.trim().to_string();
     let intensity = parts.next()?.trim().parse::<u8>().ok()?;
     Some((mood, intensity))
+}
+
+fn build_soundtrack_commit_result_map(
+    chapters: &BTreeMap<String, Vec<PageEntry>>,
+    result_map: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut committer = SoundtrackCommitter::new();
+    let mut committed_map = HashMap::new();
+
+    for (chapter_key, pages) in chapters {
+        for (idx, page) in pages.iter().enumerate() {
+            let Some(tag) = result_map.get(&page.rel_path) else {
+                continue;
+            };
+            let Some((mood_label, intensity_value)) = parse_tag(tag) else {
+                continue;
+            };
+            let Some(mood) = BaseMood::from_str_opt(&mood_label) else {
+                continue;
+            };
+            let intensity = MoodIntensity::from_u8(intensity_value);
+            let future_context = pages
+                .iter()
+                .skip(idx + 1)
+                .take(2)
+                .filter_map(|next_page| {
+                    let next_tag = result_map.get(&next_page.rel_path)?;
+                    let (next_mood_label, next_intensity_value) = parse_tag(next_tag)?;
+                    let next_mood = BaseMood::from_str_opt(&next_mood_label)?;
+                    let next_intensity = MoodIntensity::from_u8(next_intensity_value);
+                    Some(SoundtrackObservation {
+                        page: Some(page_number_from_rel_path(&next_page.rel_path)),
+                        mood: next_mood,
+                        intensity: next_intensity,
+                        scores: MoodScores::from_single(next_mood),
+                        narrative_role: winner::infer_narrative_role(next_mood, next_intensity),
+                        finalized: true,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let decision = committer.update_with_context(
+                Some(chapter_key.as_str()),
+                SoundtrackObservation {
+                    page: Some(page_number_from_rel_path(&page.rel_path)),
+                    mood,
+                    intensity,
+                    scores: MoodScores::from_single(mood),
+                    narrative_role: winner::infer_narrative_role(mood, intensity),
+                    finalized: true,
+                },
+                &future_context,
+            );
+            committed_map.insert(
+                page.rel_path.clone(),
+                format!(
+                    "{}:{}",
+                    decision.committed_mood.as_str(),
+                    decision.committed_intensity.as_u8()
+                ),
+            );
+        }
+    }
+
+    committed_map
+}
+
+fn write_soundtrack_commit_companion(
+    results_dir: &Path,
+    spec_id: &str,
+    chapters: &BTreeMap<String, Vec<PageEntry>>,
+    result_map: &HashMap<String, String>,
+) -> PathBuf {
+    let companion_path =
+        results_dir.join(format!("realtest_suite_{}_soundtrack_commit.json", spec_id));
+    let committed_map = build_soundtrack_commit_result_map(chapters, result_map);
+    let _ = std::fs::write(
+        &companion_path,
+        serde_json::to_string_pretty(&committed_map).unwrap(),
+    );
+    companion_path
 }
 
 fn fuse_weighted_viterbi(
@@ -1536,6 +2198,8 @@ async fn run_window_pass(
     pages: &[PageEntry],
     live: &LiveExperiment,
     encoding_cache: &mut HashMap<String, EncodedImage>,
+    partial_result_map: &mut HashMap<String, String>,
+    partial_cache_path: &Path,
     verbose: bool,
 ) -> (Vec<WindowPrediction>, u32) {
     let mut results = Vec::new();
@@ -1616,13 +2280,41 @@ async fn run_window_pass(
             left,
             center,
             right,
-            mood,
+            mood: mood.clone(),
             intensity,
             elapsed_s: elapsed,
         });
+
+        // Persist center-page predictions immediately so Ctrl-C still leaves visible progress.
+        partial_result_map.insert(
+            pages[center].rel_path.clone(),
+            format!("{}:{}", mood, intensity),
+        );
+        persist_result_map_cache(partial_cache_path, partial_result_map);
     }
 
     (results, errors)
+}
+
+fn persist_result_map_cache(cache_path: &Path, result_map: &HashMap<String, String>) {
+    let _ = std::fs::write(
+        cache_path,
+        serde_json::to_string_pretty(result_map).unwrap(),
+    );
+}
+
+fn persist_result_map_snapshot(
+    results_dir: &Path,
+    spec_id: &str,
+    chapters: &BTreeMap<String, Vec<PageEntry>>,
+    cache_path: &Path,
+    result_map: &HashMap<String, String>,
+    write_soundtrack: bool,
+) {
+    persist_result_map_cache(cache_path, result_map);
+    if write_soundtrack {
+        let _ = write_soundtrack_commit_companion(results_dir, spec_id, chapters, result_map);
+    }
 }
 
 fn build_window_body(
@@ -1685,7 +2377,10 @@ fn build_focus_prompt(page_idx: usize, total_pages: usize) -> String {
 }
 
 fn build_wide_sequence_prompt(context_indices: &[usize], total_pages: usize) -> String {
-    let as_u32 = context_indices.iter().map(|idx| *idx as u32).collect::<Vec<_>>();
+    let as_u32 = context_indices
+        .iter()
+        .map(|idx| *idx as u32)
+        .collect::<Vec<_>>();
     winner::build_wide_sequence_prompt(&as_u32, total_pages as u32)
 }
 
@@ -1812,7 +2507,9 @@ fn parse_mood_response_with_fallback(json: &serde_json::Value) -> Option<(String
         .map(|(mood, intensity)| (mood.as_str().to_string(), intensity.as_u8()))
 }
 
-fn to_winner_window_predictions(window_results: &[WindowPrediction]) -> Vec<winner::WindowPrediction> {
+fn to_winner_window_predictions(
+    window_results: &[WindowPrediction],
+) -> Vec<winner::WindowPrediction> {
     window_results
         .iter()
         .filter_map(|window| {
@@ -1852,14 +2549,16 @@ fn from_winner_prediction(prediction: &winner::AggregatedPrediction) -> PagePred
 }
 
 fn aggregate_majority(pages: &[PageEntry], stats: &[PageVoteStats]) -> Vec<PagePrediction> {
-    pages.iter()
+    pages
+        .iter()
         .enumerate()
         .map(|(idx, _)| from_winner_prediction(&winner::aggregate_prediction(&stats[idx])))
         .collect()
 }
 
 fn aggregate_center_override(pages: &[PageEntry], stats: &[PageVoteStats]) -> Vec<PagePrediction> {
-    pages.iter()
+    pages
+        .iter()
         .enumerate()
         .map(|(idx, _)| {
             let page_stats = &stats[idx];
@@ -1925,7 +2624,8 @@ fn aggregate_center_override(pages: &[PageEntry], stats: &[PageVoteStats]) -> Ve
                 }
             }
 
-            let intensity = if final_idx == page_stats.center_vote.map(|m| m.index()).unwrap_or(99) {
+            let intensity = if final_idx == page_stats.center_vote.map(|m| m.index()).unwrap_or(99)
+            {
                 page_stats
                     .center_intensity
                     .map(|intensity| intensity.as_u8())
@@ -2154,11 +2854,9 @@ async fn apply_wide5_selective_repairs(
                 )
                 .await;
                 let should_apply = match (&first, &second, accept) {
-                    (
-                        Some(first),
-                        Some(second),
-                        winner::RepairAcceptPair::BothMystery,
-                    ) => first.mood == "mystery" && second.mood == "mystery",
+                    (Some(first), Some(second), winner::RepairAcceptPair::BothMystery) => {
+                        first.mood == "mystery" && second.mood == "mystery"
+                    }
                     (Some(first), Some(second), winner::RepairAcceptPair::BothEpic) => {
                         first.mood == "epic" && second.mood == "epic"
                     }
@@ -2244,7 +2942,8 @@ async fn get_selective_prediction(
         }
     }
 
-    let result = selective_reprompt_page(http, server_url, pages, idx, prompt_kind, live, cache).await;
+    let result =
+        selective_reprompt_page(http, server_url, pages, idx, prompt_kind, live, cache).await;
     if allow_cache {
         reprompt_cache.insert(key, result.clone());
     }
@@ -2531,10 +3230,14 @@ fn load_cached_summary(
             source: "cache".to_string(),
             status: "missing".to_string(),
             model: "Qwen3-VL-4B-Thinking".to_string(),
+            quantization: "llm=Q4_K_M + mmproj=F16".to_string(),
             prep: "legacy_672_jpeg".to_string(),
             decision: "majority".to_string(),
             sampling: "greedy_hist".to_string(),
             runtime: "historical".to_string(),
+            runtime_context_size: None,
+            runtime_parallel_slots: None,
+            runtime_gpu_layers: None,
             strict: 0,
             relaxed: 0,
             intensity: 0,
@@ -2545,16 +3248,25 @@ fn load_cached_summary(
             min_window_s: 0.0,
             max_window_s: 0.0,
             vram_mib: None,
+            weights_mib: None,
             cache_path: None,
             notes: format!("Missing cache: {}", cache_path.display()),
             per_mood: BTreeMap::new(),
+            page_results: Vec::new(),
         };
     };
+    let _ = write_soundtrack_commit_companion(
+        cache_path.parent().unwrap_or_else(|| Path::new(".")),
+        spec.id,
+        chapters,
+        &result_map,
+    );
 
     build_summary_from_results(
         spec,
         "cache",
         "Qwen3-VL-4B-Thinking",
+        "llm=Q4_K_M + mmproj=F16",
         "legacy_672_jpeg",
         "majority",
         "greedy_hist",
@@ -2562,6 +3274,7 @@ fn load_cached_summary(
         0,
         0,
         &[],
+        None,
         None,
         cache_path,
         spec.notes,
@@ -2575,6 +3288,7 @@ fn build_summary_from_results(
     spec: &ExperimentSpec,
     source: &str,
     model: &str,
+    quantization: &str,
     prep: &str,
     decision: &str,
     sampling: &str,
@@ -2583,6 +3297,7 @@ fn build_summary_from_results(
     second_pass_pages: u32,
     window_durations: &[f64],
     vram_mib: Option<u32>,
+    weights_mib: Option<u64>,
     cache_path: &Path,
     notes: &str,
     chapters: &BTreeMap<String, Vec<PageEntry>>,
@@ -2593,6 +3308,7 @@ fn build_summary_from_results(
     let mut intensity = 0u32;
     let mut total = 0u32;
     let mut per_mood = BTreeMap::new();
+    let mut page_results = Vec::new();
 
     for pages in chapters.values() {
         for page in pages {
@@ -2600,15 +3316,14 @@ fn build_summary_from_results(
                 continue;
             }
             total += 1;
-            let entry = per_mood.entry(page.mood.clone()).or_insert_with(MoodBreakdown::default);
+            let entry = per_mood
+                .entry(page.mood.clone())
+                .or_insert_with(MoodBreakdown::default);
             entry.total += 1;
             if let Some(tag) = result_map.get(&page.rel_path) {
                 let mut parts = tag.split(':');
                 let got_mood = parts.next().unwrap_or("???");
-                let got_intensity = parts
-                    .next()
-                    .and_then(|s| s.parse::<u8>().ok())
-                    .unwrap_or(0);
+                let got_intensity = parts.next().and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
                 let strict_match = got_mood == page.mood;
                 let relaxed_match = strict_match || is_relaxed_match(got_mood, &page.mood);
                 if strict_match {
@@ -2622,6 +3337,29 @@ fn build_summary_from_results(
                 if got_intensity == page.intensity {
                     intensity += 1;
                 }
+                page_results.push(PageResult {
+                    rel_path: page.rel_path.clone(),
+                    chapter: chapter_label(&page.rel_path),
+                    page_number: page_number_from_rel_path(&page.rel_path),
+                    expected_mood: page.mood.clone(),
+                    expected_intensity: page.intensity,
+                    predicted_mood: got_mood.to_string(),
+                    predicted_intensity: got_intensity,
+                    verdict: verdict_label(strict_match, relaxed_match),
+                    intensity_match: got_intensity == page.intensity,
+                });
+            } else {
+                page_results.push(PageResult {
+                    rel_path: page.rel_path.clone(),
+                    chapter: chapter_label(&page.rel_path),
+                    page_number: page_number_from_rel_path(&page.rel_path),
+                    expected_mood: page.mood.clone(),
+                    expected_intensity: page.intensity,
+                    predicted_mood: "???".to_string(),
+                    predicted_intensity: 0,
+                    verdict: "missing".to_string(),
+                    intensity_match: false,
+                });
             }
         }
     }
@@ -2646,10 +3384,14 @@ fn build_summary_from_results(
         source: source.to_string(),
         status: "ok".to_string(),
         model: model.to_string(),
+        quantization: quantization.to_string(),
         prep: prep.to_string(),
         decision: decision.to_string(),
         sampling: sampling.to_string(),
         runtime: runtime.to_string(),
+        runtime_context_size: None,
+        runtime_parallel_slots: None,
+        runtime_gpu_layers: None,
         strict,
         relaxed,
         intensity,
@@ -2657,13 +3399,51 @@ fn build_summary_from_results(
         errors,
         second_pass_pages,
         avg_window_s,
-        min_window_s: if min_window_s.is_finite() { min_window_s } else { 0.0 },
-        max_window_s: if max_window_s.is_finite() { max_window_s } else { 0.0 },
+        min_window_s: if min_window_s.is_finite() {
+            min_window_s
+        } else {
+            0.0
+        },
+        max_window_s: if max_window_s.is_finite() {
+            max_window_s
+        } else {
+            0.0
+        },
         vram_mib,
+        weights_mib,
         cache_path: Some(cache_path.display().to_string()),
         notes: notes.to_string(),
         per_mood,
+        page_results,
     }
+}
+
+fn verdict_label(strict_match: bool, relaxed_match: bool) -> String {
+    if strict_match {
+        "strict".to_string()
+    } else if relaxed_match {
+        "relaxed".to_string()
+    } else {
+        "wrong".to_string()
+    }
+}
+
+fn chapter_label(rel_path: &str) -> String {
+    let parts = rel_path.split('/').collect::<Vec<_>>();
+    if parts.len() >= 2 {
+        format!("{}/{}", parts[0], parts[1])
+    } else {
+        rel_path.to_string()
+    }
+}
+
+fn page_number_from_rel_path(rel_path: &str) -> u32 {
+    rel_path
+        .split('/')
+        .last()
+        .and_then(|name| name.split('.').next())
+        .and_then(|stem| stem.parse::<u32>().ok())
+        .unwrap_or(0)
 }
 
 fn is_relaxed_match(detected: &str, expected: &str) -> bool {
@@ -2685,8 +3465,9 @@ fn print_experiment_summary(summary: &ExperimentSummary) {
             let strict_pct = pct(summary.strict, summary.total);
             let relaxed_pct = pct(summary.relaxed, summary.total);
             println!(
-                "    {DIM}{} — strict {}/{} ({:.1}%), relaxed {}/{} ({:.1}%), intensity {}/{}, avg {:.1}s, second-pass {}{RESET}",
+                "    {DIM}{} — runtime {}, strict {}/{} ({:.1}%), relaxed {}/{} ({:.1}%), intensity {}/{}, avg {:.1}s, VRAM {}, second-pass {}, errors {}{RESET}",
                 summary.id,
+                summary.runtime,
                 summary.strict,
                 summary.total,
                 strict_pct,
@@ -2696,7 +3477,12 @@ fn print_experiment_summary(summary: &ExperimentSummary) {
                 summary.intensity,
                 summary.total,
                 summary.avg_window_s,
-                summary.second_pass_pages
+                summary
+                    .vram_mib
+                    .map(|value| format!("{value} MiB"))
+                    .unwrap_or_else(|| "n/a".to_string()),
+                summary.second_pass_pages,
+                summary.errors
             );
         }
         _ => {
@@ -2722,20 +3508,46 @@ fn print_comparison_table(summaries: &[ExperimentSummary], baseline: &Experiment
 
     println!("\n  {BOLD}Comparative Table{RESET}");
     println!(
-        "  {DIM}| {:<18} | {:<16} | {:<16} | {:>7} | {:>7} | {:>7} | {:>7} | {:>7} | {:>6} |{RESET}",
-        "experiment", "model", "decision", "strict", "d_str", "relax", "d_rel", "int", "avg_s"
+        "  {DIM}| {:<18} | {:<16} | {:<18} | {:<24} | {:<12} | {:>7} | {:>7} | {:>7} | {:>7} | {:>7} | {:>6} | {:>6} | {:>8} |{RESET}",
+        "experiment",
+        "model",
+        "quant",
+        "runtime",
+        "decision",
+        "strict",
+        "d_str",
+        "relax",
+        "d_rel",
+        "int",
+        "errors",
+        "avg_s",
+        "vram"
     );
 
     for summary in ordered {
         let delta_strict = summary.strict as i32 - baseline.strict as i32;
         let delta_relaxed = summary.relaxed as i32 - baseline.relaxed as i32;
-        let strict_color = if delta_strict > 0 { GREEN } else if delta_strict < 0 { RED } else { CYAN };
-        let relax_color = if delta_relaxed > 0 { GREEN } else if delta_relaxed < 0 { RED } else { CYAN };
+        let strict_color = if delta_strict > 0 {
+            GREEN
+        } else if delta_strict < 0 {
+            RED
+        } else {
+            CYAN
+        };
+        let relax_color = if delta_relaxed > 0 {
+            GREEN
+        } else if delta_relaxed < 0 {
+            RED
+        } else {
+            CYAN
+        };
         println!(
-            "  | {:<18} | {:<16} | {:<16} | {:>3}/{:<3} | {strict_color}{:>+4}{RESET}   | {:>3}/{:<3} | {relax_color}{:>+4}{RESET}   | {:>3}/{:<3} | {:>6.1} |",
+            "  | {:<18} | {:<16} | {:<18} | {:<24} | {:<12} | {:>3}/{:<3} | {strict_color}{:>+4}{RESET}   | {:>3}/{:<3} | {relax_color}{:>+4}{RESET}   | {:>3}/{:<3} | {:>6} | {:>6.1} | {:>8} |",
             summary.id,
             truncate(&summary.model, 16),
-            truncate(&summary.decision, 16),
+            truncate(&summary.quantization, 18),
+            truncate(&summary.runtime, 24),
+            truncate(&summary.decision, 12),
             summary.strict,
             summary.total,
             delta_strict,
@@ -2744,7 +3556,12 @@ fn print_comparison_table(summaries: &[ExperimentSummary], baseline: &Experiment
             delta_relaxed,
             summary.intensity,
             summary.total,
-            summary.avg_window_s
+            summary.errors,
+            summary.avg_window_s,
+            summary
+                .vram_mib
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "n/a".to_string())
         );
     }
 
@@ -2757,11 +3574,66 @@ fn print_comparison_table(summaries: &[ExperimentSummary], baseline: &Experiment
     println!("\n  {BOLD}{baseline_label}:{RESET} {}", baseline.id);
 }
 
+fn print_page_comparison(
+    summaries: &[ExperimentSummary],
+    chapters: &BTreeMap<String, Vec<PageEntry>>,
+) {
+    let force_print = env_truthy("REALTEST_PRINT_PAGE_TABLE");
+    let ok_summaries = summaries
+        .iter()
+        .filter(|summary| summary.status == "ok" && !summary.page_results.is_empty())
+        .collect::<Vec<_>>();
+    if ok_summaries.is_empty() {
+        return;
+    }
+    if ok_summaries.len() > 6 && !force_print {
+        println!(
+            "\n  {DIM}Per-page comparison not printed to console because {} experiments are active. Detailed files were still written to disk. Set REALTEST_PRINT_PAGE_TABLE=1 to force console output.{RESET}",
+            ok_summaries.len()
+        );
+        return;
+    }
+
+    println!("\n  {BOLD}Per-Page Comparison{RESET}");
+    for pages in chapters.values() {
+        for page in pages {
+            if page.confidence <= 0.0 {
+                continue;
+            }
+            let mut line = format!(
+                "  {:<18} expected {:<10} {:>1}",
+                page.rel_path, page.mood, page.intensity
+            );
+            for summary in &ok_summaries {
+                let cell = summary
+                    .page_results
+                    .iter()
+                    .find(|result| result.rel_path == page.rel_path)
+                    .map(|result| {
+                        format!(
+                            "{} {}:{} {}{}",
+                            summary.id,
+                            result.predicted_mood,
+                            result.predicted_intensity,
+                            result.verdict,
+                            if result.intensity_match { "" } else { " !int" }
+                        )
+                    })
+                    .unwrap_or_else(|| format!("{} ???:0 missing", summary.id));
+                line.push_str(" | ");
+                line.push_str(&cell);
+            }
+            println!("{line}");
+        }
+    }
+}
+
 fn save_suite_summary(
     results_dir: &Path,
     realtest_dir: &Path,
     summaries: &[ExperimentSummary],
     baseline: &ExperimentSummary,
+    chapters: &BTreeMap<String, Vec<PageEntry>>,
 ) {
     let slug = std::env::var("REALTEST_FILTER")
         .ok()
@@ -2771,14 +3643,32 @@ fn save_suite_summary(
         .ok()
         .map(|v| format!("_first{}", v))
         .unwrap_or_default();
-    let json_path = results_dir.join(format!("realtest_suite_{}{}.json", slug, page_suffix));
-    let md_path = results_dir.join(format!("realtest_suite_{}{}.md", slug, page_suffix));
+    let selection_suffix = selection_output_slug()
+        .map(|value| format!("_{}", value))
+        .unwrap_or_default();
+    let json_path = results_dir.join(format!(
+        "realtest_suite_{}{}{}.json",
+        slug, page_suffix, selection_suffix
+    ));
+    let md_path = results_dir.join(format!(
+        "realtest_suite_{}{}{}.md",
+        slug, page_suffix, selection_suffix
+    ));
+    let page_json_path = results_dir.join(format!(
+        "realtest_suite_{}{}{}_pages.json",
+        slug, page_suffix, selection_suffix
+    ));
+    let page_md_path = results_dir.join(format!(
+        "realtest_suite_{}{}{}_pages.md",
+        slug, page_suffix, selection_suffix
+    ));
 
     let payload = serde_json::json!({
         "baseline_id": baseline.id,
         "baseline_strict": baseline.strict,
         "baseline_relaxed": baseline.relaxed,
         "baseline_intensity": baseline.intensity,
+        "selection_slug": selection_output_slug(),
         "results_dir": results_dir,
         "realtest_dir": realtest_dir,
         "summaries": summaries,
@@ -2786,13 +3676,15 @@ fn save_suite_summary(
     let _ = std::fs::write(&json_path, serde_json::to_string_pretty(&payload).unwrap());
 
     let mut markdown = String::new();
-    markdown.push_str("| experiment | model | prep | decision | strict | delta_strict | relaxed | delta_relaxed | intensity | avg_window_s |\n");
-    markdown.push_str("|---|---|---|---|---:|---:|---:|---:|---:|---:|\n");
+    markdown.push_str("| experiment | model | quantization | runtime | prep | decision | strict | delta_strict | relaxed | delta_relaxed | intensity | errors | avg_window_s | vram_mib | weights_mib |\n");
+    markdown.push_str("|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n");
     for summary in summaries {
         markdown.push_str(&format!(
-            "| {} | {} | {} | {} | {}/{} | {:+} | {}/{} | {:+} | {}/{} | {:.1} |\n",
+            "| {} | {} | {} | {} | {} | {} | {}/{} | {:+} | {}/{} | {:+} | {}/{} | {} | {:.1} | {} | {} |\n",
             summary.id,
             summary.model,
+            summary.quantization,
+            summary.runtime,
             summary.prep,
             summary.decision,
             summary.strict,
@@ -2803,15 +3695,113 @@ fn save_suite_summary(
             summary.relaxed as i32 - baseline.relaxed as i32,
             summary.intensity,
             summary.total,
-            summary.avg_window_s
+            summary.errors,
+            summary.avg_window_s,
+            summary
+                .vram_mib
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "n/a".to_string()),
+            summary
+                .weights_mib
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "n/a".to_string())
         ));
     }
     let _ = std::fs::write(&md_path, markdown);
 
+    let ok_summaries = summaries
+        .iter()
+        .filter(|summary| summary.status == "ok" && !summary.page_results.is_empty())
+        .collect::<Vec<_>>();
+    let mut page_payload = Vec::new();
+    let mut page_markdown = String::new();
+    page_markdown.push_str("| page | expected |");
+    for summary in &ok_summaries {
+        page_markdown.push_str(&format!(" {} | {} verdict |", summary.id, summary.id));
+    }
+    page_markdown.push('\n');
+    page_markdown.push_str("|---|---|");
+    for _ in &ok_summaries {
+        page_markdown.push_str("---|---|");
+    }
+    page_markdown.push('\n');
+
+    for pages in chapters.values() {
+        for page in pages {
+            if page.confidence <= 0.0 {
+                continue;
+            }
+
+            let mut predictions = serde_json::Map::new();
+            page_markdown.push_str(&format!(
+                "| {} | {}:{} |",
+                page.rel_path, page.mood, page.intensity
+            ));
+
+            for summary in &ok_summaries {
+                if let Some(result) = summary
+                    .page_results
+                    .iter()
+                    .find(|result| result.rel_path == page.rel_path)
+                {
+                    predictions.insert(
+                        summary.id.clone(),
+                        serde_json::json!({
+                            "predicted_mood": result.predicted_mood,
+                            "predicted_intensity": result.predicted_intensity,
+                            "verdict": result.verdict,
+                            "intensity_match": result.intensity_match,
+                        }),
+                    );
+                    page_markdown.push_str(&format!(
+                        " {}:{} | {}{} |",
+                        result.predicted_mood,
+                        result.predicted_intensity,
+                        result.verdict,
+                        if result.intensity_match {
+                            ""
+                        } else {
+                            " (!int)"
+                        }
+                    ));
+                } else {
+                    predictions.insert(
+                        summary.id.clone(),
+                        serde_json::json!({
+                            "predicted_mood": "???",
+                            "predicted_intensity": 0,
+                            "verdict": "missing",
+                            "intensity_match": false,
+                        }),
+                    );
+                    page_markdown.push_str(" ???:0 | missing |");
+                }
+            }
+            page_markdown.push('\n');
+
+            page_payload.push(serde_json::json!({
+                "page": page.rel_path,
+                "chapter": chapter_label(&page.rel_path),
+                "page_number": page_number_from_rel_path(&page.rel_path),
+                "expected_mood": page.mood,
+                "expected_intensity": page.intensity,
+                "predictions": predictions,
+            }));
+        }
+    }
+
+    let _ = std::fs::write(
+        &page_json_path,
+        serde_json::to_string_pretty(&page_payload).unwrap(),
+    );
+    let _ = std::fs::write(&page_md_path, page_markdown);
+
     println!(
-        "\n  {DIM}Suite summary saved to:{} {}{RESET}",
+        "\n  {DIM}Suite summary saved to:{} {} {} {}{RESET}",
         json_path.display(),
-        md_path.display()
+        md_path.display(),
+        page_json_path.display(),
+        page_md_path.display()
     );
 }
 
@@ -2834,8 +3824,15 @@ fn truncate(value: &str, max_len: usize) -> String {
 }
 
 fn sanitize_slug(value: &str) -> String {
-    value.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .trim_matches('_')
         .to_string()
@@ -2872,16 +3869,13 @@ mod tests {
     #[test]
     fn action_bridge_hold_promotes_first_two_tension_pages() {
         let base = [
-            "epic", "epic", "tension", "tension", "tension", "tension", "tension", "epic",
-            "epic", "epic", "epic",
+            "epic", "epic", "tension", "tension", "tension", "tension", "tension", "epic", "epic",
+            "epic", "epic",
         ]
         .into_iter()
         .map(str::to_string)
         .collect::<Vec<_>>();
-        let mut predictions = base
-            .iter()
-            .map(|mood| prediction(mood))
-            .collect::<Vec<_>>();
+        let mut predictions = base.iter().map(|mood| prediction(mood)).collect::<Vec<_>>();
         let page_order = (0..base.len() as u32).collect::<Vec<_>>();
         let base_predictions = page_order
             .iter()
@@ -2913,10 +3907,7 @@ mod tests {
         .into_iter()
         .map(str::to_string)
         .collect::<Vec<_>>();
-        let mut predictions = base
-            .iter()
-            .map(|mood| prediction(mood))
-            .collect::<Vec<_>>();
+        let mut predictions = base.iter().map(|mood| prediction(mood)).collect::<Vec<_>>();
         let page_order = (0..base.len() as u32).collect::<Vec<_>>();
         let base_predictions = page_order
             .iter()

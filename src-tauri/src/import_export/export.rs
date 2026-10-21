@@ -4,14 +4,17 @@ use crate::storage;
 use crate::types::{Profile, SoundSource};
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 /// Progress callback: (current_file_index, total_files, filename)
 pub type ProgressCallback = Box<dyn Fn(usize, usize, &str) + Send>;
+
+static EXPORT_LOCK: Mutex<()> = Mutex::new(());
 
 static EXPORT_CANCELLED: AtomicBool = AtomicBool::new(false);
 
@@ -39,6 +42,13 @@ pub fn cleanup_interrupted_export() {
     }
 }
 
+struct ExportTracking(PathBuf);
+impl Drop for ExportTracking {
+    fn drop(&mut self) {
+        fs::remove_file(&self.0).ok();
+    }
+}
+
 /// Export a profile as a .ktm file (ZIP archive containing profile.json, metadata.json, sounds/, and waveforms.json).
 /// Writes to a temp file first, then renames to the final path on success.
 /// If `waveforms` is provided, matching entries (keyed by absolute path) are included as waveforms.json.
@@ -48,14 +58,33 @@ pub fn export_profile(
     waveforms: Option<HashMap<String, WaveformData>>,
     on_progress: Option<ProgressCallback>,
 ) -> Result<(), String> {
+    let _export_guard = EXPORT_LOCK
+        .try_lock()
+        .map_err(|_| "An export is already in progress".to_string())?;
     // Reset cancellation flag
     EXPORT_CANCELLED.store(false, Ordering::Relaxed);
 
     // Load the profile
     let profile = storage::load_profile(profile_id.to_string())?;
 
+    export_loaded_profile(
+        &profile,
+        output_path,
+        waveforms,
+        on_progress,
+        export_tracking_path(),
+    )
+}
+
+fn export_loaded_profile(
+    profile: &Profile,
+    output_path: &str,
+    waveforms: Option<HashMap<String, WaveformData>>,
+    on_progress: Option<ProgressCallback>,
+    tracking_path: PathBuf,
+) -> Result<(), String> {
     // Collect all sound files and build the modified profile with relative paths
-    let (modified_profile, sound_files) = collect_sound_files(&profile)?;
+    let (modified_profile, sound_files) = collect_sound_files(profile)?;
 
     let total_files = sound_files.len();
 
@@ -74,19 +103,16 @@ pub fn export_profile(
 
     // Write to a temp file first (same dir as output so rename works)
     let final_path = Path::new(output_path);
-    let temp_path = final_path.with_extension("ktm.tmp");
-
-    // Track the temp file so it can be cleaned up if the app is killed
-    fs::write(
-        export_tracking_path(),
-        temp_path.to_string_lossy().as_bytes(),
-    )
-    .ok();
-
-    let zip_file =
-        fs::File::create(&temp_path).map_err(|e| format!("Failed to create temp file: {}", e))?;
-
-    let mut zip = ZipWriter::new(zip_file);
+    let parent = final_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let temp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| format!("Failed to create export: {}", e))?;
+    fs::write(&tracking_path, temp.path().to_string_lossy().as_bytes())
+        .map_err(|e| e.to_string())?;
+    let _tracking = ExportTracking(tracking_path);
+    let mut zip = ZipWriter::new(temp);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
 
     // Write profile.json
@@ -106,8 +132,6 @@ pub fn export_profile(
         // Check for cancellation
         if EXPORT_CANCELLED.load(Ordering::Relaxed) {
             drop(zip);
-            fs::remove_file(&temp_path).ok();
-            fs::remove_file(export_tracking_path()).ok();
             return Err("Export cancelled".to_string());
         }
 
@@ -115,19 +139,22 @@ pub fn export_profile(
             cb(i, total_files, relative_path);
         }
 
-        let file_data = fs::read(absolute_path).map_err(|e| {
-            format!(
-                "Failed to read sound file '{}': {}",
-                absolute_path.display(),
-                e
-            )
-        })?;
-
+        let mut source = fs::File::open(absolute_path)
+            .map_err(|e| format!("Failed to read '{}': {}", absolute_path.display(), e))?;
         let zip_entry_path = format!("sounds/{}", relative_path);
         zip.start_file(&zip_entry_path, options)
             .map_err(|e| format!("Failed to add '{}' to ZIP: {}", zip_entry_path, e))?;
-        zip.write_all(&file_data)
-            .map_err(|e| format!("Failed to write sound data: {}", e))?;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            if EXPORT_CANCELLED.load(Ordering::Relaxed) {
+                return Err("Export cancelled".into());
+            }
+            let count = source.read(&mut buffer).map_err(|e| e.to_string())?;
+            if count == 0 {
+                break;
+            }
+            zip.write_all(&buffer[..count]).map_err(|e| e.to_string())?;
+        }
     }
 
     // Write waveforms.json (keyed by ZIP-relative paths like "sounds/filename.mp3")
@@ -149,18 +176,16 @@ pub fn export_profile(
         }
     }
 
-    zip.finish()
+    let temp = zip
+        .finish()
         .map_err(|e| format!("Failed to finalize ZIP: {}", e))?;
-
-    // Rename temp file to final path
-    if final_path.exists() {
-        fs::remove_file(final_path).ok();
+    if EXPORT_CANCELLED.load(Ordering::Relaxed) {
+        return Err("Export cancelled".into());
     }
-    fs::rename(&temp_path, final_path)
-        .map_err(|e| format!("Failed to finalize export file: {}", e))?;
-
-    // Remove the tracking file now that export succeeded
-    fs::remove_file(export_tracking_path()).ok();
+    temp.as_file().sync_all().map_err(|e| e.to_string())?;
+    // Atomic replacement: the old export stays intact if anything above fails.
+    temp.persist(final_path)
+        .map_err(|e| format!("Failed to publish export: {}", e))?;
 
     // Signal completion
     if let Some(ref cb) = on_progress {
@@ -241,5 +266,94 @@ fn make_unique_filename(filename: &str, used: &std::collections::HashSet<String>
             return candidate;
         }
         counter += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn profile(path: &Path) -> Profile {
+        serde_json::from_value(serde_json::json!({
+            "id":"p", "name":"P", "createdAt":"", "updatedAt":"", "tracks":[], "keyBindings":[],
+            "sounds":[{"id":"s", "name":"S", "source":{"type":"local", "path":path}, "momentum":0, "volume":1, "duration":1}]
+        })).unwrap()
+    }
+    #[test]
+    fn export_failure_preserves_previous_archive_and_removes_temp_files() {
+        let _guard = EXPORT_LOCK.lock().unwrap();
+        EXPORT_CANCELLED.store(false, Ordering::Relaxed);
+        let dir = tempfile::tempdir().unwrap();
+        let sound = dir.path().join("sound.wav");
+        fs::write(&sound, b"audio").unwrap();
+        let profile = profile(&sound);
+        let output = dir.path().join("library.ktm");
+        fs::write(&output, b"previous archive").unwrap();
+        let result = export_loaded_profile(
+            &profile,
+            output.to_str().unwrap(),
+            None,
+            Some(Box::new(move |_, _, _| {
+                fs::remove_file(&sound).unwrap();
+            })),
+            dir.path().join("tracking"),
+        );
+        assert!(result.is_err());
+        assert_eq!(fs::read(&output).unwrap(), b"previous archive");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+    #[test]
+    fn cancellation_preserves_previous_archive() {
+        let _guard = EXPORT_LOCK.lock().unwrap();
+        EXPORT_CANCELLED.store(false, Ordering::Relaxed);
+        let dir = tempfile::tempdir().unwrap();
+        let sound = dir.path().join("sound.wav");
+        fs::write(&sound, b"audio").unwrap();
+        let output = dir.path().join("library.ktm");
+        fs::write(&output, b"previous archive").unwrap();
+        let result = export_loaded_profile(
+            &profile(&sound),
+            output.to_str().unwrap(),
+            None,
+            Some(Box::new(|_, _, _| cancel_export())),
+            dir.path().join("tracking"),
+        );
+        assert_eq!(result.unwrap_err(), "Export cancelled");
+        assert_eq!(fs::read(&output).unwrap(), b"previous archive");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 2);
+        EXPORT_CANCELLED.store(false, Ordering::Relaxed);
+    }
+    #[test]
+    fn completed_archive_contains_sound_bytes_and_a_portable_profile() {
+        let _guard = EXPORT_LOCK.lock().unwrap();
+        EXPORT_CANCELLED.store(false, Ordering::Relaxed);
+        let dir = tempfile::tempdir().unwrap();
+        let sound = dir.path().join("sound.wav");
+        fs::write(&sound, b"audio bytes").unwrap();
+        let output = dir.path().join("library.ktm");
+        export_loaded_profile(
+            &profile(&sound),
+            output.to_str().unwrap(),
+            None,
+            None,
+            dir.path().join("tracking"),
+        )
+        .unwrap();
+        let mut archive = zip::ZipArchive::new(fs::File::open(&output).unwrap()).unwrap();
+        let mut bytes = Vec::new();
+        archive
+            .by_name("sounds/sound.wav")
+            .unwrap()
+            .read_to_end(&mut bytes)
+            .unwrap();
+        assert_eq!(bytes, b"audio bytes");
+        let mut json = String::new();
+        archive
+            .by_name("profile.json")
+            .unwrap()
+            .read_to_string(&mut json)
+            .unwrap();
+        assert!(json.contains("sounds/sound.wav"));
+        assert!(!json.contains(dir.path().to_str().unwrap()));
+        assert!(!dir.path().join("tracking").exists());
     }
 }

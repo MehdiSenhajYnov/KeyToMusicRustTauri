@@ -1,3 +1,4 @@
+import { useToastStore } from "../../stores/toastStore";
 import { useExportStore } from "../../stores/exportStore";
 
 export function ExportProgress() {
@@ -21,7 +22,7 @@ export function ExportProgress() {
             {progress.current}/{progress.total}
           </span>
           <button
-            onClick={cancelExport}
+            onClick={() => { void cancelExport().catch((error) => useToastStore.getState().addToast(`Could not cancel export: ${error}`, "error")); }}
             className="text-text-muted hover:text-accent-error text-xs"
             title="Cancel export"
           >

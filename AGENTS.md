@@ -6,6 +6,8 @@
 ## Build, Test, and Development Commands
 Use `npm install` to install frontend and Tauri CLI dependencies. `npm run dev` starts the Vite frontend on port `5173`; `npm run tauri:dev` runs the full desktop app with Rust + frontend hot reload. `npm run build` runs `tsc` and builds the web bundle into `dist/`. `npm run tauri:build` creates a desktop build. For backend quality checks, use `cargo fmt --manifest-path src-tauri/Cargo.toml`, `cargo clippy --manifest-path src-tauri/Cargo.toml`, and `cargo test --manifest-path src-tauri/Cargo.toml`.
 
+For the complete command index, RealTest viewer launch, and resumable Production benchmark commands, check `docs/COMMANDS_REFERENCE.md` first.
+
 ## Coding Style & Naming Conventions
 Follow the existing frontend style: 2-space indentation, double quotes, semicolons, and strict TypeScript. Name React components with `PascalCase` (`Header.tsx`), hooks with `use...` (`useKeyDetection.ts`), Zustand stores with `...Store.ts`, and utility files with descriptive lower camel or domain names such as `tauriCommands.ts`. Rust files use `snake_case`, types use `CamelCase`, and formatting should be left to `cargo fmt`.
 

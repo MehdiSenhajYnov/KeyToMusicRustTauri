@@ -275,14 +275,6 @@ pub struct AppConfig {
     pub mood_ai_enabled: bool,
     #[serde(default = "default_mood_api_port")]
     pub mood_api_port: u16,
-    #[serde(default = "default_mood_entry_threshold")]
-    pub mood_entry_threshold: f32,
-    #[serde(default = "default_mood_exit_threshold")]
-    pub mood_exit_threshold: f32,
-    #[serde(default = "default_mood_dwell_pages")]
-    pub mood_dwell_pages: u32,
-    #[serde(default = "default_mood_window_size")]
-    pub mood_window_size: usize,
 }
 
 fn default_chord_window_ms() -> u32 {
@@ -291,22 +283,6 @@ fn default_chord_window_ms() -> u32 {
 
 fn default_mood_api_port() -> u16 {
     8765
-}
-
-fn default_mood_entry_threshold() -> f32 {
-    0.55
-}
-
-fn default_mood_exit_threshold() -> f32 {
-    0.25
-}
-
-fn default_mood_dwell_pages() -> u32 {
-    2
-}
-
-fn default_mood_window_size() -> usize {
-    5
 }
 
 impl Default for AppConfig {
@@ -327,10 +303,6 @@ impl Default for AppConfig {
             playlist_import_enabled: false,
             mood_ai_enabled: false,
             mood_api_port: 8765,
-            mood_entry_threshold: 0.55,
-            mood_exit_threshold: 0.25,
-            mood_dwell_pages: 2,
-            mood_window_size: 5,
         }
     }
 }

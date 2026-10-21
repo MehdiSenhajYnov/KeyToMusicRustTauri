@@ -1,3 +1,4 @@
+import { isKeyDetectionSuspended } from "../utils/keyDetectionSuspension";
 import { useEffect } from "react";
 import { useProfileStore } from "../stores/profileStore";
 import { useHistoryStore } from "../stores/historyStore";
@@ -19,7 +20,7 @@ export function useUndoRedo() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Skip if focused on text input (but not sliders/checkboxes)
-      if (isTextInput(e.target)) {
+      if (e.defaultPrevented || isKeyDetectionSuspended() || isTextInput(e.target)) {
         return;
       }
 
@@ -29,7 +30,7 @@ export function useUndoRedo() {
       if (!isCtrlOrCmd) return;
 
       // Undo: Ctrl+Z / Cmd+Z
-      if (e.key === "z" && !e.shiftKey) {
+      if (e.key.toLowerCase() === "z" && !e.shiftKey) {
         e.preventDefault();
         const actionName = getUndoActionName();
         if (undo()) {
@@ -40,7 +41,7 @@ export function useUndoRedo() {
       }
 
       // Redo: Ctrl+Y / Cmd+Shift+Z
-      if (e.key === "y" || (e.key === "z" && e.shiftKey)) {
+      if (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey)) {
         e.preventDefault();
         const actionName = getRedoActionName();
         if (redo()) {

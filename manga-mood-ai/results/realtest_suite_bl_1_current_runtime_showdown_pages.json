@@ -1,0 +1,2732 @@
+[
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "epic",
+    "page": "BL/1/03.jpg",
+    "page_number": 3,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "wrong"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "BL/1/06.png",
+    "page_number": 6,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "BL/1/07.png",
+    "page_number": 7,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "tension",
+    "page": "BL/1/08.jpg",
+    "page_number": 8,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/09.jpg",
+    "page_number": 9,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/10.jpg",
+    "page_number": 10,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/11.jpg",
+    "page_number": 11,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/12.jpg",
+    "page_number": 12,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/13.png",
+    "page_number": 13,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/14.png",
+    "page_number": 14,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "tension",
+    "page": "BL/1/15.jpg",
+    "page_number": 15,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/16.jpg",
+    "page_number": 16,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/17.png",
+    "page_number": 17,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/18.png",
+    "page_number": 18,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/19.png",
+    "page_number": 19,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/20.png",
+    "page_number": 20,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/21.png",
+    "page_number": 21,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/22.png",
+    "page_number": 22,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "wrong"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "epic",
+    "page": "BL/1/23.png",
+    "page_number": 23,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "wrong"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "wrong"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "wrong"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "wrong"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "sadness",
+    "page": "BL/1/24.jpg",
+    "page_number": 24,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "sadness",
+    "page": "BL/1/25.png",
+    "page_number": 25,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "sadness",
+    "page": "BL/1/26.jpg",
+    "page_number": 26,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "sadness",
+    "page": "BL/1/27.jpg",
+    "page_number": 27,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "sadness",
+    "page": "BL/1/28.jpg",
+    "page_number": 28,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "sadness",
+    "page": "BL/1/29.jpg",
+    "page_number": 29,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "sadness",
+    "page": "BL/1/30.jpg",
+    "page_number": 30,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "sadness",
+    "page": "BL/1/31.jpg",
+    "page_number": 31,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "sadness",
+    "page": "BL/1/32.jpg",
+    "page_number": 32,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "sadness",
+    "page": "BL/1/33.jpg",
+    "page_number": 33,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "peaceful",
+    "page": "BL/1/34.jpg",
+    "page_number": 34,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "sadness",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "BL/1/35.png",
+    "page_number": 35,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "wrong"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "wrong"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "wrong"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "wrong"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "sadness",
+        "verdict": "wrong"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "mystery",
+    "page": "BL/1/36.png",
+    "page_number": 36,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "comedy",
+    "page": "BL/1/37.png",
+    "page_number": 37,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "comedy",
+    "page": "BL/1/38.png",
+    "page_number": 38,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 1,
+    "expected_mood": "comedy",
+    "page": "BL/1/39.png",
+    "page_number": 39,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "comedy",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/40.jpg",
+    "page_number": 40,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/41.jpg",
+    "page_number": 41,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "tension",
+    "page": "BL/1/42.jpg",
+    "page_number": 42,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "BL/1/43.jpg",
+    "page_number": 43,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "BL/1/44.jpg",
+    "page_number": 44,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "mystery",
+    "page": "BL/1/45.jpg",
+    "page_number": 45,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "mystery",
+    "page": "BL/1/46.jpg",
+    "page_number": 46,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "mystery",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/47.png",
+    "page_number": 47,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/48.png",
+    "page_number": 48,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "tension",
+    "page": "BL/1/49.jpg",
+    "page_number": 49,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "tension",
+    "page": "BL/1/50.jpg",
+    "page_number": 50,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/51.png",
+    "page_number": 51,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/52.png",
+    "page_number": 52,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "tension",
+    "page": "BL/1/53.jpg",
+    "page_number": 53,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/54.png",
+    "page_number": 54,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "tension",
+    "page": "BL/1/55.png",
+    "page_number": 55,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/56.jpg",
+    "page_number": 56,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/57.jpg",
+    "page_number": 57,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "tension",
+    "page": "BL/1/58.png",
+    "page_number": 58,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "tension",
+    "page": "BL/1/59.jpg",
+    "page_number": 59,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/60.png",
+    "page_number": 60,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "BL/1/61.jpg",
+    "page_number": 61,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "BL/1/62.jpg",
+    "page_number": 62,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "BL/1/63.png",
+    "page_number": 63,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "BL/1/64.jpg",
+    "page_number": 64,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "BL/1/65.jpg",
+    "page_number": 65,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/66.jpg",
+    "page_number": 66,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/67.png",
+    "page_number": 67,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "BL/1/68.png",
+    "page_number": 68,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "BL/1/69.jpg",
+    "page_number": 69,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 3,
+    "expected_mood": "epic",
+    "page": "BL/1/70.jpg",
+    "page_number": 70,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": false,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "epic",
+    "page": "BL/1/71.png",
+    "page_number": 71,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/72.jpg",
+    "page_number": 72,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": false,
+        "predicted_intensity": 3,
+        "predicted_mood": "epic",
+        "verdict": "relaxed"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/73.png",
+    "page_number": 73,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  },
+  {
+    "chapter": "BL/1",
+    "expected_intensity": 2,
+    "expected_mood": "tension",
+    "page": "BL/1/74.jpg",
+    "page_number": 74,
+    "predictions": {
+      "t4b_wide5_selective_hold": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_legacy_12288": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_ctx_16384": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_parallel_2": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      },
+      "t4b_wide5_selective_hold_runtime_gpu_64": {
+        "intensity_match": true,
+        "predicted_intensity": 2,
+        "predicted_mood": "tension",
+        "verdict": "strict"
+      }
+    }
+  }
+]

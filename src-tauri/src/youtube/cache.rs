@@ -88,15 +88,7 @@ impl YouTubeCache {
         let json = serde_json::to_string_pretty(&index)
             .map_err(|e| format!("Failed to serialize cache index: {}", e))?;
 
-        let tmp_path = self.index_path.with_extension("json.tmp");
-        fs::write(&tmp_path, &json)
-            .map_err(|e| format!("Failed to write cache index tmp: {}", e))?;
-        // On Windows, rename fails if dest exists; remove first
-        let _ = fs::remove_file(&self.index_path);
-        fs::rename(&tmp_path, &self.index_path)
-            .map_err(|e| format!("Failed to rename cache index: {}", e))?;
-
-        Ok(())
+        crate::storage::atomic_write(&self.index_path, json.as_bytes())
     }
 
     /// Get a cached entry if it exists and the file is still present.
@@ -144,6 +136,10 @@ impl YouTubeCache {
         };
 
         if let Some(entry) = self.entries.get(&url) {
+            if collect_used_cached_paths().contains(&entry.cached_path) {
+                self.video_id_index.insert(video_id.to_string(), url);
+                return;
+            }
             if let Err(e) = fs::remove_file(&entry.cached_path) {
                 tracing::debug!("Could not remove cache file for {}: {}", video_id, e);
             }
@@ -297,8 +293,14 @@ fn collect_used_cached_paths() -> HashSet<String> {
         if let Some(sounds) = profile.get("sounds").and_then(|s| s.as_array()) {
             for sound in sounds {
                 if let Some(source) = sound.get("source") {
-                    if source.get("type").and_then(|t| t.as_str()) == Some("youtube") {
-                        if let Some(cached_path) = source.get("cachedPath").and_then(|p| p.as_str())
+                    if matches!(
+                        source.get("type").and_then(|t| t.as_str()),
+                        Some("youtube" | "local")
+                    ) {
+                        if let Some(cached_path) = source
+                            .get("cachedPath")
+                            .or_else(|| source.get("path"))
+                            .and_then(|p| p.as_str())
                         {
                             used.insert(cached_path.to_string());
                         }

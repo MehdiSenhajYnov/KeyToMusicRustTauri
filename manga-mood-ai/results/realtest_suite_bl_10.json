@@ -1,0 +1,283 @@
+{
+  "baseline_id": "t4b_wide5_selective_hold",
+  "baseline_intensity": 5,
+  "baseline_relaxed": 18,
+  "baseline_strict": 10,
+  "realtest_dir": "/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/test-images/RealTest",
+  "results_dir": "/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/results",
+  "selection_slug": null,
+  "summaries": [
+    {
+      "avg_window_s": 9.811454076050001,
+      "cache_path": "/home/mehdi/Dev/KeyToMusicRustTauri/manga-mood-ai/results/realtest_suite_t4b_wide5_selective_hold.json",
+      "decision": "wide5_selective_repair_hold",
+      "errors": 0,
+      "id": "t4b_wide5_selective_hold",
+      "intensity": 5,
+      "label": "Qwen3-VL-4B-Thinking wide-5 selective repair + action hold",
+      "max_window_s": 25.29766651,
+      "min_window_s": 4.708946857,
+      "model": "Qwen3-VL-4B-Thinking",
+      "notes": "Wide-5 selective repairs plus a zero-cost delayed epic->tension switch when a short tension bridge is sandwiched between confirmed epic runs. This benchmark baseline is explicitly aligned with the current production runtime (`8192x1`, GPU layers auto).",
+      "page_results": [
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 1,
+          "expected_mood": "tension",
+          "intensity_match": false,
+          "page_number": 1,
+          "predicted_intensity": 3,
+          "predicted_mood": "epic",
+          "rel_path": "BL/10/01.jpg",
+          "verdict": "relaxed"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 1,
+          "expected_mood": "tension",
+          "intensity_match": false,
+          "page_number": 2,
+          "predicted_intensity": 3,
+          "predicted_mood": "epic",
+          "rel_path": "BL/10/02.jpg",
+          "verdict": "relaxed"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "epic",
+          "intensity_match": false,
+          "page_number": 3,
+          "predicted_intensity": 3,
+          "predicted_mood": "epic",
+          "rel_path": "BL/10/03.jpg",
+          "verdict": "strict"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 1,
+          "expected_mood": "mystery",
+          "intensity_match": false,
+          "page_number": 4,
+          "predicted_intensity": 3,
+          "predicted_mood": "epic",
+          "rel_path": "BL/10/04.jpg",
+          "verdict": "wrong"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 1,
+          "expected_mood": "comedy",
+          "intensity_match": false,
+          "page_number": 5,
+          "predicted_intensity": 3,
+          "predicted_mood": "epic",
+          "rel_path": "BL/10/05.jpg",
+          "verdict": "wrong"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "epic",
+          "intensity_match": false,
+          "page_number": 6,
+          "predicted_intensity": 3,
+          "predicted_mood": "epic",
+          "rel_path": "BL/10/06.jpg",
+          "verdict": "strict"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "epic",
+          "intensity_match": true,
+          "page_number": 7,
+          "predicted_intensity": 2,
+          "predicted_mood": "tension",
+          "rel_path": "BL/10/07.jpg",
+          "verdict": "relaxed"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "tension",
+          "intensity_match": true,
+          "page_number": 8,
+          "predicted_intensity": 2,
+          "predicted_mood": "tension",
+          "rel_path": "BL/10/08.jpg",
+          "verdict": "strict"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "tension",
+          "intensity_match": true,
+          "page_number": 9,
+          "predicted_intensity": 2,
+          "predicted_mood": "tension",
+          "rel_path": "BL/10/09.jpg",
+          "verdict": "strict"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "tension",
+          "intensity_match": false,
+          "page_number": 10,
+          "predicted_intensity": 3,
+          "predicted_mood": "epic",
+          "rel_path": "BL/10/10.jpg",
+          "verdict": "relaxed"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "epic",
+          "intensity_match": false,
+          "page_number": 11,
+          "predicted_intensity": 3,
+          "predicted_mood": "epic",
+          "rel_path": "BL/10/11.jpg",
+          "verdict": "strict"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "tension",
+          "intensity_match": false,
+          "page_number": 12,
+          "predicted_intensity": 3,
+          "predicted_mood": "epic",
+          "rel_path": "BL/10/12.jpg",
+          "verdict": "relaxed"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "tension",
+          "intensity_match": false,
+          "page_number": 13,
+          "predicted_intensity": 3,
+          "predicted_mood": "epic",
+          "rel_path": "BL/10/13.jpg",
+          "verdict": "relaxed"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "tension",
+          "intensity_match": false,
+          "page_number": 14,
+          "predicted_intensity": 3,
+          "predicted_mood": "epic",
+          "rel_path": "BL/10/14.jpg",
+          "verdict": "relaxed"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "tension",
+          "intensity_match": false,
+          "page_number": 15,
+          "predicted_intensity": 3,
+          "predicted_mood": "tension",
+          "rel_path": "BL/10/15.jpg",
+          "verdict": "strict"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "tension",
+          "intensity_match": false,
+          "page_number": 16,
+          "predicted_intensity": 3,
+          "predicted_mood": "tension",
+          "rel_path": "BL/10/16.jpg",
+          "verdict": "strict"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "tension",
+          "intensity_match": false,
+          "page_number": 17,
+          "predicted_intensity": 3,
+          "predicted_mood": "tension",
+          "rel_path": "BL/10/17.jpg",
+          "verdict": "strict"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 2,
+          "expected_mood": "epic",
+          "intensity_match": false,
+          "page_number": 18,
+          "predicted_intensity": 3,
+          "predicted_mood": "tension",
+          "rel_path": "BL/10/18.jpg",
+          "verdict": "relaxed"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 3,
+          "expected_mood": "tension",
+          "intensity_match": true,
+          "page_number": 19,
+          "predicted_intensity": 3,
+          "predicted_mood": "tension",
+          "rel_path": "BL/10/19.jpg",
+          "verdict": "strict"
+        },
+        {
+          "chapter": "BL/10",
+          "expected_intensity": 3,
+          "expected_mood": "tension",
+          "intensity_match": true,
+          "page_number": 20,
+          "predicted_intensity": 3,
+          "predicted_mood": "tension",
+          "rel_path": "BL/10/20.jpg",
+          "verdict": "strict"
+        }
+      ],
+      "per_mood": {
+        "comedy": {
+          "relaxed": 0,
+          "strict": 0,
+          "total": 1
+        },
+        "epic": {
+          "relaxed": 5,
+          "strict": 3,
+          "total": 5
+        },
+        "mystery": {
+          "relaxed": 0,
+          "strict": 0,
+          "total": 1
+        },
+        "tension": {
+          "relaxed": 13,
+          "strict": 7,
+          "total": 13
+        }
+      },
+      "prep": "legacy_672_jpeg",
+      "quantization": "llm=Q4_K_M + mmproj=F16",
+      "relaxed": 18,
+      "runtime": "prod_8192x1 [c=8192 np=1 ngl=48]",
+      "runtime_context_size": 8192,
+      "runtime_gpu_layers": 48,
+      "runtime_parallel_slots": 1,
+      "sampling": "greedy_hist",
+      "second_pass_pages": 0,
+      "source": "live",
+      "status": "ok",
+      "strict": 10,
+      "total": 20,
+      "vram_mib": 6632,
+      "weights_mib": 3180
+    }
+  ]
+}

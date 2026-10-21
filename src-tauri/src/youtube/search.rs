@@ -2,7 +2,6 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use tokio::io::{AsyncBufReadExt, BufReader};
 
 use super::cache::YouTubeCache;
 use super::downloader::{canonical_url, extract_video_id, get_yt_dlp_bin, yt_dlp_command};
@@ -40,25 +39,24 @@ pub async fn search_youtube(
         .arg("--dump-json")
         .arg("--no-download")
         .arg("--no-warnings")
-        .arg("--no-check-certificates")
         .arg("--socket-timeout")
         .arg("10")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to run yt-dlp search: {}", e))?;
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to capture yt-dlp stdout".to_string())?;
-
+    let output = tokio::time::timeout(std::time::Duration::from_secs(90), cmd.output())
+        .await
+        .map_err(|_| "YouTube request timed out".to_string())?
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    if !output.status.success() {
+        return Err(format!(
+            "YouTube request failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
     let mut results = Vec::new();
-    let mut reader = BufReader::new(stdout).lines();
-
-    while let Ok(Some(line)) = reader.next_line().await {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
         let line = line.trim().to_string();
         if line.is_empty() {
             continue;
@@ -125,9 +123,6 @@ pub async fn search_youtube(
         }
     }
 
-    // Wait for process to finish
-    let _ = child.wait().await;
-
     Ok(results)
 }
 
@@ -145,6 +140,21 @@ pub async fn fetch_playlist(
     url: &str,
     cache: Arc<Mutex<YouTubeCache>>,
 ) -> Result<YoutubePlaylist, String> {
+    let parsed = reqwest::Url::parse(url).map_err(|_| "Invalid playlist URL".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || !matches!(
+            parsed.host_str(),
+            Some(
+                "youtube.com"
+                    | "www.youtube.com"
+                    | "m.youtube.com"
+                    | "music.youtube.com"
+                    | "youtu.be"
+            )
+        )
+    {
+        return Err("Invalid YouTube playlist URL".into());
+    }
     let yt_dlp_bin = match get_yt_dlp_bin() {
         Ok(path) => path,
         Err(_) => yt_dlp_manager::download_yt_dlp().await?,
@@ -161,20 +171,20 @@ pub async fn fetch_playlist(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to run yt-dlp playlist fetch: {}", e))?;
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Failed to capture yt-dlp stdout".to_string())?;
-
+    let output = tokio::time::timeout(std::time::Duration::from_secs(90), cmd.output())
+        .await
+        .map_err(|_| "YouTube request timed out".to_string())?
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    if !output.status.success() {
+        return Err(format!(
+            "YouTube request failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
     let mut entries = Vec::new();
     let mut playlist_title = String::new();
-    let mut reader = BufReader::new(stdout).lines();
-
-    while let Ok(Some(line)) = reader.next_line().await {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
         let line = line.trim().to_string();
         if line.is_empty() {
             continue;
@@ -260,8 +270,6 @@ pub async fn fetch_playlist(
         }
     }
 
-    let _ = child.wait().await;
-
     let total_count = entries.len();
 
     Ok(YoutubePlaylist {
@@ -327,7 +335,6 @@ pub async fn get_stream_url(video_id: &str) -> Result<StreamUrlResult, String> {
         .arg("--no-download")
         .arg("--no-warnings")
         .arg("--no-playlist")
-        .arg("--no-check-certificates")
         .arg("--socket-timeout")
         .arg("10")
         .stdout(Stdio::piped())

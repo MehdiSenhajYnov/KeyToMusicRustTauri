@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 use base64::Engine;
 use image::GenericImageView;
 
-use crate::mood::director::{MoodScores, NarrativeRole};
 use crate::mood::inference::{
     self, extract_content, parse_mood_intensity_response, LlamaRuntimeIntent,
 };
+use crate::mood::shared::{MoodScores, NarrativeRole};
 use crate::types::{BaseMood, MoodIntensity};
 
 pub const WINNER_MODEL_KEY: &str = inference::ACTIVE_MOOD_MODEL_NAME;

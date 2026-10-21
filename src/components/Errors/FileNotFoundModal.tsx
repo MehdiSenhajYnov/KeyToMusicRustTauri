@@ -1,3 +1,5 @@
+import { useDialog } from "../../hooks/useDialog";
+import { useToastStore } from "../../stores/toastStore";
 import { useState } from "react";
 import { useErrorStore } from "../../stores/errorStore";
 import { useProfileStore } from "../../stores/profileStore";
@@ -9,24 +11,32 @@ export function FileNotFoundModal() {
   const [isLocating, setIsLocating] = useState(false);
   const [isRedownloading, setIsRedownloading] = useState(false);
 
+  const dialogRef = useDialog(() => dismissCurrent(), missingQueue.length > 0);
+
   if (missingQueue.length === 0) return null;
 
   const current = missingQueue[0];
+  const profileId = useProfileStore.getState().currentProfile?.id;
+  const isCurrent = () => useProfileStore.getState().currentProfile?.id === profileId && useErrorStore.getState().missingQueue[0] === current;
+  const busy = isLocating || isRedownloading;
   const remaining = missingQueue.length - 1;
 
   const handleLocateFile = async () => {
     setIsLocating(true);
     try {
       const newPath = await commands.pickAudioFile();
-      if (newPath) {
+      if (newPath && isCurrent()) {
+        const duration = await commands.getAudioDuration(newPath);
+        if (!isCurrent()) return;
         updateSound(current.soundId, {
           source: { type: "local", path: newPath },
+          duration,
+          momentum: 0,
         });
-        saveCurrentProfile();
-        dismissCurrent();
+        if (await saveCurrentProfile() && isCurrent()) dismissCurrent();
       }
     } catch (e) {
-      console.error("Failed to pick audio file:", e);
+      useToastStore.getState().addToast(`Could not restore sound: ${e}`, "error");
     } finally {
       setIsLocating(false);
     }
@@ -38,6 +48,7 @@ export function FileNotFoundModal() {
     try {
       const downloadId = `redownload-${current.soundId}-${Date.now()}`;
       const sound = await commands.addSoundFromYoutube(current.youtubeUrl, downloadId);
+      if (!isCurrent()) return;
       // Update the existing sound's cached path
       updateSound(current.soundId, {
         source: {
@@ -47,10 +58,9 @@ export function FileNotFoundModal() {
         },
         duration: sound.duration,
       });
-      saveCurrentProfile();
-      dismissCurrent();
+      if (await saveCurrentProfile() && isCurrent()) dismissCurrent();
     } catch (e) {
-      console.error("Failed to re-download:", e);
+      useToastStore.getState().addToast(`Could not download sound: ${e}`, "error");
     } finally {
       setIsRedownloading(false);
     }
@@ -72,7 +82,7 @@ export function FileNotFoundModal() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-bg-secondary rounded-lg shadow-xl w-[440px] max-w-[90vw] p-6">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Sound file not found" tabIndex={-1} className="bg-bg-secondary rounded-lg shadow-xl w-[440px] max-w-[90vw] p-6">
         <h2 className="text-lg font-semibold text-text-primary mb-2">
           Sound File Not Found
         </h2>
@@ -95,7 +105,7 @@ export function FileNotFoundModal() {
           {current.sourceType === "local" ? (
             <button
               onClick={handleLocateFile}
-              disabled={isLocating}
+              disabled={busy}
               className="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded transition-colors"
             >
               {isLocating ? "Locating..." : "Locate File"}
@@ -103,7 +113,7 @@ export function FileNotFoundModal() {
           ) : (
             <button
               onClick={handleRedownload}
-              disabled={isRedownloading}
+              disabled={busy}
               className="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded transition-colors"
             >
               {isRedownloading ? "Downloading..." : "Re-download"}

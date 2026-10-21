@@ -1,7 +1,7 @@
+import { useProfileStore } from "../stores/profileStore";
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppConfig,
-  BaseMood,
   InitialState,
   LinuxInputAccessFixResult,
   LinuxInputAccessStatus,
@@ -74,14 +74,17 @@ export async function playSound(
   soundId: string,
   filePath: string,
   startPosition: number,
-  soundVolume: number
+  soundVolume: number,
+  trackVolume?: number
 ): Promise<void> {
+  trackVolume ??= useProfileStore.getState().currentProfile?.tracks.find((track) => track.id === trackId)?.volume ?? 1;
   return invoke("play_sound", {
     trackId,
     soundId,
     filePath,
     startPosition,
     soundVolume,
+    trackVolume,
   });
 }
 
@@ -424,8 +427,12 @@ export async function getMoodServiceStatus(): Promise<MoodServiceStatus> {
   return invoke<MoodServiceStatus>("get_mood_service_status");
 }
 
-export async function analyzeMood(imagePath: string): Promise<BaseMood> {
-  return invoke<BaseMood>("analyze_mood", { imagePath });
+export { type ProfileSummary };
+
+export async function suspendKeyDetection(suspended: boolean): Promise<void> {
+  return invoke("suspend_key_detection", { suspended });
 }
 
-export { type ProfileSummary };
+export async function flushConfig(): Promise<void> {
+  return invoke("flush_config");
+}

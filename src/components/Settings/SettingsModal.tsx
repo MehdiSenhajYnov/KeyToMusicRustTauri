@@ -1,3 +1,5 @@
+import { listen } from "@tauri-apps/api/event";
+import { useDialog } from "../../hooks/useDialog";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import { useSettingsStore } from "../../stores/settingsStore";
@@ -37,7 +39,7 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 
 function MoodAiSection({ config }: { config: import("../../types").AppConfig }) {
   const {
-    serverStatus, apiStatus, apiPort, serverInstalled, modelInstalled,
+    serverStatus, apiStatus, apiPort, serverInstalled, modelInstalled, isInstallingServer,
     modelDownloadProgress, checkInstallation,
     installServer, installModel, startServer, stopServer, refreshServiceStatus,
     setModelDownloadProgress,
@@ -47,19 +49,19 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
 
   // Listen for backend events
   useEffect(() => {
-    let cleanups: (() => void)[] = [];
-    import("@tauri-apps/api/event").then(({ listen }) => {
-      listen<{ downloaded: number; total: number }>("mood_model_download_progress", (e) => {
-        setModelDownloadProgress(e.payload);
-      }).then((u) => cleanups.push(u));
-      listen("mood_server_status", () => {
-        refreshServiceStatus();
-      }).then((u) => cleanups.push(u));
-      listen("mood_api_status", () => {
-        refreshServiceStatus();
-      }).then((u) => cleanups.push(u));
-    });
-    return () => { cleanups.forEach((u) => u()); };
+    const cleanups: (() => void)[] = [];
+    let disposed = false;
+    const register = (unlisten: () => void) => { if (disposed) unlisten(); else cleanups.push(unlisten); };
+    listen<{ downloaded: number; total: number }>("mood_model_download_progress", (e) => {
+      setModelDownloadProgress(e.payload);
+    }).then(register);
+    listen("mood_server_status", () => {
+      refreshServiceStatus();
+    }).then(register);
+    listen("mood_api_status", () => {
+      refreshServiceStatus();
+    }).then(register);
+    return () => { disposed = true; cleanups.forEach((u) => u()); };
   }, [refreshServiceStatus, setModelDownloadProgress]);
 
   const apiStatusLabel =
@@ -99,8 +101,8 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
             <span className={`w-2 h-2 rounded-full ${serverInstalled ? "bg-accent-success" : "bg-accent-error"}`} />
             <span className="text-text-secondary text-sm">llama-server</span>
             {!serverInstalled && (
-              <button onClick={installServer} className="text-xs text-accent-primary hover:underline">
-                Install
+              <button disabled={isInstallingServer} onClick={installServer} className="text-xs text-accent-primary hover:underline">
+                {isInstallingServer ? "Installing…" : "Install"}
               </button>
             )}
           </div>
@@ -108,8 +110,8 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
             <span className={`w-2 h-2 rounded-full ${modelInstalled ? "bg-accent-success" : "bg-accent-error"}`} />
             <span className="text-text-secondary text-sm">Qwen3-VL-4B-Thinking model</span>
             {!modelInstalled && (
-              <button onClick={installModel} className="text-xs text-accent-primary hover:underline">
-                Download
+              <button disabled={modelDownloadProgress !== null} onClick={installModel} className="text-xs text-accent-primary hover:underline">
+                {modelDownloadProgress ? "Downloading…" : "Download"}
               </button>
             )}
           </div>
@@ -374,18 +376,13 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
     [setAutoMomentumShortcut, setKeyDetectionShortcut]
   );
 
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !capturingTarget) onClose();
-      if (e.key === "Escape" && capturingTarget) {
-        setCapturingTarget(null);
-        setCapturedKeys([]);
-        pressedRef.current.clear();
-      }
-    };
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [onClose, capturingTarget]);
+  const dialogRef = useDialog(() => {
+    if (capturingTarget) {
+      setCapturingTarget(null);
+      setCapturedKeys([]);
+      pressedRef.current.clear();
+    } else onClose();
+  });
 
   useEffect(() => {
     if (!capturingTarget) return;
@@ -397,7 +394,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
       if (e.key === "Escape") return;
       const code = getKeyCode(e);
       pressedRef.current.add(code);
-      recordKeyLayout(code, e.key);
+      recordKeyLayout(code, e.key, e);
       setCapturedKeys(Array.from(pressedRef.current));
     };
 
@@ -420,7 +417,7 @@ export function SettingsModal({ onClose }: SettingsModalProps) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-bg-secondary border border-border-color rounded-lg w-[480px] max-h-[85vh] flex flex-col">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Settings" tabIndex={-1} className="bg-bg-secondary border border-border-color rounded-lg w-[480px] max-w-[95vw] max-h-[85vh] flex flex-col">
         {/* Header - fixed */}
         <div className="flex items-center justify-between p-4 border-b border-border-color shrink-0">
           <h2 className="text-text-primary font-semibold">Settings</h2>

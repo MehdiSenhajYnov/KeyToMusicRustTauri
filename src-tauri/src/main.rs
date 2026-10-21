@@ -73,6 +73,16 @@ fn main() {
         tracing::error!("Failed to initialize app directories: {}", e);
     }
 
+    if std::env::var_os("KEYTOMUSIC_RUN_REALTEST_BENCHMARK").is_some() {
+        tracing::info!("Running in RealTest benchmark CLI mode");
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("failed to create tokio runtime for RealTest benchmark");
+        runtime.block_on(mood::director_realtest_suite::run());
+        return;
+    }
+
     // Load config and clean up export temp in parallel
     let config = std::thread::scope(|s| {
         s.spawn(|| import_export::cleanup_interrupted_export());
@@ -113,12 +123,14 @@ fn main() {
         std::thread::spawn(move || {
             std::thread::sleep(Duration::from_secs(5));
 
-            // Auto-update yt-dlp (download if missing, re-download if > 7 days old)
+            // Update an existing installation; first installation is requested by a YouTube action.
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build();
             if let Ok(rt) = rt {
-                rt.block_on(youtube::ensure_yt_dlp_up_to_date());
+                if youtube::yt_dlp_manager::find_yt_dlp().is_some() {
+                    rt.block_on(youtube::ensure_yt_dlp_up_to_date());
+                }
             }
 
             if let Ok(mut cache) = yt_cache.lock() {
@@ -137,6 +149,7 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .manage(app_state)
         .setup(move |app| {
+            keys::layout::watch(app.handle());
             // --- Deferred audio engine initialization (async, non-blocking) ---
             let audio_cell = {
                 let state: tauri::State<'_, AppState> = app.state();
@@ -275,6 +288,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             // Config commands
             get_config,
+            flush_config,
             update_config,
             // Profile commands
             list_profiles,
@@ -296,6 +310,7 @@ fn main() {
             get_linux_input_access_status,
             enable_linux_background_detection,
             set_key_detection,
+            suspend_key_detection,
             set_stop_all_shortcut,
             set_key_cooldown,
             set_profile_bindings,
@@ -344,6 +359,7 @@ fn main() {
             open_folder,
             // Startup command
             get_initial_state,
+            get_keyboard_layout,
             // Mood AI commands
             check_llama_server_installed,
             install_llama_server,
@@ -353,7 +369,6 @@ fn main() {
             stop_mood_server,
             get_mood_server_status,
             get_mood_service_status,
-            analyze_mood,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -371,12 +386,17 @@ fn emit_audio_event(app_handle: &tauri::AppHandle, event: AudioEvent) {
                 }),
             );
         }
-        AudioEvent::SoundEnded { track_id, sound_id } => {
+        AudioEvent::SoundEnded {
+            track_id,
+            sound_id,
+            reason,
+        } => {
             let _ = app_handle.emit(
                 "sound_ended",
                 serde_json::json!({
                     "trackId": track_id,
                     "soundId": sound_id,
+                    "reason": reason.as_str(),
                 }),
             );
         }

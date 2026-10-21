@@ -57,14 +57,7 @@ pub fn load_config() -> Result<AppConfig, String> {
 
 pub fn save_config(config: &AppConfig) -> Result<(), String> {
     let config_path = get_app_data_dir().join("config.json");
-    let tmp_path = config_path.with_extension("json.tmp");
-
-    let json = serde_json::to_string_pretty(config)
+    let json = serde_json::to_vec_pretty(config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
-
-    fs::write(&tmp_path, json).map_err(|e| format!("Failed to write config temp file: {}", e))?;
-    fs::rename(&tmp_path, &config_path)
-        .map_err(|e| format!("Failed to rename config file: {}", e))?;
-
-    Ok(())
+    super::atomic_write(&config_path, &json)
 }

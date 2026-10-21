@@ -132,11 +132,11 @@ Reader page in browser
   - `server.rs` — Axum HTTP server. Active routes: `POST /api/analyze-window`, `POST /api/chapter/page`, `POST /api/chapter/focus`, `POST /api/live/cancel`, `POST /api/lookup`, `POST /api/trigger`, `GET /api/cache/status`, `GET /api/status`, `GET /api/moods`.
 - **Frontend:**
   - `moodStore.ts` — Runtime/API status, install state, download progress, last detected and committed moods. Actions: checkInstallation, refreshServiceStatus, installServer, installModel, startServer, stopServer.
-  - `useMoodPlayback.ts` — Uses `mood_detected` for UI state and `mood_committed` for actual playback. Finds all bindings with matching mood tag/intensity. Triggers all via `Promise.allSettled` (multi-track). Toast notification.
+  - `useMoodPlayback.ts` — Uses `mood_detected` for UI state and `mood_committed` for actual playback. `mood_committed` is now the final backend pipeline result, not a separate smoothing layer. Finds all bindings with matching mood tag/intensity. Triggers all via `Promise.allSettled` (multi-track). Toast notification.
   - `MoodAiSection` in SettingsModal — Toggle, install status (green/red dots), download progress bar, start/stop server, API port config.
   - Sidebar `MoodIndicator` — Shows last detected mood as colored pill.
 - **AppConfig:** `moodAiEnabled: bool`, `moodApiPort: u16` (default 8765)
-- **AppState:** `llama_server`, `mood_api_server`, `mood_cache`, `mood_director`
+- **AppState:** `llama_server`, `mood_api_server`, `mood_cache`
 
 ### Key Detection
 
@@ -232,7 +232,6 @@ pub struct AppState {
     pub llama_server: Arc<tokio::sync::Mutex<Option<LlamaServer>>>,  // Mood AI inference server
     pub mood_api_server: Arc<Mutex<Option<JoinHandle<()>>>>,          // HTTP API for external tools
     pub mood_cache: Arc<Mutex<MoodCache>>,                            // Per-chapter in-memory mood cache
-    pub mood_director: Arc<Mutex<MoodDirector>>,                      // Playback smoothing / commit logic
 }
 ```
 
@@ -258,7 +257,7 @@ pub struct AppState {
 **YouTube:** `add_sound_from_youtube(url, download_id)`, `search_youtube`, `fetch_playlist`, `get_youtube_stream_url(video_id)`, `check_yt_dlp_installed`, `install_yt_dlp`, `check_ffmpeg_installed`, `install_ffmpeg`
 **Discovery:** `start_discovery(profile_id, exclude_ids, background)`, `get_discovery_suggestions`, `save_discovery_cursor`, `update_discovery_pool`, `dismiss_discovery`, `dislike_discovery`, `undislike_discovery`, `list_disliked_videos`, `cancel_discovery`, `predownload_suggestion`
 **Import/Export:** `export_profile`, `import_profile`, `pick_save_location`, `cleanup_export_temp`, `cancel_export`, `pick_ktm_file`, `pick_legacy_file`, `import_legacy_save`
-**Mood AI:** `check_llama_server_installed`, `install_llama_server`, `check_mood_model_installed`, `install_mood_model`, `start_mood_server`, `stop_mood_server`, `get_mood_server_status`, `get_mood_service_status`, `analyze_mood(image_path)`
+**Mood AI:** `check_llama_server_installed`, `install_llama_server`, `check_mood_model_installed`, `install_mood_model`, `start_mood_server`, `stop_mood_server`, `get_mood_server_status`, `get_mood_service_status`
 **Utility:** `verify_profile_sounds`, `pick_audio_file`, `pick_audio_files`, `get_logs_folder`, `get_data_folder`, `open_folder`
 
 ## Backend → Frontend Events
