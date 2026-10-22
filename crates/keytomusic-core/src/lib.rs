@@ -9,6 +9,7 @@ pub mod keys;
 pub mod mood;
 pub mod runtime;
 pub mod service;
+pub mod session;
 pub mod state;
 pub mod storage;
 pub mod types;
