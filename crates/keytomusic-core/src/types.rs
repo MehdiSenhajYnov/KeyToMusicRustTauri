@@ -209,8 +209,50 @@ pub struct KeyBinding {
         deserialize_with = "deserialize_mood_compat"
     )]
     pub mood: Option<BaseMood>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "binding_intensity"
+    )]
     pub mood_intensity: Option<MoodIntensity>,
+}
+
+/// A binding's minimum intensity travels as the number 1–3 (what the web UI
+/// sends); older profiles stored it as "low"/"medium"/"high", which still loads.
+mod binding_intensity {
+    use super::MoodIntensity;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        value: &Option<MoodIntensity>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(intensity) => serializer.serialize_u8(intensity.as_u8()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<MoodIntensity>, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Number(u8),
+            Text(String),
+        }
+        Ok(match Option::<Raw>::deserialize(deserializer)? {
+            Some(Raw::Number(n)) => Some(MoodIntensity::from_u8(n)),
+            Some(Raw::Text(text)) => match text.as_str() {
+                "low" | "1" => Some(MoodIntensity::Low),
+                "medium" | "2" => Some(MoodIntensity::Medium),
+                "high" | "3" => Some(MoodIntensity::High),
+                _ => None,
+            },
+            None => None,
+        })
+    }
 }
 
 /// Deserialize mood field with backward compatibility for old MoodCategory values.
@@ -304,5 +346,26 @@ impl Default for AppConfig {
             mood_ai_enabled: false,
             mood_api_port: 8765,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn binding_intensity_accepts_numbers_and_legacy_strings() {
+        let base =
+            r#"{"keyCode":"KeyA","trackId":"t","soundIds":[],"loopMode":"off","currentIndex":0"#;
+        let from_number: KeyBinding =
+            serde_json::from_str(&format!(r#"{base},"moodIntensity":2}}"#)).unwrap();
+        assert_eq!(from_number.mood_intensity, Some(MoodIntensity::Medium));
+        let from_text: KeyBinding =
+            serde_json::from_str(&format!(r#"{base},"moodIntensity":"high"}}"#)).unwrap();
+        assert_eq!(from_text.mood_intensity, Some(MoodIntensity::High));
+        let none: KeyBinding = serde_json::from_str(&format!("{base}}}")).unwrap();
+        assert_eq!(none.mood_intensity, None);
+        let json = serde_json::to_value(&from_text).unwrap();
+        assert_eq!(json["moodIntensity"], 3);
     }
 }
