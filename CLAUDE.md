@@ -38,6 +38,10 @@ crates/keytomusic-core/src/       # UI-agnostic engine, shared with the native A
 ├── runtime.rs                    # Startup: logging, config, state, audio engine, key detection, flush threads
 ├── service/                      # Operations behind commands: config, playback, waveform, youtube,
 │                                 #   discovery, library (profiles/import/export/files), mood, input_access
+├── session/                      # Native-host session (used by ../KeyToMusicAwra, not by the web UI):
+│                                 #   mod.rs Session (key/loop/mood playback, profile + undo, debounced saves),
+│                                 #   editor.rs (profile edit rules, History), rules.rs (loop/mood/auto-assign),
+│                                 #   keymap.rs (combos, labels, conflicts), discovery.rs (carousel state)
 ├── state.rs                      # AppState (config, audio, keys, caches, event sink), shared as Arc
 ├── types.rs                      # Shared Rust types
 ├── audio/                        # engine.rs, track.rs, crossfade.rs, symphonia_source.rs,
