@@ -18,7 +18,7 @@ fn profile_path(id: &str) -> Result<std::path::PathBuf, String> {
         .join(format!("{}.json", id)))
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileSummary {
     pub id: ProfileId,

@@ -118,6 +118,11 @@ pub fn get_linux_input_access_status() -> LinuxInputAccessStatus {
     }
 }
 
+/// Web `KeyboardEvent.code` name of a raw Linux input keycode (evdev numbering).
+pub fn raw_keycode_to_code(raw: u16) -> Option<&'static str> {
+    keycode_to_code(KeyCode::new(raw))
+}
+
 pub(super) fn keycode_to_code(key: KeyCode) -> Option<&'static str> {
     match key {
         KeyCode::KEY_A => Some("KeyA"),

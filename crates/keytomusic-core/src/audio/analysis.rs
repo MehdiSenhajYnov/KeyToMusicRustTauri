@@ -908,7 +908,7 @@ mod tests {
             .finish();
         let fixture = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../resources/test-fixtures/reservoir.mp3"
+            "/../../resources/test-fixtures/reservoir.mp3"
         );
         let progress = std::cell::Cell::new(0);
         let waveform = tracing::subscriber::with_default(subscriber, || {

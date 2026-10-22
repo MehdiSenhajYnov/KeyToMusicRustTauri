@@ -41,3 +41,4 @@ nul
 
 # Tauri build
 src-tauri/gen/
+/target/

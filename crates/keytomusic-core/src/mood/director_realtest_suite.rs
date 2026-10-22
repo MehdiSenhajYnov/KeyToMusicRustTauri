@@ -300,12 +300,10 @@ pub async fn run() {
     assert!(!chapters.is_empty(), "No RealTest chapters selected");
 
     let realtest_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
+        .join("../..")
         .join("manga-mood-ai/test-images/RealTest");
     let results_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
+        .join("../..")
         .join("manga-mood-ai/results");
     let _ = std::fs::create_dir_all(&results_dir);
 
@@ -341,8 +339,7 @@ pub async fn run() {
     }
 
     let models_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
+        .join("../..")
         .join("manga-mood-ai/models");
     let models = discover_models(&models_dir);
     let experiment_filter = parse_experiment_filter();
@@ -403,8 +400,7 @@ pub async fn run() {
 
 fn load_realtest_dataset() -> (BTreeMap<String, Vec<PageEntry>>, u32, Option<usize>) {
     let realtest_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
+        .join("../..")
         .join("manga-mood-ai/test-images/RealTest");
     assert!(
         realtest_dir.exists(),

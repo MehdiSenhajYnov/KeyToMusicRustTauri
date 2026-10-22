@@ -2619,6 +2619,22 @@ dependencies = [
 name = "keytomusic"
 version = "1.1.0"
 dependencies = [
+ "gdk",
+ "keytomusic-core",
+ "rfd",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-shell",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "keytomusic-core"
+version = "1.1.0"
+dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
@@ -2627,22 +2643,17 @@ dependencies = [
  "evdev",
  "flate2",
  "futures",
- "gdk",
  "image",
  "rand 0.8.5",
  "rayon",
  "rdev",
  "regex",
  "reqwest",
- "rfd",
  "rodio",
  "serde",
  "serde_json",
  "symphonia",
  "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-shell",
  "tempfile",
  "tokio",
  "tokio-util",

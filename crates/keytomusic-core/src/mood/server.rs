@@ -20,7 +20,7 @@ use crate::types::MoodCategory;
 /// State shared with axum handlers.
 pub struct MoodApiState {
     pub llama_server: Arc<Mutex<Option<LlamaServer>>>,
-    pub app_handle: tauri::AppHandle,
+    pub events: crate::events::SharedSink,
     pub mood_cache: Arc<std::sync::Mutex<MoodCache>>,
     pub soundtrack_committer: Arc<std::sync::Mutex<SoundtrackCommitter>>,
     pub chapter_pipeline: Arc<Mutex<ChapterMoodPipeline>>,
@@ -40,7 +40,7 @@ pub struct LiveCancelHandle {
 pub async fn start_api_server(
     port: u16,
     llama_server: Arc<Mutex<Option<LlamaServer>>>,
-    app_handle: tauri::AppHandle,
+    events: crate::events::SharedSink,
     mood_cache: Arc<std::sync::Mutex<MoodCache>>,
 ) -> Result<(), String> {
     use axum::routing::{get, post};
@@ -48,7 +48,7 @@ pub async fn start_api_server(
 
     let state = Arc::new(MoodApiState {
         llama_server,
-        app_handle,
+        events,
         mood_cache,
         soundtrack_committer: Arc::new(std::sync::Mutex::new(SoundtrackCommitter::new())),
         chapter_pipeline: Arc::new(Mutex::new(ChapterMoodPipeline::new())),
@@ -627,7 +627,7 @@ async fn trigger_handler(
     axum::extract::State(state): axum::extract::State<Arc<MoodApiState>>,
     axum::Json(payload): axum::Json<TriggerRequest>,
 ) -> Result<axum::Json<AnalyzeResponse>, (axum::http::StatusCode, axum::Json<ErrorResponse>)> {
-    use tauri::Emitter;
+    use crate::events::CoreEvent;
 
     if !VALID_MOODS.contains(&payload.mood.as_str()) {
         return Err(err_response(
@@ -672,28 +672,24 @@ async fn trigger_handler(
         )
     };
 
-    let _ = state.app_handle.emit(
-        "mood_detected",
-        serde_json::json!({
-            "mood": observation.mood.as_str(),
-            "intensity": observation.intensity.as_u8(),
-            "source": "api"
-        }),
-    );
+    state.events.emit(CoreEvent::MoodDetected {
+        mood: observation.mood.as_str().to_string(),
+        intensity: observation.intensity.as_u8(),
+        source: "api".to_string(),
+    });
 
-    let _ = state.app_handle.emit(
-        "mood_committed",
-        serde_json::json!({
-            "mood": decision.committed_mood.as_str(),
-            "intensity": decision.committed_intensity.as_u8(),
-            "source": "api",
-            "previous_mood": decision.previous_mood.map(|mood| mood.as_str()),
-            "previous_intensity": decision.previous_intensity.map(|intensity| intensity.as_u8()),
-            "dwell_count": decision.dwell_count,
-            "mood_changed": decision.mood_changed,
-            "intensity_changed": decision.intensity_changed
-        }),
-    );
+    state.events.emit(CoreEvent::MoodCommitted {
+        mood: decision.committed_mood.as_str().to_string(),
+        intensity: decision.committed_intensity.as_u8(),
+        source: "api".to_string(),
+        previous_mood: decision.previous_mood.map(|mood| mood.as_str().to_string()),
+        previous_intensity: decision
+            .previous_intensity
+            .map(|intensity| intensity.as_u8()),
+        dwell_count: decision.dwell_count,
+        mood_changed: decision.mood_changed,
+        intensity_changed: decision.intensity_changed,
+    });
 
     Ok(axum::Json(AnalyzeResponse {
         mood: observation.mood.as_str().to_string(),

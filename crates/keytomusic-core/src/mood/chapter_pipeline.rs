@@ -24,13 +24,13 @@ pub(crate) type PipelinePagePrediction = winner::AggregatedPrediction;
 pub(crate) use winner::{RepairAcceptPair, RepairAcceptSingle, SelectivePrompt};
 
 #[derive(Clone, Debug)]
-pub(crate) struct ActionPage {
+pub struct ActionPage {
     pub(crate) page: u32,
     pub(crate) raw_bytes: Vec<u8>,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ActionTriplet {
+pub struct ActionTriplet {
     left: ActionPage,
     center: ActionPage,
     right: ActionPage,

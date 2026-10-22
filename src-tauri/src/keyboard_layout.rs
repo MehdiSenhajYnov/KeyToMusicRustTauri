@@ -7,7 +7,7 @@ fn read_keymap(keymap: &gdk::Keymap) -> HashMap<String, String> {
     let group = ((keymap.modifier_state() >> 13) & 3) as i32;
     let mut labels = HashMap::new();
     for raw in 1..=86 {
-        let Some(code) = super::linux_listener::keycode_to_code(evdev::KeyCode::new(raw)) else {
+        let Some(code) = keytomusic_core::keys::linux_listener::raw_keycode_to_code(raw) else {
             continue;
         };
         // GDK/XKB keycodes have an offset of 8 relative to Linux input keycodes.

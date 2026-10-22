@@ -672,7 +672,7 @@ mod tests {
     /// Multi-model benchmark: runs real VLM inference on manga images.
     /// Tests the new dimensional mood system (BaseMood + MoodIntensity).
     ///
-    /// Run: cargo test --manifest-path src-tauri/Cargo.toml bluelock_sequence -- --ignored --nocapture
+    /// Run: cargo test -p keytomusic-core bluelock_sequence -- --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn bluelock_sequence() {
@@ -692,8 +692,7 @@ mod tests {
         inference::lower_current_process_priority();
 
         let image_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
+            .join("../..")
             .join("manga-mood-ai/test-images/bluelock-sequence");
         assert!(image_dir.exists(), "Images not found: {:?}", image_dir);
 
@@ -912,8 +911,7 @@ mod tests {
 
         // ━━━ llama-server backends ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         let models_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
+            .join("../..")
             .join("manga-mood-ai/models");
 
         struct LlamaModelConfig {
@@ -1002,8 +1000,7 @@ mod tests {
 
             // ━━━ Pass 1: VLM dimensional (cached on disk) ━━━━━━━━━━━━━━━
             let cache_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .unwrap()
+                .join("../..")
                 .join("manga-mood-ai/results");
             let _ = std::fs::create_dir_all(&cache_dir);
             let cache_name = model_cfg.name.replace(' ', "_").to_lowercase();
@@ -2020,11 +2017,11 @@ Example: tension 2";
     /// Filter with REALTEST_FILTER env var (e.g. "BL", "BL/1", "BL,TPN").
     ///
     /// Default protocol: comparative RealTest suite with cached historical baseline + live variants.
-    /// Run: cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
-    /// Run filtered: REALTEST_FILTER=BL/1 cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
-    /// Narrow experiments: REALTEST_EXPERIMENTS=t4b_viterbi,q35_9b_viterbi cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
-    /// Current runtime showdown: REALTEST_FILTER=BL/1 REALTEST_EXPERIMENTS=current_runtime_showdown cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
-    /// Smoke run: REALTEST_FILTER=BL/1 REALTEST_PAGE_LIMIT=3 cargo test --manifest-path src-tauri/Cargo.toml realtest_benchmark -- --ignored --nocapture
+    /// Run: cargo test -p keytomusic-core realtest_benchmark -- --ignored --nocapture
+    /// Run filtered: REALTEST_FILTER=BL/1 cargo test -p keytomusic-core realtest_benchmark -- --ignored --nocapture
+    /// Narrow experiments: REALTEST_EXPERIMENTS=t4b_viterbi,q35_9b_viterbi cargo test -p keytomusic-core realtest_benchmark -- --ignored --nocapture
+    /// Current runtime showdown: REALTEST_FILTER=BL/1 REALTEST_EXPERIMENTS=current_runtime_showdown cargo test -p keytomusic-core realtest_benchmark -- --ignored --nocapture
+    /// Smoke run: REALTEST_FILTER=BL/1 REALTEST_PAGE_LIMIT=3 cargo test -p keytomusic-core realtest_benchmark -- --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn realtest_benchmark() {

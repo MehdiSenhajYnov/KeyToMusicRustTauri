@@ -248,7 +248,7 @@ Verify the implementation is **complete and correct** relative to the task. This
 3. **Run build checks**:
    - Rust changes: `cargo check --manifest-path src-tauri/Cargo.toml`
    - TypeScript changes: `npx tsc --noEmit`
-   - If tests exist for modified code: `cargo test --manifest-path src-tauri/Cargo.toml`
+   - If tests exist for modified code: `cargo test --workspace`
 4. **If anything is missing or wrong**: go back to Step 5 for those items only, then re-validate
 
 After this step, all in-scope items must be implemented and the project must build cleanly.

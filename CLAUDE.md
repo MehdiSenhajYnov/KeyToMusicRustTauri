@@ -28,15 +28,22 @@ src/                              # React/TypeScript frontend
 ├── types/index.ts                # All types (Sound, Profile, AppConfig, MoodCategory, KeyGridFilter, WaveformData, etc.)
 └── utils/                        # tauriCommands, keyMapping, profileAnalysis, errorMessages,
                                   #   fileHelpers, soundHelpers, inputHelpers, moodHelpers
-src-tauri/src/
-├── main.rs                       # Entry point, logging, event forwarding
-├── commands.rs                   # All Tauri commands
-├── state.rs                      # AppState (config, audio, keys, caches)
+Cargo.toml                        # Workspace: src-tauri + crates/keytomusic-core
+src-tauri/src/                    # Thin Tauri shell
+├── main.rs                       # Builder, installs the Tauri event sink, starts core services
+├── commands.rs                   # Tauri commands → keytomusic_core::service (+ rfd file pickers)
+└── keyboard_layout.rs            # GDK3 keymap labels (keyboard_layout_changed)
+crates/keytomusic-core/src/       # UI-agnostic engine, shared with the native Awra app
+├── events.rs                     # CoreEvent (typed) + EventSink; name()/payload() = Tauri wire format
+├── runtime.rs                    # Startup: logging, config, state, audio engine, key detection, flush threads
+├── service/                      # Operations behind commands: config, playback, waveform, youtube,
+│                                 #   discovery, library (profiles/import/export/files), mood, input_access
+├── state.rs                      # AppState (config, audio, keys, caches, event sink), shared as Arc
 ├── types.rs                      # Shared Rust types
 ├── audio/                        # engine.rs, track.rs, crossfade.rs, symphonia_source.rs,
 │                                 #   analysis.rs (waveform + cache), buffer.rs (duration)
 ├── keys/                         # detector.rs, mapping.rs, chord.rs,
-│                                 #   macos_listener.rs, windows_listener.rs
+│                                 #   linux_listener.rs, macos_listener.rs, windows_listener.rs
 ├── discovery/                    # engine.rs, mix_fetcher.rs, cache.rs
 ├── mood/                         # llama_manager.rs (download llama-server + model),
 │                                 #   inference.rs (LlamaServer lifecycle, image resize, analyze),
@@ -57,9 +64,9 @@ When exploring the codebase (searching for code, understanding how something wor
 ```bash
 npm run tauri dev                                        # Dev mode (hot reload)
 npm run tauri build                                      # Production build
-cargo fmt --manifest-path src-tauri/Cargo.toml           # Format Rust
-cargo clippy --manifest-path src-tauri/Cargo.toml        # Lint Rust
-cargo test --manifest-path src-tauri/Cargo.toml          # Test Rust
+cargo fmt --all                                          # Format Rust (workspace)
+cargo clippy --workspace --all-targets                   # Lint Rust
+cargo test --workspace                                   # Test Rust (core + shell)
 ```
 
 ## Core Architecture
@@ -68,7 +75,7 @@ cargo test --manifest-path src-tauri/Cargo.toml          # Test Rust
 
 - **Multi-Track:** Up to 20 tracks (OST, Ambiance, SFX). One sound per track; new sound triggers crossfade.
 - **Volume:** `final = sound.volume × track.volume × master_volume`. Real-time sound volume via `set_sound_volume`.
-- **Events:** mpsc channel in `main.rs` receives engine events → Tauri events. Engine emits `playback_progress` every 250ms.
+- **Events:** engine mpsc channel → `runtime::spawn_audio_engine` forwarder → `CoreEvent` → host `EventSink` (Tauri: `app.emit(event.name(), event.payload())`). Engine emits `playback_progress` every 250ms.
 - **Duration:** Symphonia header reading (`n_frames / sample_rate`), fallback to rodio. Batch via `preload_profile_sounds`.
 - **Crossfade:** 500ms default, equal-power curve (cos/sin). Same-track only.
 - **Momentum:** Start position in seconds. Triggered by Auto-Momentum mode or configurable modifier key (Shift/Ctrl/Alt).

@@ -1,460 +1,54 @@
-use crate::audio::{self, analysis, buffer::BufferManager};
-use crate::discovery;
-use crate::import_export;
-use crate::mood;
-use crate::state::AppState;
-use crate::storage;
-use crate::types::{AppConfig, MomentumModifier, Profile, Sound, SoundSource};
-use crate::youtube;
-use tauri::{Emitter, State};
+//! Tauri IPC surface. Each command forwards to `keytomusic_core::service`;
+//! only the native file pickers and the keyboard layout live here.
 
-#[cfg(target_os = "linux")]
-use std::os::unix::fs::PermissionsExt;
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use keytomusic_core::audio::{self, analysis::WaveformData};
+use keytomusic_core::discovery::engine::DiscoverySuggestion;
+use keytomusic_core::service::{
+    self, discovery::DiscoveryCacheResponse, discovery::DislikedVideoInfo,
+    input_access::LinuxInputAccessFixResult, input_access::LinuxInputAccessStatusPayload,
+    library::InitialState, library::MissingSoundInfo, mood::MoodServiceStatus,
+    playback::SoundPreloadEntry, waveform::WaveformBatchEntry, youtube::PredownloadResult,
+};
+use keytomusic_core::state::AppState;
+use keytomusic_core::types::{AppConfig, Profile, Sound};
+use keytomusic_core::{discovery, import_export, mood, storage, youtube};
+use tauri::State;
+
+type AppStateRef<'a> = State<'a, Arc<AppState>>;
 
 // ─── Configuration Commands ─────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn get_keyboard_layout(
-    app: tauri::AppHandle,
-) -> Result<std::collections::HashMap<String, String>, String> {
-    crate::keys::layout::current(&app).await
+pub async fn get_keyboard_layout(app: tauri::AppHandle) -> Result<HashMap<String, String>, String> {
+    crate::keyboard_layout::current(&app).await
 }
 
 #[tauri::command]
-pub fn get_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
+pub fn get_config(state: AppStateRef<'_>) -> Result<AppConfig, String> {
     Ok(state.get_config())
-}
-
-#[derive(serde::Serialize)]
-pub struct MoodServiceStatus {
-    runtime: String,
-    api: String,
-    enabled: bool,
-    port: u16,
-}
-
-fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
-    if let Some(v) = updates.get("masterVolume").and_then(|v| v.as_f64()) {
-        config.master_volume = v as f32;
-    }
-    if let Some(v) = updates.get("autoMomentum").and_then(|v| v.as_bool()) {
-        config.auto_momentum = v;
-    }
-    if let Some(v) = updates.get("keyDetectionEnabled").and_then(|v| v.as_bool()) {
-        config.key_detection_enabled = v;
-    }
-    if let Some(v) = updates.get("crossfadeDuration").and_then(|v| v.as_u64()) {
-        config.crossfade_duration = v as u32;
-    }
-    if let Some(v) = updates.get("keyCooldown").and_then(|v| v.as_u64()) {
-        config.key_cooldown = v as u32;
-    }
-    if let Some(v) = updates.get("stopAllShortcut").and_then(|v| v.as_array()) {
-        let keys: Vec<String> = v
-            .iter()
-            .filter_map(|k| k.as_str().map(|s| s.to_string()))
-            .collect();
-        if !keys.is_empty() {
-            config.stop_all_shortcut = keys;
-        }
-    }
-    if let Some(v) = updates
-        .get("autoMomentumShortcut")
-        .and_then(|v| v.as_array())
-    {
-        config.auto_momentum_shortcut = v
-            .iter()
-            .filter_map(|k| k.as_str().map(|s| s.to_string()))
-            .collect();
-    }
-    if let Some(v) = updates
-        .get("keyDetectionShortcut")
-        .and_then(|v| v.as_array())
-    {
-        config.key_detection_shortcut = v
-            .iter()
-            .filter_map(|k| k.as_str().map(|s| s.to_string()))
-            .collect();
-    }
-    if updates.get("currentProfileId").is_some() {
-        config.current_profile_id = updates
-            .get("currentProfileId")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-    }
-    if updates.get("audioDevice").is_some() {
-        config.audio_device = updates.get("audioDevice").and_then(|v| {
-            if v.is_null() {
-                None
-            } else {
-                v.as_str().map(|s| s.to_string())
-            }
-        });
-    }
-    if let Some(v) = updates.get("chordWindowMs").and_then(|v| v.as_u64()) {
-        config.chord_window_ms = v as u32;
-    }
-    if let Some(v) = updates.get("momentumModifier").and_then(|v| v.as_str()) {
-        config.momentum_modifier = match v {
-            "Shift" => MomentumModifier::Shift,
-            "Ctrl" => MomentumModifier::Ctrl,
-            "Alt" => MomentumModifier::Alt,
-            "None" => MomentumModifier::None,
-            _ => MomentumModifier::Shift,
-        };
-    }
-    if let Some(v) = updates
-        .get("playlistImportEnabled")
-        .and_then(|v| v.as_bool())
-    {
-        config.playlist_import_enabled = v;
-    }
-    if let Some(v) = updates.get("moodAiEnabled").and_then(|v| v.as_bool()) {
-        config.mood_ai_enabled = v;
-    }
-    if let Some(v) = updates.get("moodApiPort").and_then(|v| v.as_u64()) {
-        config.mood_api_port = v as u16;
-    }
-}
-
-fn restore_config_fields(
-    config: &mut AppConfig,
-    previous: &AppConfig,
-    updates: &serde_json::Value,
-) {
-    // Restore only this request's fields; unrelated concurrent changes must survive.
-    if let (Ok(serde_json::Value::Object(mut fields)), Some(updates)) =
-        (serde_json::to_value(previous), updates.as_object())
-    {
-        fields.retain(|key, _| updates.contains_key(key));
-        apply_config_updates(config, &serde_json::Value::Object(fields));
-    }
-}
-
-fn sync_runtime_dependent_config(state: &AppState, config: &AppConfig) {
-    if let Ok(engine) = state.get_audio_engine() {
-        let _ = engine.set_audio_device(config.audio_device.clone());
-        let _ = engine.set_master_volume(config.master_volume);
-    }
-
-    state.key_detector.set_enabled(config.key_detection_enabled);
-    state.key_detector.set_cooldown(config.key_cooldown);
-    state
-        .key_detector
-        .set_stop_all_shortcut(config.stop_all_shortcut.clone());
-    state
-        .key_detector
-        .set_auto_momentum_shortcut(config.auto_momentum_shortcut.clone());
-    state
-        .key_detector
-        .set_key_detection_shortcut(config.key_detection_shortcut.clone());
-    state.key_detector.set_chord_window(config.chord_window_ms);
-}
-
-fn emit_mood_server_status(app_handle: &tauri::AppHandle, status: &str) {
-    let _ = app_handle.emit(
-        "mood_server_status",
-        serde_json::json!({ "status": status }),
-    );
-}
-
-fn api_task_status(state: &AppState, enabled: bool) -> String {
-    let mut guard = state
-        .mood_api_server
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    let finished = guard.as_ref().map(|h| h.is_finished()).unwrap_or(false);
-    if finished {
-        guard.take();
-    }
-    if !enabled {
-        "disabled".to_string()
-    } else if guard.is_some() {
-        "running".to_string()
-    } else {
-        "stopped".to_string()
-    }
-}
-
-fn emit_mood_api_status(app_handle: &tauri::AppHandle, state: &AppState) {
-    let config = state.get_config();
-    let status = api_task_status(state, config.mood_ai_enabled);
-    let _ = app_handle.emit(
-        "mood_api_status",
-        serde_json::json!({
-            "status": status,
-            "enabled": config.mood_ai_enabled,
-            "port": config.mood_api_port,
-        }),
-    );
-}
-
-async fn runtime_status(state: &AppState) -> String {
-    let mut guard = state.llama_server.lock().await;
-    let is_running = guard.as_mut().map(|s| s.is_running()).unwrap_or(false);
-    if guard.is_some() && !is_running {
-        *guard = None;
-        "stopped".to_string()
-    } else if is_running {
-        "running".to_string()
-    } else {
-        "stopped".to_string()
-    }
-}
-
-async fn stop_mood_api_server_inner(state: &AppState, app_handle: &tauri::AppHandle) {
-    let mut api_guard = state
-        .mood_api_server
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if let Some(handle) = api_guard.take() {
-        handle.abort();
-    }
-    drop(api_guard);
-    emit_mood_api_status(app_handle, state);
-}
-
-async fn start_mood_api_server_inner(
-    state: &AppState,
-    app_handle: &tauri::AppHandle,
-    port: u16,
-) -> Result<(), String> {
-    if runtime_status(state).await != "running" {
-        return Err("Mood AI runtime is not running".to_string());
-    }
-
-    stop_mood_api_server_inner(state, app_handle).await;
-
-    let bind_probe = std::net::TcpListener::bind(("127.0.0.1", port))
-        .map_err(|e| format!("Failed to bind Mood API port {}: {}", port, e))?;
-    drop(bind_probe);
-
-    let llama_ref = state.llama_server.clone();
-    let handle = app_handle.clone();
-    let cache_ref = state.mood_cache.clone();
-
-    let api_handle = tokio::spawn(async move {
-        if let Err(e) = mood::server::start_api_server(port, llama_ref, handle, cache_ref).await {
-            tracing::error!("Mood API server error: {}", e);
-        }
-    });
-
-    {
-        let mut api_guard = state
-            .mood_api_server
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        *api_guard = Some(api_handle);
-    }
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(400))
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client for Mood API check: {}", e))?;
-    let status_url = format!("http://127.0.0.1:{}/api/status", port);
-
-    for _ in 0..20 {
-        if client
-            .get(&status_url)
-            .send()
-            .await
-            .map(|resp| resp.status().is_success())
-            .unwrap_or(false)
-        {
-            emit_mood_api_status(app_handle, state);
-            return Ok(());
-        }
-
-        let finished = {
-            let mut api_guard = state
-                .mood_api_server
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            let finished = api_guard.as_ref().map(|h| h.is_finished()).unwrap_or(false);
-            if finished {
-                api_guard.take();
-            }
-            finished
-        };
-
-        if finished {
-            break;
-        }
-
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    }
-
-    stop_mood_api_server_inner(state, app_handle).await;
-    Err(format!(
-        "Mood API failed to start on port {}. Check if the port is already in use.",
-        port
-    ))
-}
-
-async fn start_mood_runtime_inner(
-    state: &AppState,
-    app_handle: &tauri::AppHandle,
-) -> Result<(), String> {
-    if runtime_status(state).await == "running" {
-        emit_mood_server_status(app_handle, "running");
-        return Ok(());
-    }
-
-    let model_path = mood::llama_manager::get_model_path();
-    let mmproj_path = mood::llama_manager::get_mmproj_path();
-    if !model_path.exists() {
-        return Err("LLM model not downloaded".to_string());
-    }
-    if !mmproj_path.exists() {
-        return Err("Vision encoder (mmproj) not downloaded".to_string());
-    }
-
-    emit_mood_server_status(app_handle, "starting");
-
-    let model_str = model_path.to_string_lossy().to_string();
-    let mmproj_str = mmproj_path.to_string_lossy().to_string();
-    let server = match mood::inference::LlamaServer::start_with_options(
-        &model_str,
-        &mmproj_str,
-        mood::inference::LlamaServerStartOptions {
-            reasoning_format: mood::inference::reasoning_format_from_env(),
-            context_size: None,
-            parallel_slots: None,
-            gpu_layers: None,
-            runtime_intent: Some(mood::winner::winner_runtime_intent()),
-        },
-    )
-    .await
-    {
-        Ok(server) => server,
-        Err(err) => {
-            emit_mood_server_status(app_handle, "error");
-            return Err(err);
-        }
-    };
-
-    let mut guard = state.llama_server.lock().await;
-    *guard = Some(server);
-    drop(guard);
-
-    emit_mood_server_status(app_handle, "running");
-    Ok(())
-}
-
-async fn stop_mood_runtime_inner(state: &AppState, app_handle: &tauri::AppHandle) {
-    stop_mood_api_server_inner(state, app_handle).await;
-
-    let mut guard = state.llama_server.lock().await;
-    if let Some(mut server) = guard.take() {
-        server.stop();
-    }
-    drop(guard);
-
-    emit_mood_server_status(app_handle, "stopped");
-}
-
-async fn sync_mood_service_config(
-    state: &AppState,
-    app_handle: &tauri::AppHandle,
-    previous: &AppConfig,
-    current: &AppConfig,
-) -> Result<(), String> {
-    if !current.mood_ai_enabled {
-        stop_mood_runtime_inner(state, app_handle).await;
-        return Ok(());
-    }
-
-    let has_runtime_assets = mood::llama_manager::is_llama_server_installed()
-        && mood::llama_manager::is_model_downloaded();
-    if !has_runtime_assets {
-        emit_mood_server_status(app_handle, &runtime_status(state).await);
-        emit_mood_api_status(app_handle, state);
-        return Ok(());
-    }
-
-    start_mood_runtime_inner(state, app_handle).await?;
-
-    let needs_api_restart = !previous.mood_ai_enabled
-        || previous.mood_api_port != current.mood_api_port
-        || api_task_status(state, true) != "running";
-    if needs_api_restart {
-        start_mood_api_server_inner(state, app_handle, current.mood_api_port).await?;
-    } else {
-        emit_mood_api_status(app_handle, state);
-    }
-
-    Ok(())
 }
 
 #[tauri::command]
 pub async fn update_config(
-    state: State<'_, AppState>,
-    app_handle: tauri::AppHandle,
+    state: AppStateRef<'_>,
     updates: serde_json::Value,
 ) -> Result<(), String> {
-    let touches_mood_service =
-        updates.get("moodAiEnabled").is_some() || updates.get("moodApiPort").is_some();
-    let _lifecycle = if touches_mood_service {
-        Some(state.mood_lifecycle.lock().await)
-    } else {
-        None
-    };
-    if let Some(port) = updates.get("moodApiPort") {
-        if !port
-            .as_u64()
-            .is_some_and(|port| (1024..=65535).contains(&port))
-        {
-            return Err("API port must be between 1024 and 65535".into());
-        }
-    }
-    let previous = state.get_config();
-
-    let config = state.update_config(|config| {
-        apply_config_updates(config, &updates);
-    });
-    sync_runtime_dependent_config(&state, &config);
-
-    if touches_mood_service {
-        if let Err(err) = sync_mood_service_config(&state, &app_handle, &previous, &config).await {
-            let restored = state.update_config(|config| {
-                restore_config_fields(config, &previous, &updates);
-            });
-            sync_runtime_dependent_config(&state, &restored);
-            let _ = sync_mood_service_config(&state, &app_handle, &config, &restored).await;
-            return Err(err);
-        }
-    } else {
-        emit_mood_api_status(&app_handle, &state);
-    }
-
-    state.schedule_config_save();
-    if let Err(error) = state.flush_config() {
-        let restored = state.update_config(|current| {
-            restore_config_fields(current, &previous, &updates);
-        });
-        sync_runtime_dependent_config(&state, &restored);
-        if touches_mood_service {
-            let _ = sync_mood_service_config(&state, &app_handle, &config, &restored).await;
-        }
-        state.schedule_config_save();
-        return Err(error);
-    }
-    Ok(())
+    service::config::update_config(&state, updates).await
 }
 
 /// Set the profile bindings for chord detection.
 /// Called when profile changes or bindings are modified.
 #[tauri::command]
-pub fn set_profile_bindings(
-    state: State<'_, AppState>,
-    bindings: Vec<String>,
-) -> Result<(), String> {
+pub fn set_profile_bindings(state: AppStateRef<'_>, bindings: Vec<String>) -> Result<(), String> {
     state.key_detector.set_profile_bindings(&bindings);
     Ok(())
 }
 
 #[tauri::command]
-pub fn flush_config(state: State<'_, AppState>) -> Result<(), String> {
+pub fn flush_config(state: AppStateRef<'_>) -> Result<(), String> {
     state.flush_config()
 }
 
@@ -481,15 +75,8 @@ pub fn save_profile(profile: Profile) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    storage::delete_profile(id.clone())?;
-    discovery::cache::DiscoveryCache::delete(&id);
-    // Cleanup cached YouTube files no longer referenced by any profile
-    if let Ok(mut cache) = state.youtube_cache.lock() {
-        cache.ensure_loaded();
-        cache.cleanup_unused();
-    }
-    Ok(())
+pub fn delete_profile(state: AppStateRef<'_>, id: String) -> Result<(), String> {
+    service::library::delete_profile(&state, id)
 }
 
 #[tauri::command]
@@ -502,8 +89,7 @@ pub fn duplicate_profile(id: String, new_name: Option<String>) -> Result<Profile
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Keep explicit IPC fields compatible with existing callers.
 pub async fn play_sound(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     track_id: String,
     sound_id: String,
     file_path: String,
@@ -511,100 +97,37 @@ pub async fn play_sound(
     sound_volume: f32,
     track_volume: Option<f32>,
 ) -> Result<(), String> {
-    if !start_position.is_finite() || start_position < 0.0 {
-        return Err("Invalid playback position".to_string());
-    }
-    if !sound_volume.is_finite() || !(0.0..=1.0).contains(&sound_volume) {
-        return Err("Invalid sound volume".to_string());
-    }
-    let engine = state.get_audio_engine()?;
-    let config = state.get_config();
-
-    // Check file exists
-    if !std::path::Path::new(&file_path).exists() {
-        tracing::warn!(
-            "Sound file not found: {} (track: {}, sound: {})",
-            file_path,
-            track_id,
-            sound_id
-        );
-        // Play error sound
-        let _ = engine.play_error_sound();
-        // Emit sound_not_found event
-        let _ = app.emit(
-            "sound_not_found",
-            serde_json::json!({
-                "soundId": sound_id,
-                "path": file_path,
-                "trackId": track_id,
-            }),
-        );
-        return Err(format!("Sound file not found: {}", file_path));
-    }
-
-    // Apply the requested volume before decoding; a cancelled slow preparation
-    // must never overwrite the volume of a newer playback request.
-    engine.set_track_volume(
-        track_id.clone(),
-        track_volume.unwrap_or(1.0).clamp(0.0, 1.0),
-    )?;
-    // Pre-create the source off the audio thread (file I/O + probe + seek + first decode)
-    let request = engine.begin_playback(&track_id);
-    let decode_path = file_path.clone();
-    let source = tokio::task::spawn_blocking(move || {
-        crate::audio::symphonia_source::SymphoniaSource::new(&decode_path, start_position)
-    })
+    service::playback::play_sound(
+        &state,
+        track_id,
+        sound_id,
+        file_path,
+        start_position,
+        sound_volume,
+        track_volume,
+    )
     .await
-    .map_err(|e| e.to_string())??;
-
-    engine
-        .play_sound_prepared(
-            request,
-            track_id,
-            sound_id,
-            file_path,
-            start_position,
-            source,
-            sound_volume,
-            config.crossfade_duration,
-        )
-        .await
 }
 
 #[tauri::command]
-pub fn stop_sound(state: State<'_, AppState>, track_id: String) -> Result<(), String> {
+pub fn stop_sound(state: AppStateRef<'_>, track_id: String) -> Result<(), String> {
     state.get_audio_engine()?.stop_track(track_id)
 }
 
 #[tauri::command]
-pub fn stop_all_sounds(
-    app_handle: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    state.get_audio_engine()?.stop_all()?;
-    // Emit stop_all_triggered so mood playback resets activeMoodRef
-    let _ = app_handle.emit("stop_all_triggered", serde_json::json!({}));
-    Ok(())
+pub fn stop_all_sounds(state: AppStateRef<'_>) -> Result<(), String> {
+    service::playback::stop_all_sounds(&state)
 }
 
 #[tauri::command]
-pub fn set_master_volume(state: State<'_, AppState>, volume: f32) -> Result<(), String> {
-    // Update config
-    state.update_config(|config| {
-        config.master_volume = volume;
-    });
-    state.schedule_config_save();
-
-    // Update audio engine (graceful if not yet ready — will pick up from config on init)
-    if let Ok(engine) = state.get_audio_engine() {
-        let _ = engine.set_master_volume(volume);
-    }
+pub fn set_master_volume(state: AppStateRef<'_>, volume: f32) -> Result<(), String> {
+    service::config::set_master_volume(&state, volume);
     Ok(())
 }
 
 #[tauri::command]
 pub fn set_track_volume(
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     track_id: String,
     volume: f32,
 ) -> Result<(), String> {
@@ -613,7 +136,7 @@ pub fn set_track_volume(
 
 #[tauri::command]
 pub fn set_sound_volume(
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     track_id: String,
     sound_id: String,
     volume: f32,
@@ -624,321 +147,49 @@ pub fn set_sound_volume(
 }
 
 #[tauri::command]
-pub async fn get_audio_duration(state: State<'_, AppState>, path: String) -> Result<f64, String> {
-    tracing::info!("[cpu-pool] get_audio_duration START: {}", path);
-    let pool = state.cpu_pool.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        pool.install(|| BufferManager::get_audio_duration(&path))
-    })
-    .await
-    .map_err(|e| format!("Task failed: {}", e))?;
-    tracing::info!("[cpu-pool] get_audio_duration END");
-    result
+pub async fn get_audio_duration(state: AppStateRef<'_>, path: String) -> Result<f64, String> {
+    service::playback::get_audio_duration(&state, path).await
 }
 
-// ─── Sound Pre-loading ─────────────────────────────────────────────────────
-
-/// Batch compute durations for sounds that need it.
-/// Uses shared CPU pool. Checks profile_load_gen to bail early on stale loads.
 #[tauri::command]
 pub async fn preload_profile_sounds(
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     sounds: Vec<SoundPreloadEntry>,
-) -> Result<std::collections::HashMap<String, f64>, String> {
-    use std::sync::atomic::Ordering;
-
-    let pool = state.cpu_pool.clone();
-    let gen_counter = state.profile_load_gen.clone();
-    // Bump generation: any older preload_profile_sounds still running becomes stale
-    let gen = gen_counter.fetch_add(1, Ordering::SeqCst) + 1;
-
-    let count = sounds.iter().filter(|e| e.needs_duration).count();
-    tracing::info!(
-        "[cpu-pool] preload_profile_sounds START: {} sounds need duration (gen={})",
-        count,
-        gen
-    );
-    let result = tokio::task::spawn_blocking(move || {
-        use rayon::prelude::*;
-        use std::sync::Mutex;
-
-        // Only process sounds that actually need duration
-        let needs_work: Vec<&SoundPreloadEntry> =
-            sounds.iter().filter(|e| e.needs_duration).collect();
-
-        if needs_work.is_empty() {
-            return std::collections::HashMap::new();
-        }
-
-        let durations: Mutex<std::collections::HashMap<String, f64>> =
-            Mutex::new(std::collections::HashMap::new());
-
-        // Process in chunks of 4 to avoid monopolizing the pool.
-        // Check generation at each chunk boundary for early bail.
-        for chunk in needs_work.chunks(4) {
-            if gen_counter.load(Ordering::SeqCst) != gen {
-                break;
-            }
-            pool.install(|| {
-                chunk.par_iter().for_each(|entry| {
-                    if gen_counter.load(Ordering::SeqCst) != gen {
-                        return;
-                    }
-
-                    let path = std::path::Path::new(&entry.file_path);
-                    if !path.exists() {
-                        return;
-                    }
-
-                    if let Ok(dur) = BufferManager::get_audio_duration(&entry.file_path) {
-                        if dur > 0.0 {
-                            durations
-                                .lock()
-                                .unwrap()
-                                .insert(entry.sound_id.clone(), dur);
-                        }
-                    }
-                });
-            });
-        }
-
-        durations.into_inner().unwrap()
-    })
-    .await
-    .map_err(|e| format!("Preload task failed: {}", e));
-    tracing::info!("[cpu-pool] preload_profile_sounds END (gen={})", gen);
-    result
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SoundPreloadEntry {
-    pub sound_id: String,
-    pub file_path: String,
-    pub needs_duration: bool,
+) -> Result<HashMap<String, f64>, String> {
+    service::playback::preload_profile_sounds(&state, sounds).await
 }
 
 // ─── Key Detection Commands ────────────────────────────────────────────────
 
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LinuxInputAccessStatusPayload {
-    pub supported: bool,
-    pub session_type: String,
-    pub background_detection_available: bool,
-    pub can_auto_fix: bool,
-    pub relogin_recommended: bool,
-    pub accessible_keyboard_devices: Vec<String>,
-    pub keyboard_candidates: Vec<String>,
-    pub message: Option<String>,
-}
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LinuxInputAccessFixResult {
-    pub success: bool,
-    pub message: String,
-    pub status: LinuxInputAccessStatusPayload,
-}
-
-#[cfg(target_os = "linux")]
-fn is_wayland_session_for_linux_input() -> bool {
-    std::env::var_os("WAYLAND_DISPLAY").is_some()
-        || std::env::var("XDG_SESSION_TYPE")
-            .map(|value| value.eq_ignore_ascii_case("wayland"))
-            .unwrap_or(false)
-}
-
-#[cfg(target_os = "linux")]
-fn linux_input_status_payload() -> LinuxInputAccessStatusPayload {
-    if is_wayland_session_for_linux_input() {
-        let status = crate::keys::linux_listener::get_linux_input_access_status();
-        LinuxInputAccessStatusPayload {
-            supported: status.supported,
-            session_type: status.session_type,
-            background_detection_available: status.background_detection_available,
-            can_auto_fix: status.can_auto_fix,
-            relogin_recommended: status.relogin_recommended,
-            accessible_keyboard_devices: status.accessible_keyboard_devices,
-            keyboard_candidates: status.keyboard_candidates,
-            message: status.message,
-        }
-    } else {
-        LinuxInputAccessStatusPayload {
-            supported: true,
-            session_type: "x11".to_string(),
-            background_detection_available: true,
-            can_auto_fix: false,
-            relogin_recommended: false,
-            accessible_keyboard_devices: Vec::new(),
-            keyboard_candidates: Vec::new(),
-            message: Some("Background detection uses the X11 hook in this session.".to_string()),
-        }
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn linux_input_status_payload() -> LinuxInputAccessStatusPayload {
-    LinuxInputAccessStatusPayload {
-        supported: false,
-        session_type: "other".to_string(),
-        background_detection_available: false,
-        can_auto_fix: false,
-        relogin_recommended: false,
-        accessible_keyboard_devices: Vec::new(),
-        keyboard_candidates: Vec::new(),
-        message: Some(
-            "Automatic Linux background-input setup is only available on Linux.".to_string(),
-        ),
-    }
-}
-
 #[tauri::command]
 pub fn get_linux_input_access_status() -> Result<LinuxInputAccessStatusPayload, String> {
-    Ok(linux_input_status_payload())
+    Ok(service::input_access::linux_input_status())
 }
 
 #[tauri::command]
 pub fn enable_linux_background_detection() -> Result<LinuxInputAccessFixResult, String> {
-    #[cfg(not(target_os = "linux"))]
-    {
-        return Err("Automatic background-input setup is only available on Linux".to_string());
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        if !is_wayland_session_for_linux_input() {
-            let status = linux_input_status_payload();
-            return Ok(LinuxInputAccessFixResult {
-                success: true,
-                message: "No extra setup is needed on X11.".to_string(),
-                status,
-            });
-        }
-
-        let current_status = linux_input_status_payload();
-        if current_status.background_detection_available {
-            return Ok(LinuxInputAccessFixResult {
-                success: true,
-                message: "Background detection is already available.".to_string(),
-                status: current_status,
-            });
-        }
-
-        let temp_path = std::env::temp_dir().join(format!(
-            "keytomusic-enable-wayland-input-{}.sh",
-            std::process::id()
-        ));
-
-        let script = r#"#!/bin/sh
-set -eu
-RULE_PATH="/etc/udev/rules.d/70-keytomusic-background-input.rules"
-cat > "$RULE_PATH" <<'EOF'
-ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess"
-EOF
-chmod 0644 "$RULE_PATH"
-udevadm control --reload-rules
-udevadm trigger --subsystem-match=input --action=change
-"#;
-
-        std::fs::write(&temp_path, script)
-            .map_err(|e| format!("Failed to prepare setup helper: {}", e))?;
-        std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o700))
-            .map_err(|e| format!("Failed to mark setup helper executable: {}", e))?;
-
-        let output = std::process::Command::new("pkexec")
-            .arg("/bin/sh")
-            .arg(&temp_path)
-            .output();
-
-        let _ = std::fs::remove_file(&temp_path);
-
-        let output = match output {
-            Ok(output) => output,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Err(
-                    "Automatic setup requires pkexec, but it is not installed on this system."
-                        .to_string(),
-                )
-            }
-            Err(e) => return Err(format!("Failed to launch automatic setup: {}", e)),
-        };
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let detail = if !stderr.is_empty() {
-                stderr
-            } else if !stdout.is_empty() {
-                stdout
-            } else {
-                "The permission request was cancelled or denied.".to_string()
-            };
-            return Err(format!("Automatic setup failed: {}", detail));
-        }
-
-        let status = linux_input_status_payload();
-        Ok(LinuxInputAccessFixResult {
-            success: true,
-            message: if status.background_detection_available {
-                "Background detection access has been enabled.".to_string()
-            } else {
-                "System access rules were installed. The app will keep retrying automatically; if background detection still does not recover, sign out and back in once.".to_string()
-            },
-            status,
-        })
-    }
+    service::input_access::enable_linux_background_detection()
 }
 
 #[tauri::command]
-pub fn suspend_key_detection(state: State<'_, AppState>, suspended: bool) {
+pub fn suspend_key_detection(state: AppStateRef<'_>, suspended: bool) {
     state.key_detector.set_suspended(suspended);
 }
 
 #[tauri::command]
-pub fn set_key_detection(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
-    state.key_detector.set_enabled(enabled);
-
-    // Also update config
-    state.update_config(|config| {
-        config.key_detection_enabled = enabled;
-    });
-    state.schedule_config_save();
+pub fn set_key_detection(state: AppStateRef<'_>, enabled: bool) -> Result<(), String> {
+    service::config::set_key_detection(&state, enabled);
     Ok(())
 }
 
 #[tauri::command]
-pub fn set_stop_all_shortcut(state: State<'_, AppState>, keys: Vec<String>) -> Result<(), String> {
-    if keys.len() < 2 {
-        return Err("Stop all shortcut must have at least 2 keys".to_string());
-    }
-
-    // Update the detector
-    state.key_detector.set_stop_all_shortcut(keys.clone());
-
-    // Update config
-    state.update_config(|config| {
-        config.stop_all_shortcut = keys;
-    });
-    state.schedule_config_save();
-    Ok(())
+pub fn set_stop_all_shortcut(state: AppStateRef<'_>, keys: Vec<String>) -> Result<(), String> {
+    service::config::set_stop_all_shortcut(&state, keys)
 }
 
 #[tauri::command]
-pub fn set_key_cooldown(state: State<'_, AppState>, cooldown_ms: u32) -> Result<(), String> {
-    if cooldown_ms > 5000 {
-        return Err("Cooldown must be at most 5000ms".to_string());
-    }
-
-    // Update the detector
-    state.key_detector.set_cooldown(cooldown_ms);
-
-    // Update config
-    state.update_config(|config| {
-        config.key_cooldown = cooldown_ms;
-    });
-    state.schedule_config_save();
-    Ok(())
+pub fn set_key_cooldown(state: AppStateRef<'_>, cooldown_ms: u32) -> Result<(), String> {
+    service::config::set_key_cooldown(&state, cooldown_ms)
 }
 
 // ─── Audio Device Commands ────────────────────────────────────────────────
@@ -949,243 +200,55 @@ pub fn list_audio_devices() -> Vec<String> {
 }
 
 #[tauri::command]
-pub fn set_audio_device(state: State<'_, AppState>, device: Option<String>) -> Result<(), String> {
-    // Update audio engine
-    state.get_audio_engine()?.set_audio_device(device.clone())?;
-
-    // Update config
-    state.update_config(|config| {
-        config.audio_device = device;
-    });
-    state.schedule_config_save();
-    Ok(())
+pub fn set_audio_device(state: AppStateRef<'_>, device: Option<String>) -> Result<(), String> {
+    service::config::set_audio_device(&state, device)
 }
 
 // ─── Waveform Commands ────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn get_waveform(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     path: String,
     num_points: usize,
-) -> Result<analysis::WaveformData, String> {
-    // Check cache first
-    {
-        let mut cache = state.waveform_cache.lock().unwrap();
-        if let Some(data) = cache.get(&path) {
-            return Ok(data.clone());
-        }
-    }
-
-    tracing::info!("[cpu-pool] get_waveform START: {}", path);
-    let path_clone = path.clone();
-    let path_event = path.clone();
-    let pool = state.cpu_pool.clone();
-
-    // Channel for streaming partial results to the frontend
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(Vec<f32>, f64, u32)>();
-
-    // Forwarder: reads from channel and emits Tauri events
-    let app_clone = app.clone();
-    let forwarder = tokio::spawn(async move {
-        while let Some((points, duration, sample_rate)) = rx.recv().await {
-            let _ = app_clone.emit(
-                "waveform_progress",
-                serde_json::json!({
-                    "path": &path_event,
-                    "points": points,
-                    "duration": duration,
-                    "sampleRate": sample_rate,
-                }),
-            );
-        }
-    });
-
-    let result = tokio::task::spawn_blocking(move || {
-        pool.install(|| {
-            let cb = move |points: &[f32], dur: f64, sr: u32| {
-                let _ = tx.send((points.to_vec(), dur, sr));
-            };
-            analysis::compute_waveform_sampled(&path_clone, num_points, Some(&cb))
-        })
-    })
-    .await
-    .map_err(|e| format!("Waveform task failed: {}", e))??;
-
-    let _ = forwarder.await;
-    tracing::info!("[cpu-pool] get_waveform END: {}", path);
-
-    // Cache result
-    {
-        let mut cache = state.waveform_cache.lock().unwrap();
-        cache.insert(path, result.clone());
-    }
-
-    Ok(result)
-}
-
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WaveformBatchEntry {
-    pub path: String,
-    pub num_points: usize,
+) -> Result<WaveformData, String> {
+    service::waveform::get_waveform(&state, path, num_points).await
 }
 
 #[tauri::command]
 pub async fn get_waveforms_batch(
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     entries: Vec<WaveformBatchEntry>,
-) -> Result<std::collections::HashMap<String, analysis::WaveformData>, String> {
-    let waveform_cache = state.waveform_cache.clone();
-
-    // Separate cached from uncached
-    let mut results: std::collections::HashMap<String, analysis::WaveformData> =
-        std::collections::HashMap::new();
-    let mut to_compute: Vec<WaveformBatchEntry> = Vec::new();
-
-    {
-        let mut cache = waveform_cache.lock().unwrap();
-        for entry in &entries {
-            if let Some(data) = cache.get(&entry.path) {
-                results.insert(entry.path.clone(), data.clone());
-            } else {
-                to_compute.push(WaveformBatchEntry {
-                    path: entry.path.clone(),
-                    num_points: entry.num_points,
-                });
-            }
-        }
-    }
-
-    if to_compute.is_empty() {
-        return Ok(results);
-    }
-
-    let gen = state.profile_load_gen.clone();
-    let current_gen = gen.load(std::sync::atomic::Ordering::SeqCst);
-    tracing::info!(
-        "[cpu-pool] get_waveforms_batch START: {} to compute (gen={})",
-        to_compute.len(),
-        current_gen
-    );
-    let pool = state.cpu_pool.clone();
-    let computed = tokio::task::spawn_blocking(move || {
-        use rayon::prelude::*;
-        use std::sync::atomic::Ordering;
-        use std::sync::Mutex;
-
-        let new_results: Mutex<std::collections::HashMap<String, analysis::WaveformData>> =
-            Mutex::new(std::collections::HashMap::new());
-
-        // Process in chunks of 4 to avoid monopolizing the pool.
-        // Check generation at each chunk boundary for early bail.
-        for chunk in to_compute.chunks(4) {
-            if gen.load(Ordering::SeqCst) != current_gen {
-                break;
-            }
-            pool.install(|| {
-                chunk.par_iter().for_each(|entry| {
-                    if gen.load(Ordering::SeqCst) != current_gen {
-                        return;
-                    }
-                    if let Ok(data) =
-                        analysis::compute_waveform_sampled(&entry.path, entry.num_points, None)
-                    {
-                        new_results.lock().unwrap().insert(entry.path.clone(), data);
-                    }
-                });
-            });
-        }
-
-        new_results.into_inner().unwrap()
-    })
-    .await
-    .map_err(|e| format!("Waveform batch task failed: {}", e))?;
-
-    // Cache computed results
-    {
-        let mut cache = waveform_cache.lock().unwrap();
-        for (path, data) in &computed {
-            cache.insert(path.clone(), data.clone());
-        }
-    }
-
-    results.extend(computed);
-    tracing::info!("[cpu-pool] get_waveforms_batch END");
-    Ok(results)
+) -> Result<HashMap<String, WaveformData>, String> {
+    service::waveform::get_waveforms_batch(&state, entries).await
 }
 
 // ─── YouTube Commands ─────────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn add_sound_from_youtube(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     url: String,
     download_id: String,
 ) -> Result<Sound, String> {
-    let cache = state.youtube_cache.clone();
-
-    let app_handle = app.clone();
-    let did = download_id.clone();
-    let on_progress: youtube::downloader::ProgressCallback = Box::new(move |status, progress| {
-        let _ = app_handle.emit(
-            "youtube_download_progress",
-            serde_json::json!({
-                "downloadId": did,
-                "status": status,
-                "progress": progress,
-            }),
-        );
-    });
-
-    let entry = youtube::download_audio(&url, cache, Some(on_progress)).await?;
-
-    // Compute duration
-    tracing::info!("[cpu-pool] add_sound_from_youtube duration START");
-    let cached_path = entry.cached_path.clone();
-    let pool = state.cpu_pool.clone();
-    let duration = tokio::task::spawn_blocking(move || {
-        pool.install(|| BufferManager::get_audio_duration(&cached_path).unwrap_or(0.0))
-    })
-    .await
-    .map_err(|e| format!("Duration task failed: {}", e))?;
-    tracing::info!("[cpu-pool] add_sound_from_youtube duration END");
-
-    let sound = Sound {
-        id: uuid::Uuid::new_v4().to_string(),
-        name: entry.title.clone(),
-        source: SoundSource::YouTube {
-            url: url.clone(),
-            cached_path: entry.cached_path.clone(),
-        },
-        momentum: 0.0,
-        volume: 1.0,
-        duration,
-        resolved_video_id: None,
-    };
-
-    Ok(sound)
+    service::youtube::add_sound_from_youtube(&state, url, download_id).await
 }
 
 #[tauri::command]
 pub async fn search_youtube(
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     query: String,
     max_results: u32,
 ) -> Result<Vec<youtube::search::YoutubeSearchResult>, String> {
-    let cache = state.youtube_cache.clone();
-    youtube::search::search_youtube(&query, max_results, cache).await
+    youtube::search::search_youtube(&query, max_results, state.youtube_cache.clone()).await
 }
 
 #[tauri::command]
 pub async fn fetch_playlist(
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     url: String,
 ) -> Result<youtube::search::YoutubePlaylist, String> {
-    let cache = state.youtube_cache.clone();
-    youtube::search::fetch_playlist(&url, cache).await
+    youtube::search::fetch_playlist(&url, state.youtube_cache.clone()).await
 }
 
 #[tauri::command]
@@ -1221,94 +284,16 @@ pub async fn install_ffmpeg() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn export_profile(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     profile_id: String,
     output_path: String,
 ) -> Result<(), String> {
-    // Collect waveform data for all sounds in the profile
-    let waveforms = {
-        let profile = storage::load_profile(profile_id.clone())?;
-        let mut map = std::collections::HashMap::new();
-        if let Ok(mut cache) = state.waveform_cache.lock() {
-            for sound in &profile.sounds {
-                let path = match &sound.source {
-                    SoundSource::Local { path } => path.clone(),
-                    SoundSource::YouTube { cached_path, .. } => cached_path.clone(),
-                };
-                if let Some(data) = cache.get(&path) {
-                    map.insert(path, data.clone());
-                }
-            }
-        }
-        map
-    };
-
-    let app_handle = app.clone();
-    tokio::task::spawn_blocking(move || {
-        let progress_cb: import_export::export::ProgressCallback =
-            Box::new(move |current, total, filename| {
-                let _ = app_handle.emit(
-                    "export_progress",
-                    serde_json::json!({
-                        "current": current,
-                        "total": total,
-                        "filename": filename,
-                    }),
-                );
-            });
-        let waveforms_opt = if waveforms.is_empty() {
-            None
-        } else {
-            Some(waveforms)
-        };
-        import_export::export_profile(&profile_id, &output_path, waveforms_opt, Some(progress_cb))
-    })
-    .await
-    .map_err(|e| format!("Export task failed: {}", e))?
+    service::library::export_profile(&state, profile_id, output_path).await
 }
 
 #[tauri::command]
-pub async fn import_profile(
-    state: State<'_, AppState>,
-    ktm_path: String,
-) -> Result<String, String> {
-    let import_result =
-        tokio::task::spawn_blocking(move || import_export::import_profile(&ktm_path))
-            .await
-            .map_err(|e| format!("Import task failed: {}", e))??;
-
-    // Inject imported waveforms into cache
-    if !import_result.waveforms.is_empty() {
-        if let Ok(mut cache) = state.waveform_cache.lock() {
-            for (path, data) in import_result.waveforms {
-                cache.insert(path, data);
-            }
-        }
-    }
-
-    // Cleanup unused cache entries after import
-    if let Ok(mut cache) = state.youtube_cache.lock() {
-        cache.ensure_loaded();
-        cache.cleanup_unused();
-    }
-
-    Ok(import_result.profile_id)
-}
-
-#[tauri::command]
-pub async fn pick_save_location(default_name: String) -> Result<Option<String>, String> {
-    let result = tokio::task::spawn_blocking(move || {
-        rfd::FileDialog::new()
-            .set_file_name(&default_name)
-            .add_filter("KeyToMusic Profile", &["ktm"])
-            .save_file()
-            .map(|p| p.to_string_lossy().to_string())
-    })
-    .await
-    .map_err(|e| format!("File dialog failed: {}", e))?;
-
-    Ok(result)
+pub async fn import_profile(state: AppStateRef<'_>, ktm_path: String) -> Result<String, String> {
+    service::library::import_profile(&state, ktm_path).await
 }
 
 #[tauri::command]
@@ -1321,405 +306,85 @@ pub fn cancel_export() {
     import_export::cancel_export();
 }
 
+/// Run a blocking `rfd` dialog off the async runtime.
+async fn file_dialog<T: Send + 'static>(
+    show: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(show)
+        .await
+        .map_err(|e| format!("File dialog failed: {}", e))
+}
+
+fn path_string(path: std::path::PathBuf) -> String {
+    path.to_string_lossy().to_string()
+}
+
+#[tauri::command]
+pub async fn pick_save_location(default_name: String) -> Result<Option<String>, String> {
+    file_dialog(move || {
+        rfd::FileDialog::new()
+            .set_file_name(&default_name)
+            .add_filter("KeyToMusic Profile", &["ktm"])
+            .save_file()
+            .map(path_string)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn pick_ktm_file() -> Result<Option<String>, String> {
-    let result = tokio::task::spawn_blocking(move || {
+    file_dialog(|| {
         rfd::FileDialog::new()
             .add_filter("KeyToMusic Profile", &["ktm"])
             .pick_file()
-            .map(|p| p.to_string_lossy().to_string())
+            .map(path_string)
     })
     .await
-    .map_err(|e| format!("File dialog failed: {}", e))?;
-
-    Ok(result)
 }
 
 // ─── Legacy Import Commands ──────────────────────────────────────────────
 
-#[derive(serde::Deserialize)]
-#[allow(non_snake_case)]
-struct LegacySoundInfo {
-    uniqueId: String,
-    soundPath: String,
-    soundName: String,
-    soundMomentum: f64,
-}
-
-#[derive(serde::Deserialize)]
-#[allow(non_snake_case)]
-struct LegacyKeyEntry {
-    Key: u32,
-    #[allow(dead_code)]
-    UserKeyChar: String,
-    SoundInfos: Vec<LegacySoundInfo>,
-}
-
-#[derive(serde::Deserialize)]
-#[allow(non_snake_case)]
-struct LegacySave {
-    Sounds: Vec<LegacyKeyEntry>,
-}
-
-/// Convert a legacy Windows virtual key code to a web KeyCode string.
-fn vk_to_keycode(vk: u32) -> Option<String> {
-    match vk {
-        65..=90 => {
-            let ch = (b'A' + (vk - 65) as u8) as char;
-            Some(format!("Key{}", ch))
-        }
-        48..=57 => {
-            let ch = (b'0' + (vk - 48) as u8) as char;
-            Some(format!("Digit{}", ch))
-        }
-        112..=123 => {
-            let num = vk - 111;
-            Some(format!("F{}", num))
-        }
-        // OEM keys (common on various keyboard layouts)
-        186 => Some("Semicolon".to_string()),
-        187 => Some("Equal".to_string()),
-        188 => Some("Comma".to_string()),
-        189 => Some("Minus".to_string()),
-        190 => Some("Period".to_string()),
-        191 => Some("Slash".to_string()),
-        192 => Some("Backquote".to_string()),
-        219 => Some("BracketLeft".to_string()),
-        220 => Some("Backslash".to_string()),
-        221 => Some("BracketRight".to_string()),
-        222 => Some("Quote".to_string()),
-        32 => Some("Space".to_string()),
-        13 => Some("Enter".to_string()),
-        _ => None,
-    }
-}
-
 /// Pick a legacy save JSON file.
 #[tauri::command]
 pub async fn pick_legacy_file() -> Result<Option<String>, String> {
-    let result = tokio::task::spawn_blocking(move || {
+    file_dialog(|| {
         rfd::FileDialog::new()
             .add_filter("Legacy Save", &["json"])
             .pick_file()
-            .map(|p| p.to_string_lossy().to_string())
+            .map(path_string)
     })
     .await
-    .map_err(|e| format!("File dialog failed: {}", e))?;
-
-    Ok(result)
 }
 
 /// Import a legacy KeyToMusic save file and convert it to a new profile.
 #[tauri::command]
 pub async fn import_legacy_save(path: String) -> Result<Profile, String> {
-    let content =
-        std::fs::read_to_string(&path).map_err(|e| format!("Failed to read legacy save: {}", e))?;
-
-    let legacy: LegacySave = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse legacy save: {}", e))?;
-
-    let now = chrono::Utc::now().to_rfc3339();
-    let profile_id = uuid::Uuid::new_v4().to_string();
-    let track_id = uuid::Uuid::new_v4().to_string();
-
-    // Create a default track
-    let track = crate::types::Track {
-        id: track_id.clone(),
-        name: "OST".to_string(),
-        volume: 1.0,
-    };
-
-    let mut sounds: Vec<Sound> = Vec::new();
-    let mut key_bindings: Vec<crate::types::KeyBinding> = Vec::new();
-
-    for entry in &legacy.Sounds {
-        let key_code = match vk_to_keycode(entry.Key) {
-            Some(kc) => kc,
-            None => {
-                tracing::warn!("Skipping unknown legacy key code: {}", entry.Key);
-                continue;
-            }
-        };
-
-        let mut sound_ids: Vec<String> = Vec::new();
-
-        for info in &entry.SoundInfos {
-            let sound = Sound {
-                id: info.uniqueId.clone(),
-                name: info.soundName.clone(),
-                source: SoundSource::Local {
-                    path: info.soundPath.replace('/', "\\"),
-                },
-                momentum: info.soundMomentum,
-                volume: 1.0,
-                duration: 0.0, // Will be computed on load
-                resolved_video_id: None,
-            };
-            sound_ids.push(sound.id.clone());
-            sounds.push(sound);
-        }
-
-        if !sound_ids.is_empty() {
-            key_bindings.push(crate::types::KeyBinding {
-                key_code,
-                track_id: track_id.clone(),
-                sound_ids,
-                loop_mode: crate::types::LoopMode::Off,
-                current_index: 0,
-                name: None,
-                mood: None,
-                mood_intensity: None,
-            });
-        }
-    }
-
-    // Derive profile name from filename
-    let file_name = std::path::Path::new(&path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "Legacy Import".to_string());
-
-    let profile = Profile {
-        id: profile_id,
-        name: format!("{} (Legacy)", file_name),
-        created_at: now.clone(),
-        updated_at: now,
-        sounds,
-        tracks: vec![track],
-        key_bindings,
-        disliked_videos: Vec::new(),
-    };
-
-    storage::save_profile(&profile)?;
-
-    tracing::info!(
-        "Imported legacy save as profile '{}' with {} sounds and {} key bindings",
-        profile.name,
-        profile.sounds.len(),
-        profile.key_bindings.len()
-    );
-
-    Ok(profile)
+    service::library::import_legacy_save(path)
 }
 
 // ─── Discovery Commands ──────────────────────────────────────────────────
 
 #[tauri::command]
 pub async fn start_discovery(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     profile_id: String,
     exclude_ids: Vec<String>,
     background: Option<bool>,
-) -> Result<Vec<discovery::engine::DiscoverySuggestion>, String> {
-    use std::sync::atomic::Ordering;
-
-    let is_background = background.unwrap_or(false);
-
-    let cancel_flag = {
-        let mut active = state
-            .discovery_cancel
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        active.store(true, Ordering::Relaxed);
-        let next = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        *active = next.clone();
-        next
-    };
-
-    // Load the profile to extract seeds (YouTube + local)
-    let profile = storage::load_profile(profile_id.clone())?;
-
-    let mut seeds = Vec::new();
-    let mut existing_ids = Vec::new();
-    let mut unresolved_locals: Vec<(String, String, String)> = Vec::new(); // (sound_id, path, name)
-
-    for sound in &profile.sounds {
-        match &sound.source {
-            SoundSource::YouTube { url, .. } => {
-                if let Some(video_id) = youtube::downloader::extract_video_id(url) {
-                    seeds.push(discovery::engine::SeedInfo {
-                        video_id: video_id.clone(),
-                        sound_name: sound.name.clone(),
-                    });
-                    existing_ids.push(video_id);
-                }
-            }
-            SoundSource::Local { path } => {
-                if let Some(ref video_id) = sound.resolved_video_id {
-                    seeds.push(discovery::engine::SeedInfo {
-                        video_id: video_id.clone(),
-                        sound_name: sound.name.clone(),
-                    });
-                } else {
-                    unresolved_locals.push((sound.id.clone(), path.clone(), sound.name.clone()));
-                }
-            }
-        }
-    }
-
-    // Resolve unresolved local sounds via YouTube search
-    if !unresolved_locals.is_empty() {
-        let count = unresolved_locals.len();
-        if !is_background {
-            let _ = app.emit(
-                "discovery_resolving",
-                serde_json::json!({
-                    "count": count,
-                }),
-            );
-        }
-        tracing::info!("Resolving {} local sounds for discovery seeds", count);
-
-        let youtube_cache = state.youtube_cache.clone();
-        let resolved =
-            discovery::engine::resolve_local_seeds(unresolved_locals, youtube_cache).await;
-
-        // Add resolved seeds and collect updates for targeted persist
-        let mut resolved_updates: Vec<(String, String)> = Vec::new();
-        for r in &resolved {
-            if let Some(sound) = profile.sounds.iter().find(|s| s.id == r.sound_id) {
-                seeds.push(discovery::engine::SeedInfo {
-                    video_id: r.video_id.clone(),
-                    sound_name: sound.name.clone(),
-                });
-                resolved_updates.push((r.sound_id.clone(), r.video_id.clone()));
-            }
-        }
-
-        // Persist resolved video IDs with targeted update (avoids overwriting concurrent profile changes)
-        if !resolved_updates.is_empty() {
-            if let Err(e) = storage::update_resolved_video_ids(&profile_id, &resolved_updates) {
-                tracing::warn!("Failed to save resolved video IDs: {}", e);
-            }
-        }
-    }
-
-    if seeds.is_empty() {
-        return Err(
-            "No seeds found in profile (no YouTube sounds and no resolvable local sounds)"
-                .to_string(),
-        );
-    }
-
-    // Preserve dismissed_ids from previous cache so dismissed suggestions don't reappear
-    let previous_dismissed = discovery::cache::DiscoveryCache::load(&profile_id)
-        .map(|d| d.dismissed_ids)
-        .unwrap_or_default();
-
-    // Exclude profile sounds, previously dismissed, disliked, and caller-specified IDs
-    let mut all_excluded = existing_ids.clone();
-    all_excluded.extend(previous_dismissed.iter().cloned());
-    for vid in &profile.disliked_videos {
-        all_excluded.push(vid.clone());
-    }
-    all_excluded.extend(exclude_ids.into_iter());
-
-    let yt_dlp_bin = match youtube::downloader::get_yt_dlp_bin() {
-        Ok(path) => path,
-        Err(_) => youtube::download_yt_dlp().await?,
-    };
-    if cancel_flag.load(Ordering::Relaxed) {
-        return Err("Discovery cancelled".into());
-    }
-
-    if !is_background {
-        let _ = app.emit("discovery_started", serde_json::json!({}));
-    }
-
-    let engine = discovery::engine::DiscoveryEngine::new(cancel_flag.clone());
-
-    let app_progress = app.clone();
-    let app_partial = app.clone();
-    let bg = is_background;
-    let progress_cancel = cancel_flag.clone();
-    let partial_cancel = cancel_flag.clone();
-    let suggestions = engine
-        .generate_suggestions(
-            seeds.clone(),
-            all_excluded,
-            yt_dlp_bin,
-            move |current, total, seed_name| {
-                if !bg && !progress_cancel.load(Ordering::Relaxed) {
-                    let _ = app_progress.emit(
-                        "discovery_progress",
-                        serde_json::json!({
-                            "current": current,
-                            "total": total,
-                            "seedName": seed_name,
-                        }),
-                    );
-                }
-            },
-            move |partial_suggestions| {
-                if !bg && !partial_cancel.load(Ordering::Relaxed) {
-                    let _ = app_partial.emit("discovery_partial", partial_suggestions);
-                }
-            },
-        )
-        .await;
-
-    if cancel_flag.load(Ordering::Relaxed) {
-        return Err("Discovery cancelled".to_string());
-    }
-
-    // Cache results
-    let seed_ids: Vec<String> = seeds.iter().map(|s| s.video_id.clone()).collect();
-    let seed_hash = discovery::cache::DiscoveryCache::compute_seed_hash(&seed_ids);
-
-    if is_background {
-        // Background mode: append to existing cache without replacing
-        discovery::cache::DiscoveryCache::append_suggestions(
-            &profile_id,
-            suggestions.clone(),
-            &seed_hash,
-        )
-        .ok();
-    } else {
-        let cache_data = discovery::cache::DiscoveryCacheData {
-            profile_id: profile_id.clone(),
-            seed_hash,
-            generated_at: chrono::Utc::now().to_rfc3339(),
-            suggestions: suggestions.clone(),
-            dismissed_ids: previous_dismissed,
-            cursor_index: 0,
-            revealed_count: 0,
-            visited_index: -1,
-        };
-        discovery::cache::DiscoveryCache::save(&cache_data).ok();
-
-        let _ = app.emit(
-            "discovery_complete",
-            serde_json::json!({
-                "count": suggestions.len(),
-            }),
-        );
-    }
-
-    Ok(suggestions)
-}
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DiscoveryCacheResponse {
-    pub suggestions: Vec<discovery::engine::DiscoverySuggestion>,
-    pub cursor_index: usize,
-    pub revealed_count: usize,
-    pub visited_index: i32,
+) -> Result<Vec<DiscoverySuggestion>, String> {
+    service::discovery::start_discovery(
+        &state,
+        profile_id,
+        exclude_ids,
+        background.unwrap_or(false),
+    )
+    .await
 }
 
 #[tauri::command]
 pub fn get_discovery_suggestions(
     profile_id: String,
 ) -> Result<Option<DiscoveryCacheResponse>, String> {
-    Ok(
-        discovery::cache::DiscoveryCache::load(&profile_id).map(|d| DiscoveryCacheResponse {
-            suggestions: d.suggestions,
-            cursor_index: d.cursor_index,
-            revealed_count: d.revealed_count,
-            visited_index: d.visited_index,
-        }),
-    )
+    Ok(service::discovery::cached_suggestions(&profile_id))
 }
 
 #[tauri::command]
@@ -1740,7 +405,7 @@ pub fn save_discovery_cursor(
 #[tauri::command]
 pub fn update_discovery_pool(
     profile_id: String,
-    suggestions: Vec<discovery::engine::DiscoverySuggestion>,
+    suggestions: Vec<DiscoverySuggestion>,
     cursor_index: usize,
     revealed_count: usize,
     visited_index: i32,
@@ -1756,417 +421,106 @@ pub fn update_discovery_pool(
 
 #[tauri::command]
 pub fn dismiss_discovery(
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     profile_id: String,
     video_id: String,
 ) -> Result<(), String> {
-    discovery::cache::DiscoveryCache::dismiss(&profile_id, &video_id)?;
-
-    // Clean up the cached audio file in background (best-effort)
-    let cache = state.youtube_cache.clone();
-    let vid = video_id.clone();
-    std::thread::spawn(move || {
-        if let Ok(mut cache) = cache.lock() {
-            cache.ensure_loaded();
-            cache.remove_entry_by_video_id(&vid);
-        }
-    });
-
-    Ok(())
+    service::discovery::dismiss(&state, &profile_id, video_id)
 }
 
 #[tauri::command]
 pub fn dislike_discovery(
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     profile_id: String,
     video_id: String,
 ) -> Result<(), String> {
-    storage::update_disliked_videos(&profile_id, &video_id, true)?;
-
-    // Also dismiss from current discovery cache
-    let _ = discovery::cache::DiscoveryCache::dismiss(&profile_id, &video_id);
-
-    // Clean up cached audio in background (best-effort)
-    let cache = state.youtube_cache.clone();
-    let vid = video_id.clone();
-    std::thread::spawn(move || {
-        if let Ok(mut cache) = cache.lock() {
-            cache.ensure_loaded();
-            cache.remove_entry_by_video_id(&vid);
-        }
-    });
-
-    Ok(())
+    service::discovery::dislike(&state, &profile_id, video_id)
 }
 
 #[tauri::command]
 pub fn undislike_discovery(profile_id: String, video_id: String) -> Result<(), String> {
-    storage::update_disliked_videos(&profile_id, &video_id, false)?;
-
-    Ok(())
-}
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DislikedVideoInfo {
-    pub video_id: String,
-    pub title: String,
-    pub channel: String,
-    pub duration: f64,
-    pub url: String,
+    service::discovery::undislike(&profile_id, &video_id)
 }
 
 #[tauri::command]
 pub async fn list_disliked_videos(profile_id: String) -> Result<Vec<DislikedVideoInfo>, String> {
-    use futures::stream::{self, StreamExt};
-
-    let profile = storage::load_profile(profile_id)?;
-
-    if profile.disliked_videos.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let yt_dlp_bin = match youtube::downloader::get_yt_dlp_bin() {
-        Ok(path) => path,
-        Err(_) => youtube::download_yt_dlp().await?,
-    };
-
-    let results: Vec<DislikedVideoInfo> = stream::iter(profile.disliked_videos.iter().cloned())
-        .map(|video_id| {
-            let bin = yt_dlp_bin.clone();
-            async move {
-                let url = youtube::downloader::canonical_url(&video_id);
-
-                let mut cmd = youtube::downloader::yt_dlp_command(&bin);
-                cmd.arg(&url)
-                    .arg("--dump-json")
-                    .arg("--no-download")
-                    .arg("--no-warnings")
-                    .arg("--no-check-certificates")
-                    .arg("--no-playlist")
-                    .arg("--socket-timeout")
-                    .arg("10")
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::piped());
-
-                if let Ok(child) = cmd.spawn() {
-                    if let Ok(Ok(out)) = tokio::time::timeout(
-                        std::time::Duration::from_secs(10),
-                        child.wait_with_output(),
-                    )
-                    .await
-                    {
-                        if out.status.success() {
-                            let stdout = String::from_utf8_lossy(&out.stdout);
-                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
-                                let title = json
-                                    .get("title")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("Unknown")
-                                    .to_string();
-                                let channel = json
-                                    .get("channel")
-                                    .or_else(|| json.get("uploader"))
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("")
-                                    .to_string();
-                                let duration =
-                                    json.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                return DislikedVideoInfo {
-                                    video_id,
-                                    title,
-                                    channel,
-                                    duration,
-                                    url,
-                                };
-                            }
-                        }
-                    }
-                }
-
-                // Fallback: minimal info
-                DislikedVideoInfo {
-                    video_id: video_id.clone(),
-                    title: format!("Video {}", video_id),
-                    channel: String::new(),
-                    duration: 0.0,
-                    url,
-                }
-            }
-        })
-        .buffer_unordered(5)
-        .collect()
-        .await;
-
-    Ok(results)
+    service::discovery::list_disliked_videos(profile_id).await
 }
 
 #[tauri::command]
-pub fn cancel_discovery(state: State<'_, AppState>) {
-    use std::sync::atomic::Ordering;
-    state
-        .discovery_cancel
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .store(true, Ordering::Relaxed);
-}
-
-// ─── Pre-download Commands ───────────────────────────────────────────────
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PredownloadResult {
-    pub video_id: String,
-    pub cached_path: String,
-    pub title: String,
-    pub duration: f64,
-    pub waveform: Option<analysis::WaveformData>,
+pub fn cancel_discovery(state: AppStateRef<'_>) {
+    service::discovery::cancel_discovery(&state);
 }
 
 /// Pre-download a suggestion's audio to cache WITHOUT adding it to the profile.
-/// Returns cached path, duration, and waveform data in one call.
 #[tauri::command]
 pub async fn predownload_suggestion(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
+    state: AppStateRef<'_>,
     url: String,
     video_id: String,
     download_id: String,
 ) -> Result<PredownloadResult, String> {
-    let cache = state.youtube_cache.clone();
-
-    let app_handle = app.clone();
-    let did = download_id.clone();
-    let on_progress: youtube::downloader::ProgressCallback = Box::new(move |status, progress| {
-        let _ = app_handle.emit(
-            "youtube_download_progress",
-            serde_json::json!({
-                "downloadId": did,
-                "status": status,
-                "progress": progress,
-            }),
-        );
-    });
-
-    let entry = youtube::download_audio(&url, cache, Some(on_progress)).await?;
-
-    let cached_path = entry.cached_path.clone();
-
-    // Compute waveform (includes duration + momentum detection) during predownload
-    // so momentum is available immediately when the user navigates to this suggestion
-    tracing::info!(
-        "[cpu-pool] predownload_suggestion waveform START: {}",
-        video_id
-    );
-    let waveform_path = cached_path.clone();
-    let cache_path = cached_path.clone();
-    let pool = state.cpu_pool.clone();
-    let vid_log = video_id.clone();
-
-    let (duration, waveform) = tokio::task::spawn_blocking(move || {
-        pool.install(
-            || match analysis::compute_waveform_sampled(&waveform_path, 80, None) {
-                Ok(wf) => (wf.duration, Some(wf)),
-                Err(e) => {
-                    tracing::warn!("Waveform computation failed for {}: {}", vid_log, e);
-                    let dur = BufferManager::get_audio_duration(&waveform_path).unwrap_or(0.0);
-                    (dur, None)
-                }
-            },
-        )
-    })
-    .await
-    .map_err(|e| format!("Predownload task failed: {}", e))?;
-
-    tracing::info!(
-        "[cpu-pool] predownload_suggestion waveform END: {}",
-        video_id
-    );
-
-    // Cache waveform for future get_waveform calls
-    if let Some(ref wf) = waveform {
-        let mut cache = state.waveform_cache.lock().unwrap();
-        cache.insert(cache_path, wf.clone());
-    }
-
-    Ok(PredownloadResult {
-        video_id,
-        cached_path,
-        title: entry.title,
-        duration,
-        waveform,
-    })
+    service::youtube::predownload_suggestion(&state, url, video_id, download_id).await
 }
 
 // ─── Error Handling Commands ──────────────────────────────────────────────
 
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MissingSoundInfo {
-    pub sound_id: String,
-    pub sound_name: String,
-    pub file_path: String,
-    pub source_type: String,
-}
-
 /// Verify that all sound files in a profile exist on disk.
-/// Returns a list of missing sounds.
 #[tauri::command]
 pub fn verify_profile_sounds(profile: Profile) -> Vec<MissingSoundInfo> {
-    let mut missing = Vec::new();
-
-    for sound in &profile.sounds {
-        let (file_path, source_type) = match &sound.source {
-            SoundSource::Local { path } => (path.clone(), "local".to_string()),
-            SoundSource::YouTube { cached_path, .. } => {
-                (cached_path.clone(), "youtube".to_string())
-            }
-        };
-
-        if !std::path::Path::new(&file_path).exists() {
-            missing.push(MissingSoundInfo {
-                sound_id: sound.id.clone(),
-                sound_name: sound.name.clone(),
-                file_path,
-                source_type,
-            });
-        }
-    }
-
-    missing
+    service::library::verify_profile_sounds(&profile)
 }
+
+const AUDIO_EXTENSIONS: &[&str] = &["mp3", "wav", "ogg", "flac", "m4a", "aac"];
 
 /// Open a file picker dialog for selecting an audio file.
 #[tauri::command]
 pub async fn pick_audio_file() -> Result<Option<String>, String> {
-    let result = tokio::task::spawn_blocking(move || {
+    file_dialog(|| {
         rfd::FileDialog::new()
-            .add_filter("Audio Files", &["mp3", "wav", "ogg", "flac", "m4a", "aac"])
+            .add_filter("Audio Files", AUDIO_EXTENSIONS)
             .pick_file()
-            .map(|p| p.to_string_lossy().to_string())
+            .map(path_string)
     })
     .await
-    .map_err(|e| format!("File dialog failed: {}", e))?;
-
-    Ok(result)
 }
 
 /// Open a file picker dialog for selecting multiple audio files.
 #[tauri::command]
 pub async fn pick_audio_files() -> Result<Vec<String>, String> {
-    let result = tokio::task::spawn_blocking(move || {
+    file_dialog(|| {
         rfd::FileDialog::new()
-            .add_filter("Audio Files", &["mp3", "wav", "ogg", "flac", "m4a", "aac"])
+            .add_filter("Audio Files", AUDIO_EXTENSIONS)
             .pick_files()
             .unwrap_or_default()
             .into_iter()
-            .map(|p| p.to_string_lossy().to_string())
+            .map(path_string)
             .collect::<Vec<_>>()
     })
     .await
-    .map_err(|e| format!("File dialog failed: {}", e))?;
-
-    Ok(result)
 }
 
-/// Get the path to the logs folder.
 #[tauri::command]
 pub fn get_logs_folder() -> Result<String, String> {
-    let logs_dir = storage::get_app_data_dir().join("logs");
-    Ok(logs_dir.to_string_lossy().to_string())
+    Ok(service::library::logs_folder())
 }
 
 #[tauri::command]
 pub fn get_data_folder() -> Result<String, String> {
-    let data_dir = storage::get_app_data_dir();
-    Ok(data_dir.to_string_lossy().to_string())
+    Ok(service::library::data_folder())
 }
 
 #[tauri::command]
 pub fn open_folder(path: String) -> Result<(), String> {
-    let path = std::path::Path::new(&path);
-    if !path.exists() {
-        return Err("Folder does not exist".to_string());
-    }
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .arg(path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .arg(path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(path)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    service::library::open_folder(&path)
 }
 
 // ─── Startup Command ──────────────────────────────────────────────────────
 
-/// Unified initial state command — replaces 3 sequential IPC calls with 1.
-/// Returns config + profile list + current profile (if any) in a single round-trip.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InputRuntime {
-    pub is_linux: bool,
-    pub is_wayland: bool,
-    pub browser_key_fallback: bool,
-}
-
-fn is_wayland_session() -> bool {
-    std::env::var_os("WAYLAND_DISPLAY").is_some()
-        || std::env::var("XDG_SESSION_TYPE")
-            .map(|value| value.eq_ignore_ascii_case("wayland"))
-            .unwrap_or(false)
-}
-
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InitialState {
-    pub config: AppConfig,
-    pub profiles: Vec<storage::ProfileSummary>,
-    pub current_profile: Option<Profile>,
-    pub input_runtime: InputRuntime,
-    pub profile_error: Option<String>,
-}
-
+/// Config + profile list + current profile in a single round-trip.
 #[tauri::command]
-pub fn get_initial_state(state: State<'_, AppState>) -> Result<InitialState, String> {
-    let config = state.get_config();
-    let profiles = storage::list_profiles()?;
-    let (current_profile, profile_error) = if let Some(ref id) = config.current_profile_id {
-        match storage::load_profile(id.clone()) {
-            Ok(profile) => (Some(profile), None),
-            Err(error) => (None, Some(error)),
-        }
-    } else {
-        (None, None)
-    };
-    let is_linux = cfg!(target_os = "linux");
-    let is_wayland = is_linux && is_wayland_session();
-
-    Ok(InitialState {
-        config,
-        profiles,
-        current_profile,
-        profile_error,
-        input_runtime: InputRuntime {
-            is_linux,
-            is_wayland,
-            browser_key_fallback: is_wayland,
-        },
-    })
+pub fn get_initial_state(state: AppStateRef<'_>) -> Result<InitialState, String> {
+    service::library::initial_state(&state)
 }
 
 // ─── Mood AI Commands ────────────────────────────────────────────────────────
@@ -2178,8 +532,7 @@ pub fn check_llama_server_installed() -> bool {
 
 #[tauri::command]
 pub async fn install_llama_server() -> Result<String, String> {
-    let path = mood::llama_manager::download_llama_server().await?;
-    Ok(path.to_string_lossy().to_string())
+    service::mood::install_llama_server().await
 }
 
 #[tauri::command]
@@ -2188,77 +541,27 @@ pub fn check_mood_model_installed() -> bool {
 }
 
 #[tauri::command]
-pub async fn install_mood_model(app_handle: tauri::AppHandle) -> Result<String, String> {
-    let path = mood::llama_manager::download_model(move |downloaded, total| {
-        let _ = app_handle.emit(
-            "mood_model_download_progress",
-            serde_json::json!({ "downloaded": downloaded, "total": total }),
-        );
-    })
-    .await?;
-    Ok(path.to_string_lossy().to_string())
+pub async fn install_mood_model(state: AppStateRef<'_>) -> Result<String, String> {
+    service::mood::install_model(&state).await
 }
 
 #[tauri::command]
-pub async fn start_mood_server(
-    state: State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let _lifecycle = state.mood_lifecycle.lock().await;
-    let config = state.get_config();
-    if !config.mood_ai_enabled {
-        return Err("Enable Mood AI first to expose the browser extension API.".to_string());
-    }
+pub async fn start_mood_server(state: AppStateRef<'_>) -> Result<(), String> {
+    service::mood::start_server(&state).await
+}
 
-    start_mood_runtime_inner(&state, &app_handle).await?;
-    start_mood_api_server_inner(&state, &app_handle, config.mood_api_port).await?;
+#[tauri::command]
+pub async fn stop_mood_server(state: AppStateRef<'_>) -> Result<(), String> {
+    service::mood::stop_server(&state).await;
     Ok(())
 }
 
 #[tauri::command]
-pub async fn stop_mood_server(
-    state: State<'_, AppState>,
-    app_handle: tauri::AppHandle,
-) -> Result<(), String> {
-    let _lifecycle = state.mood_lifecycle.lock().await;
-    stop_mood_runtime_inner(&state, &app_handle).await;
-    Ok(())
+pub async fn get_mood_server_status(state: AppStateRef<'_>) -> Result<String, String> {
+    Ok(service::mood::runtime_status(&state).await)
 }
 
 #[tauri::command]
-pub async fn get_mood_server_status(state: State<'_, AppState>) -> Result<String, String> {
-    Ok(runtime_status(&state).await)
-}
-
-#[tauri::command]
-pub async fn get_mood_service_status(
-    state: State<'_, AppState>,
-) -> Result<MoodServiceStatus, String> {
-    let config = state.get_config();
-    Ok(MoodServiceStatus {
-        runtime: runtime_status(&state).await,
-        api: api_task_status(&state, config.mood_ai_enabled),
-        enabled: config.mood_ai_enabled,
-        port: config.mood_api_port,
-    })
-}
-
-#[cfg(test)]
-mod config_tests {
-    use super::*;
-
-    #[test]
-    fn rollback_restores_only_requested_fields() {
-        let previous = AppConfig::default();
-        let mut current = previous.clone();
-        current.mood_api_port = 9999;
-        current.master_volume = 0.2;
-        restore_config_fields(
-            &mut current,
-            &previous,
-            &serde_json::json!({"moodApiPort": 9999}),
-        );
-        assert_eq!(current.mood_api_port, previous.mood_api_port);
-        assert_eq!(current.master_volume, 0.2);
-    }
+pub async fn get_mood_service_status(state: AppStateRef<'_>) -> Result<MoodServiceStatus, String> {
+    Ok(service::mood::service_status(&state).await)
 }

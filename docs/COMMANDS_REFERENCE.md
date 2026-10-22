@@ -111,19 +111,19 @@ cargo check --manifest-path src-tauri/Cargo.toml
 Verification de compilation Rust rapide.
 
 ```bash
-cargo fmt --manifest-path src-tauri/Cargo.toml
+cargo fmt --all
 ```
 
 Formate le backend Rust.
 
 ```bash
-cargo clippy --manifest-path src-tauri/Cargo.toml
+cargo clippy --workspace --all-targets
 ```
 
 Lint Rust.
 
 ```bash
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test --workspace
 ```
 
 Lance les tests Rust classiques.

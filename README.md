@@ -39,9 +39,9 @@ npm run dev
 npm run tauri:dev
 npm run build
 npm run tauri:build
-cargo fmt --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo fmt --all
+cargo clippy --workspace --all-targets
+cargo test --workspace
 python3 scripts/serve-realtest-viewer.py
 python3 scripts/run-realtest-prod-benchmark.py start
 ```

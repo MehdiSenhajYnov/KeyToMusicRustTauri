@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::audio::analysis::WaveformCache;
 use crate::audio::AudioEngineHandle;
+use crate::events::{CoreEvent, EventSink, NoopSink, SharedSink};
 use crate::keys::KeyDetector;
 use crate::mood::cache::MoodCache;
 use crate::mood::inference::LlamaServer;
@@ -10,8 +11,8 @@ use crate::storage;
 use crate::types::AppConfig;
 use crate::youtube::YouTubeCache;
 
-/// Application state managed by Tauri.
-/// Wrapped in Mutex for thread-safe access from multiple command handlers.
+/// Application state shared by every host UI (Tauri or native).
+/// Hosts keep it in an `Arc` and install an [`EventSink`] once their UI exists.
 pub struct AppState {
     pub config: Mutex<AppConfig>,
     /// Audio engine initialized on a background thread after window creation.
@@ -37,6 +38,8 @@ pub struct AppState {
     pub mood_api_server: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
     /// Ephemeral mood cache for pre-calculated page moods.
     pub mood_cache: Arc<Mutex<MoodCache>>,
+    /// Destination of core events, installed by the host UI.
+    events: std::sync::OnceLock<SharedSink>,
 }
 
 impl AppState {
@@ -66,6 +69,29 @@ impl AppState {
             llama_server: Arc::new(tokio::sync::Mutex::new(None)),
             mood_api_server: Arc::new(Mutex::new(None)),
             mood_cache: Arc::new(Mutex::new(MoodCache::new())),
+            events: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Install the host's event sink. Only the first call has an effect.
+    pub fn set_event_sink(&self, sink: impl EventSink) {
+        if self.events.set(Arc::new(sink)).is_err() {
+            tracing::warn!("Event sink already installed; ignoring replacement");
+        }
+    }
+
+    /// Shared handle to the event sink, for emitting from spawned tasks.
+    pub fn event_sink(&self) -> SharedSink {
+        self.events
+            .get()
+            .cloned()
+            .unwrap_or_else(|| Arc::new(NoopSink))
+    }
+
+    pub fn emit(&self, event: CoreEvent) {
+        match self.events.get() {
+            Some(sink) => sink.emit(event),
+            None => NoopSink.emit(event),
         }
     }
 
