@@ -291,8 +291,10 @@ pub struct Profile {
     pub disliked_videos: Vec<String>,
 }
 
+// Struct-level default: a missing or newly added field falls back to its
+// default instead of failing the whole config parse.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct AppConfig {
     pub master_volume: f32,
     pub auto_momentum: bool,

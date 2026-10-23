@@ -8,6 +8,7 @@ use crate::import_export;
 use crate::state::AppState;
 use crate::storage;
 use crate::types::{AppConfig, KeyBinding, LoopMode, Profile, Sound, SoundSource, Track};
+use crate::youtube;
 
 use super::input_access::is_wayland_session;
 
@@ -15,9 +16,10 @@ use super::input_access::is_wayland_session;
 pub fn delete_profile(state: &AppState, id: String) -> Result<(), String> {
     storage::delete_profile(id.clone())?;
     discovery::cache::DiscoveryCache::delete(&id);
+    // Scan profiles before locking so downloads and lookups are not blocked meanwhile.
+    let usage = youtube::cache::CacheUsage::collect();
     if let Ok(mut cache) = state.youtube_cache.lock() {
-        cache.ensure_loaded();
-        cache.cleanup_unused();
+        cache.cleanup_unused_with(&usage);
     }
     Ok(())
 }
@@ -78,9 +80,11 @@ pub async fn import_profile(state: &AppState, ktm_path: String) -> Result<String
         }
     }
 
+    let usage = tokio::task::spawn_blocking(youtube::cache::CacheUsage::collect)
+        .await
+        .map_err(|e| format!("Cache scan failed: {}", e))?;
     if let Ok(mut cache) = state.youtube_cache.lock() {
-        cache.ensure_loaded();
-        cache.cleanup_unused();
+        cache.cleanup_unused_with(&usage);
     }
 
     Ok(import_result.profile_id)

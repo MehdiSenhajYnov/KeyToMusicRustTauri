@@ -61,6 +61,13 @@ pub fn load_config() -> AppConfig {
         let config_handle = s.spawn(|| {
             storage::load_config().unwrap_or_else(|e| {
                 tracing::warn!("Failed to load config, using defaults: {}", e);
+                // Keep the unreadable file before the defaults get saved over it.
+                let path = storage::get_app_data_dir().join("config.json");
+                if path.exists() {
+                    if let Err(e) = std::fs::copy(&path, path.with_extension("json.bad")) {
+                        tracing::warn!("Failed to back up config.json: {}", e);
+                    }
+                }
                 AppConfig::default()
             })
         });

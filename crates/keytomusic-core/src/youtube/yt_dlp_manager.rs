@@ -61,8 +61,20 @@ pub async fn is_installed() -> bool {
 static INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 pub async fn download_yt_dlp() -> Result<PathBuf, String> {
+    let requested_at = SystemTime::now();
     let _install = INSTALL_LOCK.lock().await;
     let target_path = get_yt_dlp_path();
+
+    // Concurrent callers (e.g. several failing downloads) share one update:
+    // a binary written while we waited for the lock is already fresh.
+    if let Some(path) = find_yt_dlp() {
+        let updated_meanwhile = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .is_ok_and(|mtime| mtime >= requested_at);
+        if updated_meanwhile {
+            return Ok(path);
+        }
+    }
 
     // Create bin directory
     if let Some(parent) = target_path.parent() {
@@ -72,8 +84,15 @@ pub async fn download_yt_dlp() -> Result<PathBuf, String> {
 
     let url = yt_dlp_download_url();
 
-    // Download the file
-    let response = reqwest::get(url)
+    // Download the file (~20MB); bounded so a stalled connection cannot hang callers.
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(300))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    let response = client
+        .get(url)
+        .send()
         .await
         .map_err(|e| format!("Failed to download yt-dlp: {}", e))?;
 

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -86,6 +86,58 @@ fn download_lock(id: &str) -> Arc<tokio::sync::Mutex<()>> {
     lock
 }
 
+/// Name prefix of the per-download temp dirs inside the cache directory.
+pub(crate) const TEMP_DIR_PREFIX: &str = ".dl-";
+
+/// Upper bound for one yt-dlp download run (the process is killed on expiry).
+const DOWNLOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Whether a download for this video ID currently holds its lock.
+pub(crate) fn is_download_active(id: &str) -> bool {
+    DOWNLOAD_LOCKS
+        .get()
+        .and_then(|locks| {
+            locks
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(id)
+                .map(|lock| lock.strong_count() > 0)
+        })
+        .unwrap_or(false)
+}
+
+/// yt-dlp only enables deno by default for YouTube's JS challenges; point it
+/// at node when that is the only runtime installed.
+pub(crate) fn add_js_runtime_args(cmd: &mut Command) {
+    static USE_NODE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let use_node = *USE_NODE.get_or_init(|| !is_on_path("deno") && is_on_path("node"));
+    if use_node {
+        cmd.arg("--js-runtimes").arg("node");
+    }
+}
+
+/// `-x` needs ffprobe as well as ffmpeg; the managed install only ships ffmpeg.
+/// Without it, only native m4a streams are accepted (symphonia cannot decode opus).
+fn can_extract_audio() -> bool {
+    let local_ffprobe =
+        super::ffmpeg_manager::get_ffmpeg_path().with_file_name(if cfg!(target_os = "windows") {
+            "ffprobe.exe"
+        } else {
+            "ffprobe"
+        });
+    super::ffmpeg_manager::is_installed() && (local_ffprobe.is_file() || is_on_path("ffprobe"))
+}
+
+fn is_on_path(program: &str) -> bool {
+    let file = if cfg!(target_os = "windows") {
+        format!("{}.exe", program)
+    } else {
+        program.to_string()
+    };
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(&file).is_file()))
+}
+
 /// Get the yt-dlp binary path, or return an error message.
 pub(crate) fn get_yt_dlp_bin() -> Result<PathBuf, String> {
     yt_dlp_manager::find_yt_dlp().ok_or_else(|| "yt-dlp is not installed".to_string())
@@ -132,6 +184,20 @@ pub async fn download_audio(
         }
     }
 
+    let cache_dir = get_app_data_dir().join("cache");
+    std::fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create cache directory: {}", e))?;
+
+    // A complete file can outlive its index entry (lost or corrupt index):
+    // re-index it instead of downloading it again.
+    if let Some(existing) = existing_audio_file(&cache_dir, &video_id) {
+        emit("Finalizing...", None);
+        let title = fetch_title(&cache_url)
+            .await
+            .unwrap_or_else(|| video_id.clone());
+        return finalize_download(&cache_url, &existing, &title, cache);
+    }
+
     let _slot = DOWNLOAD_SLOTS.acquire().await.map_err(|e| e.to_string())?;
 
     // Get yt-dlp binary path, auto-install if not found
@@ -149,20 +215,7 @@ pub async fn download_audio(
         super::ffmpeg_manager::download_ffmpeg().await?;
     }
 
-    let cache_dir = get_app_data_dir().join("cache");
-    std::fs::create_dir_all(&cache_dir)
-        .map_err(|e| format!("Failed to create cache directory: {}", e))?;
-
-    // Clean any previous partial downloads for this video
-    clean_video_files(&cache_dir, &video_id);
-
     emit("Downloading...", Some(0.0));
-
-    // Output template uses video ID only (predictable path)
-    let output_template = cache_dir
-        .join("%(id)s.%(ext)s")
-        .to_string_lossy()
-        .to_string();
 
     // Retry loop for transient network errors
     let max_attempts = 3;
@@ -172,17 +225,33 @@ pub async fn download_audio(
 
     for attempt in 1..=max_attempts {
         if attempt > 1 {
-            // Clean partial files before retry
-            clean_video_files(&cache_dir, &video_id);
             emit("Retrying...", Some(0.0));
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
 
+        // Each attempt downloads into its own temp dir next to the cache (same
+        // filesystem, so the final move is a rename). Partial files never touch
+        // the cache and are removed when the dir drops.
+        let temp_dir = tempfile::Builder::new()
+            .prefix(TEMP_DIR_PREFIX)
+            .tempdir_in(&cache_dir)
+            .map_err(|e| format!("Failed to create download directory: {}", e))?;
+        // Output template uses video ID only (predictable path)
+        let output_template = temp_dir
+            .path()
+            .join("%(id)s.%(ext)s")
+            .to_string_lossy()
+            .to_string();
+
         // Build yt-dlp command with --write-info-json for title extraction
         let mut cmd = yt_dlp_command(&current_bin);
-        cmd.arg("-f")
-            .arg("bestaudio[ext=m4a]")
-            .arg("-o")
+        if can_extract_audio() {
+            // Take any audio stream, converting to m4a only when YouTube has no m4a one.
+            cmd.args(["-f", "ba[ext=m4a]/ba", "-x", "--audio-format", "m4a"]);
+        } else {
+            cmd.args(["-f", "ba[ext=m4a]"]);
+        }
+        cmd.arg("-o")
             .arg(&output_template)
             .arg("--write-info-json")
             .arg("--no-playlist")
@@ -191,6 +260,7 @@ pub async fn download_audio(
             .arg("--no-update")
             .arg("--socket-timeout")
             .arg("30");
+        add_js_runtime_args(&mut cmd);
 
         // Point yt-dlp to our ffmpeg location if it's in the app bin dir
         let ffmpeg_path = super::ffmpeg_manager::get_ffmpeg_path();
@@ -203,46 +273,75 @@ pub async fn download_audio(
         let mut child = cmd
             .arg("--")
             .arg(&cache_url)
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
 
-        // Read stderr for progress and errors
-        let has_progress = on_progress.is_some();
-        let mut last_error_lines: Vec<String> = Vec::new();
-        let stderr = child.stderr.take();
-        if let Some(stderr) = stderr {
-            let mut reader = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                if let Some(pct) = parse_progress_line(&line) {
-                    if has_progress {
-                        emit("Downloading...", Some(pct));
+        // Errors go to stderr; collect them concurrently so neither pipe fills up.
+        let stderr_task = child.stderr.take().map(|stderr| {
+            tokio::spawn(async move {
+                let mut errors = Vec::new();
+                let mut reader = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    if line.contains("ERROR") || line.contains("error:") {
+                        errors.push(line);
                     }
-                } else if has_progress && (line.contains("[FixupM4a]") || line.contains("[Remux]"))
-                {
-                    emit("Processing...", None);
                 }
-                if line.contains("ERROR") || line.contains("error:") {
-                    last_error_lines.push(line);
+                errors
+            })
+        });
+
+        // Progress lines ([download] NN%, post-processors) go to stdout.
+        let has_progress = on_progress.is_some();
+        let stdout = child.stdout.take();
+        let run = async {
+            if let Some(stdout) = stdout {
+                let mut reader = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    if !has_progress {
+                        continue;
+                    }
+                    if let Some(pct) = parse_progress_line(&line) {
+                        emit("Downloading...", Some(pct));
+                    } else if line.contains("[FixupM4a]")
+                        || line.contains("[Remux]")
+                        || line.contains("[ExtractAudio]")
+                    {
+                        emit("Processing...", None);
+                    }
                 }
             }
-        }
-
-        let status = child
-            .wait()
-            .await
-            .map_err(|e| format!("yt-dlp process error: {}", e))?;
+            child.wait().await
+        };
+        let result = tokio::time::timeout(DOWNLOAD_TIMEOUT, run).await;
+        let status = match result {
+            Ok(status) => status.map_err(|e| format!("yt-dlp process error: {}", e))?,
+            Err(_) => {
+                let _ = child.kill().await;
+                return Err("Download timed out".to_string());
+            }
+        };
+        let last_error_lines = match stderr_task {
+            Some(task) => task.await.unwrap_or_default(),
+            None => Vec::new(),
+        };
 
         if status.success() {
             // Download succeeded
             emit("Finalizing...", None);
 
             // Read title from the info.json file written by yt-dlp
-            let title = read_title_from_info_json(&cache_dir, &video_id);
+            let title = read_title_from_info_json(temp_dir.path(), &video_id);
 
-            // Find the downloaded file
-            let actual_path = find_downloaded_file(&cache_dir, &video_id)?;
+            // Move the finished file into the cache, replacing any stale copy.
+            let downloaded = find_downloaded_file(temp_dir.path(), &video_id)?;
+            let file_name = downloaded
+                .file_name()
+                .ok_or_else(|| "Downloaded file has no name".to_string())?;
+            let actual_path = cache_dir.join(file_name);
+            std::fs::rename(&downloaded, &actual_path)
+                .map_err(|e| format!("Failed to move downloaded file: {}", e))?;
             return finalize_download(&cache_url, &actual_path, &title, cache);
         }
 
@@ -317,25 +416,42 @@ fn finalize_download(
     Ok(entry)
 }
 
-/// Clean any previous files for a video ID in the cache directory.
-fn clean_video_files(cache_dir: &PathBuf, video_id: &str) {
-    if let Ok(entries) = std::fs::read_dir(cache_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            // Only match files that start with the exact video_id (avoid partial matches)
-            if name.starts_with(video_id) {
-                let _ = std::fs::remove_file(entry.path());
-            }
-        }
-    }
+const AUDIO_EXTENSIONS: [&str; 8] = [
+    ".m4a", ".mp3", ".opus", ".webm", ".ogg", ".wav", ".flac", ".aac",
+];
+
+/// A finished `{video_id}.{ext}` already in the cache. yt-dlp only gives the
+/// final name to complete files (partials are `.part` / `.temp.*`).
+fn existing_audio_file(cache_dir: &Path, video_id: &str) -> Option<PathBuf> {
+    AUDIO_EXTENSIONS
+        .iter()
+        .map(|ext| cache_dir.join(format!("{}{}", video_id, ext)))
+        .find(|path| std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.len() > 0))
+}
+
+/// Best-effort title lookup for a file re-indexed without its info.json.
+async fn fetch_title(url: &str) -> Option<String> {
+    let bin = get_yt_dlp_bin().ok()?;
+    let mut cmd = yt_dlp_command(&bin);
+    cmd.args(["--print", "title", "--skip-download", "--no-playlist"])
+        .args(["--no-warnings", "--socket-timeout", "10"]);
+    add_js_runtime_args(&mut cmd);
+    cmd.arg("--")
+        .arg(url)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let output = tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output())
+        .await
+        .ok()?
+        .ok()?;
+    let title = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (output.status.success() && !title.is_empty()).then_some(title)
 }
 
 /// Try to find the downloaded file in cache_dir by video_id.
 /// Prefers exact match (video_id.ext) over partial matches.
-fn find_downloaded_file(cache_dir: &PathBuf, video_id: &str) -> Result<PathBuf, String> {
-    let audio_extensions = [
-        ".m4a", ".mp3", ".opus", ".webm", ".ogg", ".wav", ".flac", ".aac",
-    ];
+fn find_downloaded_file(cache_dir: &Path, video_id: &str) -> Result<PathBuf, String> {
+    let audio_extensions = AUDIO_EXTENSIONS;
 
     // First try exact match: {video_id}.{ext}
     for ext in &audio_extensions {
@@ -360,7 +476,7 @@ fn find_downloaded_file(cache_dir: &PathBuf, video_id: &str) -> Result<PathBuf, 
 
 /// Read the video title from the info.json file written by yt-dlp.
 /// Returns the title or falls back to the video_id. Cleans up the JSON file afterwards.
-fn read_title_from_info_json(cache_dir: &PathBuf, video_id: &str) -> String {
+fn read_title_from_info_json(cache_dir: &Path, video_id: &str) -> String {
     let info_path = cache_dir.join(format!("{}.info.json", video_id));
     let title = if info_path.exists() {
         let content = std::fs::read_to_string(&info_path).unwrap_or_default();
@@ -387,9 +503,9 @@ fn read_title_from_info_json(cache_dir: &PathBuf, video_id: &str) -> String {
 fn is_retryable_error(stderr: &str) -> bool {
     let lower = stderr.to_lowercase();
 
-    // HTTP 403/429 are NOT transient network errors — they indicate
-    // YouTube is blocking the request (usually outdated yt-dlp)
-    if lower.contains("403") || lower.contains("forbidden") || lower.contains("429") {
+    // HTTP 403/429 and bot checks are NOT transient network errors — they
+    // indicate YouTube is blocking the request (often an outdated yt-dlp)
+    if is_http_blocked(&lower) || lower.contains("sign in to confirm") {
         return false;
     }
     // Extraction failures are yt-dlp bugs, not network issues
@@ -410,22 +526,36 @@ fn is_retryable_error(stderr: &str) -> bool {
     lower.contains("connection aborted")
 }
 
+/// `HTTP Error 403` / `HTTP Error 429` from yt-dlp (expects lowercased text).
+fn is_http_blocked(lower: &str) -> bool {
+    lower.contains("http error 403") || lower.contains("http error 429")
+}
+
 /// Check if an error looks like it could be fixed by updating yt-dlp.
+/// Bot checks ("Sign in to confirm you're not a bot") are rate limiting, not
+/// an outdated extractor, so they never trigger an update.
 fn is_likely_outdated_ytdlp(stderr: &str) -> bool {
     let lower = stderr.to_lowercase();
-    lower.contains("403")
-        || lower.contains("forbidden")
+    if lower.contains("sign in to confirm") {
+        return false;
+    }
+    is_http_blocked(&lower)
         || lower.contains("unable to extract")
         || lower.contains("no video formats")
         || lower.contains("unable to download webpage")
         || lower.contains("unsupported url")
-        || lower.contains("sign in to confirm")
 }
 
 /// Parse yt-dlp error output into a user-friendly message.
 fn parse_yt_dlp_error(stderr: &str) -> String {
     let lower = stderr.to_lowercase();
 
+    if lower.contains("not a bot") {
+        return "YouTube is temporarily blocking downloads. Try again later".to_string();
+    }
+    if lower.contains("confirm your age") {
+        return "This video is age-restricted".to_string();
+    }
     if lower.contains("private video") || lower.contains("sign in") {
         return "This video is private or requires sign-in".to_string();
     }
@@ -488,5 +618,27 @@ mod tests {
         let second = download_lock("same");
         assert!(Arc::ptr_eq(&first, &second));
         assert!(!Arc::ptr_eq(&first, &download_lock("other")));
+        assert!(is_download_active("same"));
+        drop((first, second));
+        assert!(!is_download_active("same"));
+    }
+    #[test]
+    fn only_precise_blocking_errors_trigger_an_update() {
+        assert!(is_likely_outdated_ytdlp(
+            "ERROR: unable to download video data: HTTP Error 403: Forbidden"
+        ));
+        assert!(!is_likely_outdated_ytdlp("ERROR: [youtube] abc: 403 views"));
+        let bot = "ERROR: [youtube] abc: Sign in to confirm you're not a bot";
+        assert!(!is_likely_outdated_ytdlp(bot));
+        assert!(!is_retryable_error(bot));
+        assert!(!parse_yt_dlp_error(bot).contains("private"));
+    }
+    #[test]
+    fn progress_is_parsed_from_stdout_lines() {
+        assert_eq!(
+            parse_progress_line("[download]  45.2% of    5.43MiB at    1.23MiB/s ETA 00:03"),
+            Some(45.2)
+        );
+        assert_eq!(parse_progress_line("[download] Destination: a.m4a"), None);
     }
 }

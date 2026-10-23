@@ -114,6 +114,8 @@ fn export_loaded_profile(
     let _tracking = ExportTracking(tracking_path);
     let mut zip = ZipWriter::new(temp);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    // Audio is already compressed: deflating it costs CPU for no size gain.
+    let audio_options = options.compression_method(zip::CompressionMethod::Stored);
 
     // Write profile.json
     zip.start_file("profile.json", options)
@@ -142,7 +144,7 @@ fn export_loaded_profile(
         let mut source = fs::File::open(absolute_path)
             .map_err(|e| format!("Failed to read '{}': {}", absolute_path.display(), e))?;
         let zip_entry_path = format!("sounds/{}", relative_path);
-        zip.start_file(&zip_entry_path, options)
+        zip.start_file(&zip_entry_path, audio_options)
             .map_err(|e| format!("Failed to add '{}' to ZIP: {}", zip_entry_path, e))?;
         let mut buffer = [0_u8; 64 * 1024];
         loop {

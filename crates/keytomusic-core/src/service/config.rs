@@ -3,9 +3,69 @@ use crate::types::{AppConfig, MomentumModifier};
 
 use super::mood;
 
+fn parse_momentum_modifier(value: &str) -> Option<MomentumModifier> {
+    match value {
+        "Shift" => Some(MomentumModifier::Shift),
+        "Ctrl" => Some(MomentumModifier::Ctrl),
+        "Alt" => Some(MomentumModifier::Alt),
+        "None" => Some(MomentumModifier::None),
+        _ => None,
+    }
+}
+
+/// Reject out-of-range values before anything is applied, so a bad request
+/// leaves the config untouched instead of half-applied.
+fn validate_config_updates(updates: &serde_json::Value) -> Result<(), String> {
+    fn ranged(
+        updates: &serde_json::Value,
+        key: &str,
+        range: std::ops::RangeInclusive<u64>,
+        message: &str,
+    ) -> Result<(), String> {
+        match updates.get(key) {
+            Some(v) if !v.as_u64().is_some_and(|v| range.contains(&v)) => Err(message.into()),
+            _ => Ok(()),
+        }
+    }
+    if let Some(v) = updates.get("masterVolume") {
+        if !v.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v)) {
+            return Err("Master volume must be between 0 and 1".into());
+        }
+    }
+    ranged(
+        updates,
+        "crossfadeDuration",
+        100..=2000,
+        "Crossfade must be between 100 and 2000ms",
+    )?;
+    ranged(
+        updates,
+        "keyCooldown",
+        0..=5000,
+        "Cooldown must be at most 5000ms",
+    )?;
+    ranged(
+        updates,
+        "chordWindowMs",
+        20..=100,
+        "Chord window must be between 20 and 100ms",
+    )?;
+    if let Some(v) = updates.get("stopAllShortcut") {
+        if !v.as_array().is_some_and(|keys| keys.len() >= 2) {
+            return Err("Stop all shortcut must have at least 2 keys".into());
+        }
+    }
+    if let Some(v) = updates.get("momentumModifier") {
+        if v.as_str().and_then(parse_momentum_modifier).is_none() {
+            return Err("Unknown momentum modifier".into());
+        }
+    }
+    Ok(())
+}
+
 fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
     if let Some(v) = updates.get("masterVolume").and_then(|v| v.as_f64()) {
-        config.master_volume = v as f32;
+        config.master_volume = (v as f32).clamp(0.0, 1.0);
     }
     if let Some(v) = updates.get("autoMomentum").and_then(|v| v.as_bool()) {
         config.auto_momentum = v;
@@ -14,17 +74,17 @@ fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
         config.key_detection_enabled = v;
     }
     if let Some(v) = updates.get("crossfadeDuration").and_then(|v| v.as_u64()) {
-        config.crossfade_duration = v as u32;
+        config.crossfade_duration = u32::try_from(v).unwrap_or(u32::MAX).clamp(100, 2000);
     }
     if let Some(v) = updates.get("keyCooldown").and_then(|v| v.as_u64()) {
-        config.key_cooldown = v as u32;
+        config.key_cooldown = u32::try_from(v).unwrap_or(u32::MAX).min(5000);
     }
     if let Some(v) = updates.get("stopAllShortcut").and_then(|v| v.as_array()) {
         let keys: Vec<String> = v
             .iter()
             .filter_map(|k| k.as_str().map(|s| s.to_string()))
             .collect();
-        if !keys.is_empty() {
+        if keys.len() >= 2 {
             config.stop_all_shortcut = keys;
         }
     }
@@ -62,16 +122,14 @@ fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
         });
     }
     if let Some(v) = updates.get("chordWindowMs").and_then(|v| v.as_u64()) {
-        config.chord_window_ms = v as u32;
+        config.chord_window_ms = u32::try_from(v).unwrap_or(u32::MAX).clamp(20, 100);
     }
-    if let Some(v) = updates.get("momentumModifier").and_then(|v| v.as_str()) {
-        config.momentum_modifier = match v {
-            "Shift" => MomentumModifier::Shift,
-            "Ctrl" => MomentumModifier::Ctrl,
-            "Alt" => MomentumModifier::Alt,
-            "None" => MomentumModifier::None,
-            _ => MomentumModifier::Shift,
-        };
+    if let Some(v) = updates
+        .get("momentumModifier")
+        .and_then(|v| v.as_str())
+        .and_then(parse_momentum_modifier)
+    {
+        config.momentum_modifier = v;
     }
     if let Some(v) = updates
         .get("playlistImportEnabled")
@@ -82,8 +140,12 @@ fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
     if let Some(v) = updates.get("moodAiEnabled").and_then(|v| v.as_bool()) {
         config.mood_ai_enabled = v;
     }
-    if let Some(v) = updates.get("moodApiPort").and_then(|v| v.as_u64()) {
-        config.mood_api_port = v as u16;
+    if let Some(v) = updates
+        .get("moodApiPort")
+        .and_then(|v| v.as_u64())
+        .and_then(|v| u16::try_from(v).ok())
+    {
+        config.mood_api_port = v;
     }
 }
 
@@ -139,6 +201,7 @@ pub async fn update_config(state: &AppState, updates: serde_json::Value) -> Resu
             return Err("API port must be between 1024 and 65535".into());
         }
     }
+    validate_config_updates(&updates)?;
     let previous = state.get_config();
 
     let config = state.update_config(|config| {
@@ -175,6 +238,10 @@ pub async fn update_config(state: &AppState, updates: serde_json::Value) -> Resu
 }
 
 pub fn set_master_volume(state: &AppState, volume: f32) {
+    if !volume.is_finite() {
+        return;
+    }
+    let volume = volume.clamp(0.0, 1.0);
     state.update_config(|config| {
         config.master_volume = volume;
     });
@@ -244,5 +311,28 @@ mod tests {
         );
         assert_eq!(current.mood_api_port, previous.mood_api_port);
         assert_eq!(current.master_volume, 0.2);
+    }
+
+    #[test]
+    fn invalid_updates_are_rejected() {
+        for bad in [
+            serde_json::json!({"masterVolume": 1.5}),
+            serde_json::json!({"crossfadeDuration": 50}),
+            serde_json::json!({"keyCooldown": 4294967296u64}),
+            serde_json::json!({"chordWindowMs": 500}),
+            serde_json::json!({"stopAllShortcut": ["KeyS"]}),
+            serde_json::json!({"momentumModifier": "Meta"}),
+        ] {
+            assert!(validate_config_updates(&bad).is_err(), "{bad}");
+        }
+        assert!(validate_config_updates(&serde_json::json!({
+            "masterVolume": 0.5,
+            "crossfadeDuration": 500,
+            "keyCooldown": 0,
+            "chordWindowMs": 30,
+            "stopAllShortcut": ["ControlLeft", "KeyS"],
+            "momentumModifier": "Alt"
+        }))
+        .is_ok());
     }
 }

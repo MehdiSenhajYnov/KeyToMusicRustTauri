@@ -4,7 +4,9 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 
 use super::cache::YouTubeCache;
-use super::downloader::{canonical_url, extract_video_id, get_yt_dlp_bin, yt_dlp_command};
+use super::downloader::{
+    add_js_runtime_args, canonical_url, extract_video_id, get_yt_dlp_bin, yt_dlp_command,
+};
 use super::yt_dlp_manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -339,6 +341,7 @@ pub async fn get_stream_url(video_id: &str) -> Result<StreamUrlResult, String> {
         .arg("10")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    add_js_runtime_args(&mut cmd);
 
     let child = cmd
         .spawn()

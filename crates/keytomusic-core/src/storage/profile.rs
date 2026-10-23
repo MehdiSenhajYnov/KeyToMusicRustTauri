@@ -1,5 +1,5 @@
 use crate::storage::get_app_data_dir;
-use crate::types::{Profile, ProfileId};
+use crate::types::{Profile, ProfileId, SoundSource};
 use std::fs;
 use std::sync::Mutex;
 
@@ -126,13 +126,31 @@ pub fn save_profile(profile: &Profile) -> Result<(), String> {
         merged.disliked_videos = existing.disliked_videos;
         for sound in &mut merged.sounds {
             if let Some(saved) = existing.sounds.iter().find(|s| s.id == sound.id) {
-                if sound.resolved_video_id.is_none() {
+                // A relocated or replaced file needs a fresh resolution.
+                if sound.resolved_video_id.is_none() && same_source(&sound.source, &saved.source) {
                     sound.resolved_video_id = saved.resolved_video_id.clone();
                 }
             }
         }
     }
     save_profile_unlocked(&merged)
+}
+
+fn same_source(a: &SoundSource, b: &SoundSource) -> bool {
+    match (a, b) {
+        (SoundSource::Local { path: a }, SoundSource::Local { path: b }) => a == b,
+        (
+            SoundSource::YouTube {
+                url: a,
+                cached_path: pa,
+            },
+            SoundSource::YouTube {
+                url: b,
+                cached_path: pb,
+            },
+        ) => a == b && pa == pb,
+        _ => false,
+    }
 }
 
 fn save_profile_unlocked(profile: &Profile) -> Result<(), String> {

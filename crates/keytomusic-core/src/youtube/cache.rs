@@ -10,14 +10,37 @@ use crate::storage::config::get_app_data_dir;
 pub struct CacheEntry {
     pub url: String,
     pub cached_path: String,
+    #[serde(default)]
     pub title: String,
+    #[serde(default)]
     pub downloaded_at: String,
+    #[serde(default)]
     pub file_size: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CacheIndex {
+    #[serde(default)]
     pub entries: Vec<CacheEntry>,
+}
+
+/// Untracked partial/temporary download files older than this are swept.
+const STALE_TEMP_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 3600);
+
+/// Paths and video IDs still in use, scanned from profiles and discovery caches.
+/// Collected without holding the cache lock (it reads every profile from disk).
+pub struct CacheUsage {
+    used_paths: HashSet<String>,
+    discovery_vids: HashSet<String>,
+}
+
+impl CacheUsage {
+    pub fn collect() -> Self {
+        Self {
+            used_paths: collect_used_cached_paths(),
+            discovery_vids: collect_discovery_video_ids(),
+        }
+    }
 }
 
 pub struct YouTubeCache {
@@ -62,8 +85,20 @@ impl YouTubeCache {
         let contents = fs::read_to_string(&self.index_path)
             .map_err(|e| format!("Failed to read cache index: {}", e))?;
 
-        let index: CacheIndex = serde_json::from_str(&contents)
-            .map_err(|e| format!("Failed to parse cache index: {}", e))?;
+        let index: CacheIndex = match serde_json::from_str(&contents) {
+            Ok(index) => index,
+            Err(e) => {
+                // Keep the unreadable index aside: the next save would overwrite it.
+                let backup = self.index_path.with_extension("json.bak");
+                tracing::warn!(
+                    "Cache index is corrupt ({}), moving it to {}",
+                    e,
+                    backup.display()
+                );
+                let _ = fs::rename(&self.index_path, &backup);
+                return Err(format!("Failed to parse cache index: {}", e));
+            }
+        };
 
         self.entries.clear();
         self.video_id_index.clear();
@@ -136,7 +171,10 @@ impl YouTubeCache {
         };
 
         if let Some(entry) = self.entries.get(&url) {
-            if collect_used_cached_paths().contains(&entry.cached_path) {
+            // Still used by a profile, or suggested by another profile's discovery.
+            if collect_used_cached_paths().contains(&entry.cached_path)
+                || collect_discovery_video_ids().contains(video_id)
+            {
                 self.video_id_index.insert(video_id.to_string(), url);
                 return;
             }
@@ -171,8 +209,14 @@ impl YouTubeCache {
     /// Scans all saved profiles and discovery caches to find which entries are in use.
     /// Also removes untracked audio files in the cache directory (not in the index).
     pub fn cleanup_unused(&mut self) {
-        let used_paths = collect_used_cached_paths();
-        let discovery_vids = collect_discovery_video_ids();
+        self.cleanup_unused_with(&CacheUsage::collect());
+    }
+
+    /// `cleanup_unused` with a usage scan collected beforehand (outside the cache lock).
+    pub fn cleanup_unused_with(&mut self, usage: &CacheUsage) {
+        self.ensure_loaded();
+        let used_paths = &usage.used_paths;
+        let discovery_vids = &usage.discovery_vids;
 
         // 1. Clean up indexed entries no longer referenced by any profile or discovery
         let unused_urls: Vec<String> = self
@@ -208,11 +252,12 @@ impl YouTubeCache {
         }
 
         // 2. Clean up untracked files in the cache directory
-        self.cleanup_untracked_files(&used_paths, &discovery_vids);
+        self.cleanup_untracked_files(used_paths, discovery_vids);
     }
 
     /// Remove audio files in the cache directory that are not tracked by the index
-    /// and not referenced by any profile or discovery suggestion.
+    /// and not referenced by any profile or discovery suggestion, plus partial
+    /// download leftovers older than a day. Videos being downloaded are skipped.
     fn cleanup_untracked_files(
         &self,
         used_paths: &HashSet<String>,
@@ -232,6 +277,28 @@ impl YouTubeCache {
 
         for entry in dir_entries.flatten() {
             let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            // Video IDs never contain '.', so the ID is everything before the first one.
+            let id = name.split('.').next().unwrap_or("");
+            if super::downloader::is_download_active(id) {
+                continue;
+            }
+            if is_download_leftover(&name) {
+                let stale = entry
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|mtime| mtime.elapsed().ok())
+                    .is_some_and(|age| age > STALE_TEMP_AGE);
+                if stale {
+                    let _ = if path.is_dir() {
+                        fs::remove_dir_all(&path)
+                    } else {
+                        fs::remove_file(&path)
+                    };
+                }
+                continue;
+            }
             let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
             if !audio_extensions.contains(&ext) {
                 continue;
@@ -249,6 +316,15 @@ impl YouTubeCache {
             let _ = fs::remove_file(&path);
         }
     }
+}
+
+/// Partial or temporary files yt-dlp (or an interrupted download) leaves behind.
+fn is_download_leftover(name: &str) -> bool {
+    name.starts_with(super::downloader::TEMP_DIR_PREFIX)
+        || name.ends_with(".part")
+        || name.ends_with(".ytdl")
+        || name.ends_with(".info.json")
+        || name.contains(".temp.")
 }
 
 /// Extract a video ID from a cached file path.
