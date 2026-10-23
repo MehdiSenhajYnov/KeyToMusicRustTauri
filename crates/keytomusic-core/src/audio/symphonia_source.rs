@@ -29,6 +29,8 @@ pub struct SymphoniaSource {
     // Current decoded samples buffer (consumed by Iterator::next)
     sample_buf: Vec<f32>,
     sample_pos: usize,
+    // Silent samples still owed to finish an underrun frame (keeps channels aligned)
+    silence_left: usize,
     finished: bool,
     // Channel to receive pre-decoded buffers from the decode thread
     buf_rx: mpsc::Receiver<Vec<f32>>,
@@ -136,6 +138,7 @@ impl SymphoniaSource {
             channels,
             sample_buf,
             sample_pos: 0,
+            silence_left: 0,
             finished: false,
             buf_rx,
             stop_flag,
@@ -231,6 +234,11 @@ impl Iterator for SymphoniaSource {
             return None;
         }
 
+        if self.silence_left > 0 {
+            self.silence_left -= 1;
+            return Some(0.0);
+        }
+
         if self.sample_pos >= self.sample_buf.len() {
             // Try to get the next pre-decoded buffer (non-blocking)
             match self.buf_rx.try_recv() {
@@ -240,8 +248,11 @@ impl Iterator for SymphoniaSource {
                 }
                 Err(mpsc::TryRecvError::Empty) => {
                     // Decode thread is still working but no buffer ready yet.
-                    // Return silence to avoid blocking the real-time audio thread.
+                    // Return a whole frame of silence to avoid blocking the real-time
+                    // audio thread without shifting channels (decoded buffers always
+                    // hold whole frames, so we are at a frame boundary here).
                     // The prefetch buffer will catch up on the next callback.
+                    self.silence_left = (self.channels as usize).saturating_sub(1);
                     return Some(0.0);
                 }
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -262,6 +273,8 @@ impl Source for SymphoniaSource {
     fn current_frame_len(&self) -> Option<usize> {
         if self.finished {
             Some(0)
+        } else if self.silence_left > 0 {
+            Some(self.silence_left)
         } else if self.sample_pos < self.sample_buf.len() {
             Some(self.sample_buf.len() - self.sample_pos)
         } else {

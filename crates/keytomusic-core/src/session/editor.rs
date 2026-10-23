@@ -376,10 +376,52 @@ impl ProfileSnapshot {
         }
     }
 
-    pub fn apply(self, profile: &mut Profile) {
+    /// Restore the snapshot, keeping the live non-undoable state of whatever still
+    /// exists: sound and track volumes, computed durations and loop positions.
+    pub fn apply(mut self, profile: &mut Profile) {
+        let live_sounds: HashMap<&str, &Sound> =
+            profile.sounds.iter().map(|s| (s.id.as_str(), s)).collect();
+        for sound in &mut self.sounds {
+            if let Some(live) = live_sounds.get(sound.id.as_str()) {
+                sound.volume = live.volume;
+                if same_source(&sound.source, &live.source) {
+                    sound.duration = live.duration;
+                    sound.resolved_video_id = live.resolved_video_id.clone();
+                }
+            }
+        }
+        for track in &mut self.tracks {
+            if let Some(live) = profile.tracks.iter().find(|t| t.id == track.id) {
+                track.volume = live.volume;
+            }
+        }
+        for binding in &mut self.key_bindings {
+            if let Some(live) = find_binding(profile, &binding.key_code, &binding.track_id)
+                .filter(|live| live.sound_ids == binding.sound_ids)
+            {
+                binding.current_index = live.current_index;
+            }
+        }
         profile.sounds = self.sounds;
         profile.key_bindings = self.key_bindings;
         profile.tracks = self.tracks;
+    }
+}
+
+fn same_source(a: &SoundSource, b: &SoundSource) -> bool {
+    match (a, b) {
+        (SoundSource::Local { path: a }, SoundSource::Local { path: b }) => a == b,
+        (
+            SoundSource::YouTube {
+                url: a,
+                cached_path: ca,
+            },
+            SoundSource::YouTube {
+                url: b,
+                cached_path: cb,
+            },
+        ) => a == b && ca == cb,
+        _ => false,
     }
 }
 
@@ -585,6 +627,42 @@ pub(crate) mod tests {
         assert_eq!(p.sounds.len(), 3);
         assert_eq!(history.redo(&mut p).as_deref(), Some("Remove sound"));
         assert_eq!(p.sounds.len(), 2);
+    }
+
+    #[test]
+    fn undo_keeps_live_volumes_durations_and_positions() {
+        let mut p = profile();
+        let mut history = History::default();
+        let before = ProfileSnapshot::capture(&p);
+        set_binding_name(&mut p, "KeyA", "t1", Some("Theme"));
+        history.push("Rename", before, ProfileSnapshot::capture(&p));
+
+        // Non-undoable changes made after the action.
+        sound_mut(&mut p, "s1").unwrap().volume = 0.3;
+        sound_mut(&mut p, "s2").unwrap().duration = 42.0;
+        set_track_volume(&mut p, "t1", 0.5);
+        p.key_bindings[0].current_index = 1;
+
+        history.undo(&mut p);
+        assert_eq!(find_binding(&p, "KeyA", "t1").unwrap().name, None);
+        assert_eq!(sound_mut(&mut p, "s1").unwrap().volume, 0.3);
+        assert_eq!(sound_mut(&mut p, "s2").unwrap().duration, 42.0);
+        assert_eq!(p.tracks[0].volume, 0.5);
+        assert_eq!(find_binding(&p, "KeyA", "t1").unwrap().current_index, 1);
+    }
+
+    #[test]
+    fn undo_relocate_restores_the_old_duration() {
+        let mut p = profile();
+        let mut history = History::default();
+        let before = ProfileSnapshot::capture(&p);
+        let new_source = SoundSource::Local {
+            path: "/elsewhere.mp3".into(),
+        };
+        relocate_sound(&mut p, "s1", new_source, 99.0);
+        history.push("Locate file", before, ProfileSnapshot::capture(&p));
+        history.undo(&mut p);
+        assert_eq!(sound_mut(&mut p, "s1").unwrap().duration, 10.0);
     }
 
     #[test]

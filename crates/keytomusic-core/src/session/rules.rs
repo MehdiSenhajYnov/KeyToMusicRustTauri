@@ -21,15 +21,20 @@ pub enum MomentumBehavior {
 pub struct LoopContext {
     pub key_code: String,
     pub track_id: String,
+    /// Sound this context was started for; other sounds ending on the track are ignored.
+    pub sound_id: String,
     pub momentum: MomentumBehavior,
     pub persist_single_momentum: bool,
 }
 
 /// Choose the sound to play and the binding's next `current_index`.
+/// `played` says whether this binding already played in this session: until then
+/// `current_index` is only a persisted default, so random modes must not avoid it.
 /// `random` yields a value in `0..n` and is injected for tests.
 pub fn select_loop_sound<'a>(
     binding: &KeyBinding,
     sounds: &'a HashMap<&str, &'a Sound>,
+    played: bool,
     mut random: impl FnMut(usize) -> usize,
 ) -> Option<(&'a Sound, usize)> {
     let available: Vec<&Sound> = binding
@@ -47,7 +52,7 @@ pub fn select_loop_sound<'a>(
                 return Some((available[0], 0));
             }
             let mut idx = random(available.len());
-            while idx == current {
+            while played && idx == current {
                 idx = random(available.len());
             }
             Some((available[idx], idx))
@@ -244,14 +249,26 @@ mod tests {
         let mut b = binding("KeyA", "t", &["a", "b", "c"]);
         b.loop_mode = LoopMode::Sequential;
         b.current_index = 4;
-        let (s, next) = select_loop_sound(&b, &map, |_| 0).unwrap();
+        let (s, next) = select_loop_sound(&b, &map, true, |_| 0).unwrap();
         assert_eq!((s.id.as_str(), next), ("b", 2));
 
         b.loop_mode = LoopMode::Random;
         b.current_index = 0;
         let mut seq = [0, 0, 2].into_iter();
-        let (s, next) = select_loop_sound(&b, &map, |_| seq.next().unwrap()).unwrap();
+        let (s, next) = select_loop_sound(&b, &map, true, |_| seq.next().unwrap()).unwrap();
         assert_eq!((s.id.as_str(), next), ("c", 2));
+    }
+
+    #[test]
+    fn random_first_play_can_pick_the_first_sound() {
+        let sounds = vec![sound("a"), sound("b")];
+        let map = sound_map(&sounds);
+        for mode in [LoopMode::Off, LoopMode::Random] {
+            let mut b = binding("KeyA", "t", &["a", "b"]);
+            b.loop_mode = mode;
+            let (s, next) = select_loop_sound(&b, &map, false, |_| 0).unwrap();
+            assert_eq!((s.id.as_str(), next), ("a", 0));
+        }
     }
 
     #[test]
@@ -261,9 +278,9 @@ mod tests {
         let mut b = binding("KeyA", "t", &["gone", "a"]);
         b.loop_mode = LoopMode::Single;
         b.current_index = 5;
-        let (s, next) = select_loop_sound(&b, &map, |_| 0).unwrap();
+        let (s, next) = select_loop_sound(&b, &map, true, |_| 0).unwrap();
         assert_eq!((s.id.as_str(), next), ("a", 0));
-        assert!(select_loop_sound(&binding("K", "t", &["gone"]), &map, |_| 0).is_none());
+        assert!(select_loop_sound(&binding("K", "t", &["gone"]), &map, true, |_| 0).is_none());
     }
 
     #[test]
@@ -292,6 +309,7 @@ mod tests {
         let ctx = LoopContext {
             key_code: "KeyA".into(),
             track_id: "t".into(),
+            sound_id: "a".into(),
             momentum: MomentumBehavior::ConfigOnly,
             persist_single_momentum: false,
         };

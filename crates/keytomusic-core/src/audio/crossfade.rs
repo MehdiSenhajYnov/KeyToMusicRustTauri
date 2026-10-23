@@ -4,14 +4,23 @@ use std::time::{Duration, Instant};
 pub struct CrossfadeState {
     pub start_time: Instant,
     pub duration: Duration,
+    /// Gain of the outgoing sink when the crossfade started (its own sound's
+    /// volume, or wherever it was mid-ramp), so it fades from where it was.
+    pub outgoing_volume: f32,
 }
 
 impl CrossfadeState {
-    pub fn new(duration_ms: u32) -> Self {
+    pub fn new(duration_ms: u32, outgoing_volume: f32) -> Self {
         Self {
             start_time: Instant::now(),
             duration: Duration::from_millis(duration_ms as u64),
+            outgoing_volume,
         }
+    }
+
+    /// Current gain of the outgoing sink.
+    pub fn outgoing_gain(&self) -> f32 {
+        self.outgoing_volume * self.get_volumes().0
     }
 
     /// Returns true if the crossfade is complete.

@@ -346,6 +346,120 @@ fn is_preview_track(track_id: &str) -> bool {
     track_id == "__preview__" || track_id.starts_with("preview-")
 }
 
+/// The output stream and the device it should follow.
+struct Output {
+    stream: Option<(OutputStream, OutputStreamHandle)>,
+    /// Device chosen by the user (None = follow the system default).
+    preferred: Option<String>,
+    /// Device actually open (None = system default).
+    active: Option<String>,
+    last_default: Option<String>,
+}
+
+impl Output {
+    fn handle(&self) -> Option<&OutputStreamHandle> {
+        self.stream.as_ref().map(|(_, handle)| handle)
+    }
+
+    /// (Re)open the preferred device, falling back to the system default.
+    /// Errors are only reported when `report` (not on silent periodic retries).
+    fn open(&mut self, event_tx: &Sender<AudioEvent>, report: bool) -> bool {
+        // Release the old device first: some backends only allow one stream per device.
+        self.stream = None;
+        let error = |message: String| {
+            if report {
+                let _ = event_tx.send(AudioEvent::Error { message });
+            }
+        };
+        if self.preferred.is_some() {
+            match create_output_stream(&self.preferred) {
+                Ok(stream) => {
+                    self.stream = Some(stream);
+                    self.active = self.preferred.clone();
+                    self.last_default = get_default_device_name();
+                    return true;
+                }
+                Err(e) => error(format!("{}; using the system default output", e)),
+            }
+        }
+        match create_output_stream(&None) {
+            Ok(stream) => {
+                self.stream = Some(stream);
+                self.active = None;
+                self.last_default = get_default_device_name();
+                true
+            }
+            Err(e) => {
+                error(format!("Failed to initialize audio output: {}", e));
+                false
+            }
+        }
+    }
+
+    /// Periodic check: nothing open, the open device vanished, the preferred
+    /// device came back, or the followed system default changed.
+    fn needs_reopen(&mut self) -> bool {
+        if self.stream.is_none() {
+            return true;
+        }
+        if self.preferred.is_some() {
+            let devices = list_audio_devices();
+            let present = |d: &Option<String>| d.as_ref().is_some_and(|d| devices.contains(d));
+            let active_gone = self.active.is_some() && !present(&self.active);
+            let preferred_back = self.active != self.preferred && present(&self.preferred);
+            if active_gone || preferred_back {
+                return true;
+            }
+        }
+        if self.active.is_none() {
+            let default = get_default_device_name();
+            if default != self.last_default {
+                self.last_default = default;
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Move every track to a freshly (re)opened output. Tracks that cannot resume
+/// (no output at all, or a failed restart) are reported as stopped.
+fn reopen_output(
+    output: &mut Output,
+    tracks: &mut HashMap<TrackId, AudioTrack>,
+    sound_volumes: &mut HashMap<SoundId, f32>,
+    track_sounds: &mut HashMap<TrackId, SoundId>,
+    master_volume: f32,
+    event_tx: &Sender<AudioEvent>,
+    report: bool,
+) {
+    let resume_list = capture_and_stop_tracks(tracks, sound_volumes, event_tx);
+    track_sounds.clear();
+    if output.open(event_tx, report) {
+        if let Some(handle) = output.handle() {
+            resume_tracks(
+                resume_list,
+                tracks,
+                sound_volumes,
+                track_sounds,
+                handle,
+                master_volume,
+                event_tx,
+            );
+        }
+    } else {
+        for info in resume_list {
+            let _ = event_tx.send(AudioEvent::SoundEnded {
+                track_id: info.track_id,
+                sound_id: info.sound_id,
+                reason: SoundEndedReason::Stopped,
+            });
+        }
+    }
+}
+
+const NO_OUTPUT: &str = "No audio output device available";
+
 /// The main loop of the audio thread.
 fn audio_thread_main(
     command_rx: Receiver<AudioCommand>,
@@ -353,16 +467,15 @@ fn audio_thread_main(
     master_volume: Arc<AtomicU32>,
     initial_device: Option<String>,
 ) {
-    // Initialize audio output
-    let (mut _stream, mut stream_handle) = match create_output_stream(&initial_device) {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = event_tx.send(AudioEvent::Error {
-                message: format!("Failed to initialize audio output: {}", e),
-            });
-            return;
-        }
+    // Initialize audio output. A missing saved device falls back to the default;
+    // with no output at all the thread stays alive and retries periodically.
+    let mut output = Output {
+        stream: None,
+        preferred: initial_device,
+        active: None,
+        last_default: None,
     };
+    output.open(&event_tx, true);
 
     let mut tracks: HashMap<TrackId, AudioTrack> = HashMap::new();
     let mut sound_volumes: HashMap<SoundId, f32> = HashMap::new();
@@ -371,8 +484,6 @@ fn audio_thread_main(
     let mut error_sound_path: Option<String> = None;
 
     // Device management state
-    let mut current_device: Option<String> = initial_device;
-    let mut last_default_device_name: Option<String> = get_default_device_name();
     let mut last_device_check = Instant::now();
     let device_check_interval = Duration::from_secs(5);
 
@@ -383,9 +494,7 @@ fn audio_thread_main(
     loop {
         // Use shorter timeout when actively playing (crossfade needs ~60fps),
         // longer timeout when idle to reduce CPU usage
-        let has_active_playback = tracks
-            .values()
-            .any(|t| t.is_playing() || t.crossfade.is_some());
+        let has_active_playback = tracks.values().any(|t| t.is_playing() || t.is_animating());
         let timeout = if has_active_playback {
             Duration::from_millis(16)
         } else {
@@ -403,6 +512,12 @@ fn audio_thread_main(
                 crossfade_duration_ms,
             }) => {
                 let mv = atomic_load_f32(&master_volume);
+                let Some(stream_handle) = output.handle() else {
+                    let _ = event_tx.send(AudioEvent::Error {
+                        message: NO_OUTPUT.to_string(),
+                    });
+                    continue;
+                };
 
                 // Create track if it doesn't exist
                 if !tracks.contains_key(&track_id) {
@@ -454,6 +569,10 @@ fn audio_thread_main(
                 crossfade_duration_ms,
             }) => {
                 let mv = atomic_load_f32(&master_volume);
+                let Some(stream_handle) = output.handle() else {
+                    let _ = reply.send(Err(NO_OUTPUT.to_string()));
+                    continue;
+                };
 
                 if !tracks.contains_key(&track_id) {
                     if tracks.keys().filter(|id| !is_preview_track(id)).count() >= 20
@@ -566,42 +685,19 @@ fn audio_thread_main(
                 }
             }
             Ok(AudioCommand::SetAudioDevice { device_name }) => {
-                let mv = atomic_load_f32(&master_volume);
-                let resume_list = capture_and_stop_tracks(&mut tracks, &sound_volumes);
-
-                // Rebuild the output stream
-                match create_output_stream(&device_name) {
-                    Ok((new_stream, new_handle)) => {
-                        _stream = new_stream;
-                        stream_handle = new_handle;
-                        current_device = device_name;
-                        last_default_device_name = get_default_device_name();
-                    }
-                    Err(e) => {
-                        let _ = event_tx.send(AudioEvent::Error {
-                            message: format!("Failed to switch audio device: {}", e),
-                        });
-                        // Try falling back to default
-                        if let Ok((new_stream, new_handle)) = create_output_stream(&None) {
-                            _stream = new_stream;
-                            stream_handle = new_handle;
-                            current_device = None;
-                            last_default_device_name = get_default_device_name();
-                        }
-                        // Cannot resume on failed switch
-                        continue;
-                    }
-                }
-
-                resume_tracks(
-                    resume_list,
+                // Rebuild the output stream (falls back to the default device)
+                // and resume on whichever stream opened.
+                output.preferred = device_name;
+                reopen_output(
+                    &mut output,
                     &mut tracks,
                     &mut sound_volumes,
                     &mut track_sounds,
-                    &stream_handle,
-                    mv,
+                    atomic_load_f32(&master_volume),
                     &event_tx,
+                    true,
                 );
+                last_device_check = Instant::now();
             }
             Ok(AudioCommand::SetErrorSoundPath { path }) => {
                 error_sound_path = Some(path);
@@ -611,7 +707,7 @@ fn audio_thread_main(
                     use crate::audio::symphonia_source::SymphoniaSource;
                     match SymphoniaSource::new(path, 0.0) {
                         Ok(source) => {
-                            if let Ok(sink) = rodio::Sink::try_new(&stream_handle) {
+                            if let Some(Ok(sink)) = output.handle().map(rodio::Sink::try_new) {
                                 let mv = atomic_load_f32(&master_volume);
                                 sink.set_volume(mv * 0.5);
                                 sink.append(source);
@@ -642,34 +738,29 @@ fn audio_thread_main(
             }
         }
 
-        // Poll for default device changes (only when following system default)
-        if current_device.is_none() && last_device_check.elapsed() >= device_check_interval {
+        // Poll for device changes: default device switch, selected device unplugged
+        // or plugged back, or no output at all (retry).
+        if last_device_check.elapsed() >= device_check_interval {
             last_device_check = Instant::now();
-            let new_default = get_default_device_name();
-            if new_default != last_default_device_name {
-                last_default_device_name = new_default;
-                let mv = atomic_load_f32(&master_volume);
-                let resume_list = capture_and_stop_tracks(&mut tracks, &sound_volumes);
-
-                if let Ok((new_stream, new_handle)) = create_output_stream(&None) {
-                    _stream = new_stream;
-                    stream_handle = new_handle;
-                    resume_tracks(
-                        resume_list,
-                        &mut tracks,
-                        &mut sound_volumes,
-                        &mut track_sounds,
-                        &stream_handle,
-                        mv,
-                        &event_tx,
-                    );
-                }
+            if output.needs_reopen() {
+                // Silent retries while nothing is open; report losing a working output.
+                let report = output.stream.is_some();
+                reopen_output(
+                    &mut output,
+                    &mut tracks,
+                    &mut sound_volumes,
+                    &mut track_sounds,
+                    atomic_load_f32(&master_volume),
+                    &event_tx,
+                    report,
+                );
             }
         }
 
         // Update crossfades and volume ramps
         let mv = atomic_load_f32(&master_volume);
         for (tid, track) in tracks.iter_mut() {
+            track.tick_fading();
             if track.crossfade.is_some() {
                 let sv = track_sounds
                     .get(tid)
@@ -719,14 +810,22 @@ fn audio_thread_main(
 }
 
 /// Capture resume info from all playing tracks, then stop and clear them.
+/// Sounds that just finished are reported as such instead of being lost.
 fn capture_and_stop_tracks(
     tracks: &mut HashMap<TrackId, AudioTrack>,
     sound_volumes: &HashMap<SoundId, f32>,
+    event_tx: &Sender<AudioEvent>,
 ) -> Vec<TrackResumeInfo> {
     let mut resume_list = Vec::new();
     for (tid, track) in tracks.iter() {
         if let (Some(sid), Some(fp)) = (&track.currently_playing, &track.file_path) {
-            if track.is_playing() {
+            if !track.is_playing() {
+                let _ = event_tx.send(AudioEvent::SoundEnded {
+                    track_id: tid.clone(),
+                    sound_id: sid.clone(),
+                    reason: SoundEndedReason::Finished,
+                });
+            } else {
                 let sv = sound_volumes.get(sid).copied().unwrap_or(1.0);
                 resume_list.push(TrackResumeInfo {
                     track_id: tid.clone(),
@@ -772,6 +871,12 @@ fn resume_tracks(
                 let _ = event_tx.send(AudioEvent::Error {
                     message: format!("Failed to resume track {}: {}", info.track_id, e),
                 });
+                let _ = event_tx.send(AudioEvent::SoundEnded {
+                    track_id: info.track_id,
+                    sound_id: info.sound_id,
+                    reason: SoundEndedReason::Stopped,
+                });
+                continue;
             }
         }
         tracks.insert(info.track_id.clone(), new_track);

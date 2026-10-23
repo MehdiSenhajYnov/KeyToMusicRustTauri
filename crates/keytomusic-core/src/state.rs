@@ -31,6 +31,8 @@ pub struct AppState {
     pub profile_load_gen: Arc<AtomicU64>,
     /// Dirty flag for debounced config writes (flushed every 2s by background thread).
     pub config_dirty: Arc<AtomicBool>,
+    /// Orders config writes, so the config lock is not held during disk I/O.
+    config_write: Mutex<()>,
     /// Running llama-server instance for mood inference.
     pub mood_lifecycle: tokio::sync::Mutex<()>,
     pub llama_server: Arc<tokio::sync::Mutex<Option<LlamaServer>>>,
@@ -65,6 +67,7 @@ impl AppState {
             cpu_pool,
             profile_load_gen: Arc::new(AtomicU64::new(0)),
             config_dirty: Arc::new(AtomicBool::new(false)),
+            config_write: Mutex::new(()),
             mood_lifecycle: tokio::sync::Mutex::new(()),
             llama_server: Arc::new(tokio::sync::Mutex::new(None)),
             mood_api_server: Arc::new(Mutex::new(None)),
@@ -128,11 +131,13 @@ impl AppState {
 
     /// Flush config to disk if dirty. Called periodically by background thread.
     pub fn flush_config(&self) -> Result<(), String> {
+        let _ordered = self.config_write.lock().unwrap_or_else(|e| e.into_inner());
         if self
             .config_dirty
             .swap(false, std::sync::atomic::Ordering::Relaxed)
         {
-            let config = self.config.lock().unwrap_or_else(|e| e.into_inner());
+            // Snapshot under the config lock, write without it.
+            let config = self.get_config();
             if let Err(error) = crate::storage::save_config(&config) {
                 self.schedule_config_save();
                 return Err(error);

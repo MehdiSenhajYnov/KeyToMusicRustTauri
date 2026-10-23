@@ -98,13 +98,21 @@ struct Data {
     profile: Option<Profile>,
     history: History,
     loop_contexts: HashMap<String, LoopContext>,
-    pending_tracks: HashSet<String>,
+    /// Tracks with a playback being decoded, tagged with their reservation token.
+    pending_tracks: HashMap<String, u64>,
+    /// Bindings (key, track) that played since the profile was opened.
+    played_bindings: HashSet<(String, String)>,
     playing: HashMap<String, NowPlaying>,
     active_mood: Option<(BaseMood, MoodIntensity)>,
     committed_mood: Option<(BaseMood, MoodIntensity)>,
     detected_mood: Option<(BaseMood, MoodIntensity)>,
     last_trigger: Option<Instant>,
-    trigger_pending: bool,
+    /// Token of the key trigger currently decoding, if any.
+    trigger_pending: Option<u64>,
+    /// Source of reservation tokens for `pending_tracks` and `trigger_pending`.
+    pending_seq: u64,
+    /// Bound keys last pushed to the key detector (sorted, deduped).
+    bound_keys: Vec<String>,
     loading: bool,
     load_gen: u64,
     save_gen: u64,
@@ -122,6 +130,34 @@ pub struct Session {
     discovery: Mutex<discovery::DiscoveryData>,
     save_lock: tokio::sync::Mutex<()>,
     me: Weak<Session>,
+}
+
+/// Runs `release` on the session data when dropped, so a cancelled future or a
+/// panic never leaves a reservation behind.
+struct Release<'a, F: FnMut(&mut Data)> {
+    session: &'a Session,
+    release: F,
+}
+
+impl<F: FnMut(&mut Data)> Drop for Release<'_, F> {
+    fn drop(&mut self) {
+        (self.release)(&mut self.session.lock());
+    }
+}
+
+/// What a playback does to its track's loop context, applied before decoding
+/// starts (a short sound may end before the play call returns).
+enum LoopUpdate {
+    Keep,
+    Clear,
+    Set(LoopContext),
+}
+
+impl Data {
+    fn next_token(&mut self) -> u64 {
+        self.pending_seq += 1;
+        self.pending_seq
+    }
 }
 
 const SAVE_DELAY: Duration = Duration::from_millis(300);
@@ -222,21 +258,36 @@ impl Session {
                 }
             }
             CoreEvent::SoundEnded {
-                track_id, reason, ..
+                track_id,
+                sound_id,
+                reason,
             } => {
                 let finished = matches!(reason, SoundEndedReason::Finished);
-                {
+                let looping = {
                     let mut data = self.lock();
-                    data.playing.remove(track_id);
-                    if !finished {
+                    if data
+                        .playing
+                        .get(track_id)
+                        .is_some_and(|now| &now.sound_id == sound_id)
+                    {
+                        data.playing.remove(track_id);
+                    }
+                    // Only the sound a loop context was started for drives it.
+                    let ours = data
+                        .loop_contexts
+                        .get(track_id)
+                        .is_some_and(|ctx| &ctx.sound_id == sound_id);
+                    if ours && !finished {
                         data.loop_contexts.remove(track_id);
                     }
-                }
-                if finished {
+                    ours && finished
+                };
+                if looping {
                     let session = self.arc();
                     let track = track_id.clone();
+                    let sound = sound_id.clone();
                     self.runtime
-                        .spawn(async move { session.handle_loop_end(track).await });
+                        .spawn(async move { session.handle_loop_end(track, sound).await });
                 }
             }
             CoreEvent::StopAllTriggered => {
@@ -279,20 +330,43 @@ impl Session {
     // ─── Playback ───────────────────────────────────────────────────────
 
     /// Decode and start one sound, serialized per track like the web frontend.
+    /// `loop_update` is applied before decoding and rolled back if playback fails.
     async fn play_on_track(
         &self,
         track_id: &str,
         sound: &Sound,
         start: f64,
+        loop_update: LoopUpdate,
     ) -> Result<bool, String> {
-        if !self.lock().pending_tracks.insert(track_id.to_string()) {
-            return Ok(false);
-        }
-        let track_volume = self
-            .lock()
-            .profile
-            .as_ref()
-            .and_then(|p| p.tracks.iter().find(|t| t.id == track_id).map(|t| t.volume));
+        let (token, track_volume, previous) = {
+            let mut data = self.lock();
+            if data.pending_tracks.contains_key(track_id) {
+                return Ok(false);
+            }
+            let token = data.next_token();
+            data.pending_tracks.insert(track_id.to_string(), token);
+            let previous = match &loop_update {
+                LoopUpdate::Keep => None,
+                LoopUpdate::Clear => data.loop_contexts.remove(track_id),
+                LoopUpdate::Set(ctx) => {
+                    data.loop_contexts.insert(track_id.to_string(), ctx.clone())
+                }
+            };
+            let track_volume = data
+                .profile
+                .as_ref()
+                .and_then(|p| p.tracks.iter().find(|t| t.id == track_id).map(|t| t.volume));
+            (token, track_volume, previous)
+        };
+        let track = track_id.to_string();
+        let _pending = Release {
+            session: self,
+            release: move |data: &mut Data| {
+                if data.pending_tracks.get(&track) == Some(&token) {
+                    data.pending_tracks.remove(&track);
+                }
+            },
+        };
         let result = service::playback::play_sound(
             &self.state,
             track_id.to_string(),
@@ -303,13 +377,45 @@ impl Session {
             track_volume,
         )
         .await;
-        self.lock().pending_tracks.remove(track_id);
+        if let (Err(_), LoopUpdate::Set(ctx)) = (&result, &loop_update) {
+            // The previous sound keeps playing, so it keeps its loop (unless stopped meanwhile).
+            let mut data = self.lock();
+            if data.loop_contexts.get(track_id) == Some(ctx) {
+                match previous {
+                    Some(previous) => data.loop_contexts.insert(track_id.to_string(), previous),
+                    None => data.loop_contexts.remove(track_id),
+                };
+            }
+        }
         result.map(|_| true)
+    }
+
+    /// Loop context to install when `binding` starts `sound`.
+    fn loop_update(
+        binding: &KeyBinding,
+        sound: &Sound,
+        start: f64,
+        momentum: MomentumBehavior,
+    ) -> LoopUpdate {
+        if matches!(binding.loop_mode, LoopMode::Off) {
+            return LoopUpdate::Clear;
+        }
+        LoopUpdate::Set(LoopContext {
+            key_code: binding.key_code.clone(),
+            track_id: binding.track_id.clone(),
+            sound_id: sound.id.clone(),
+            momentum,
+            persist_single_momentum: matches!(binding.loop_mode, LoopMode::Single) && start > 0.0,
+        })
     }
 
     /// Advance a binding after it played, unless it was edited meanwhile.
     fn commit_binding_index(&self, profile_id: &str, original: &KeyBinding, next_index: usize) {
         let mut data = self.lock();
+        if data.profile.as_ref().is_some_and(|p| p.id == profile_id) {
+            data.played_bindings
+                .insert((original.key_code.clone(), original.track_id.clone()));
+        }
         let Some(profile) = data.profile.as_mut().filter(|p| p.id == profile_id) else {
             return;
         };
@@ -334,6 +440,7 @@ impl Session {
 
     /// Plan playback for bindings: (binding, sound, next index, start position).
     fn plan(
+        data: &Data,
         profile: &Profile,
         bindings: &[KeyBinding],
         start: impl Fn(&Sound) -> f64,
@@ -343,7 +450,10 @@ impl Session {
         bindings
             .iter()
             .filter_map(|binding| {
-                rules::select_loop_sound(binding, &sounds, rules::random_index)
+                let played = data
+                    .played_bindings
+                    .contains(&(binding.key_code.clone(), binding.track_id.clone()));
+                rules::select_loop_sound(binding, &sounds, played, rules::random_index)
                     .map(|(sound, next)| (binding.clone(), sound.clone(), next, start(sound)))
             })
             .collect()
@@ -356,7 +466,7 @@ impl Session {
             return;
         }
 
-        let (profile_id, plan) = {
+        let (profile_id, plan, token) = {
             let mut data = self.lock();
             if data.loading {
                 return;
@@ -392,11 +502,13 @@ impl Session {
 
             // Reserve the trigger before decoding, which may outlast the cooldown.
             let cooldown = Duration::from_millis(config.key_cooldown as u64);
-            if data.trigger_pending || data.last_trigger.is_some_and(|t| t.elapsed() < cooldown) {
+            if data.trigger_pending.is_some()
+                || data.last_trigger.is_some_and(|t| t.elapsed() < cooldown)
+            {
                 return;
             }
             let with_momentum = config.auto_momentum || use_momentum;
-            let plan = Self::plan(profile, &bindings, |s| {
+            let plan = Self::plan(&data, profile, &bindings, |s| {
                 if with_momentum {
                     s.momentum
                 } else {
@@ -404,9 +516,18 @@ impl Session {
                 }
             });
             let profile_id = profile.id.clone();
-            data.trigger_pending = true;
+            let token = data.next_token();
+            data.trigger_pending = Some(token);
             data.last_trigger = Some(Instant::now());
-            (profile_id, plan)
+            (profile_id, plan, token)
+        };
+        let trigger = Release {
+            session: &self,
+            release: move |data: &mut Data| {
+                if data.trigger_pending == Some(token) {
+                    data.trigger_pending = None;
+                }
+            },
         };
 
         self.emit(SessionEvent::KeyTriggered {
@@ -420,29 +541,14 @@ impl Session {
             let session = self.clone();
             let profile_id = profile_id.clone();
             async move {
+                let update =
+                    Self::loop_update(&binding, &sound, start, MomentumBehavior::ConfigOnly);
                 match session
-                    .play_on_track(&binding.track_id, &sound, start)
+                    .play_on_track(&binding.track_id, &sound, start, update)
                     .await
                 {
                     Ok(true) => {
                         session.commit_binding_index(&profile_id, &binding, next);
-                        let mut data = session.lock();
-                        if matches!(binding.loop_mode, LoopMode::Off) {
-                            data.loop_contexts.remove(&binding.track_id);
-                        } else {
-                            data.loop_contexts.insert(
-                                binding.track_id.clone(),
-                                LoopContext {
-                                    key_code: binding.key_code.clone(),
-                                    track_id: binding.track_id.clone(),
-                                    momentum: MomentumBehavior::ConfigOnly,
-                                    persist_single_momentum: matches!(
-                                        binding.loop_mode,
-                                        LoopMode::Single
-                                    ) && start > 0.0,
-                                },
-                            );
-                        }
                         true
                     }
                     Ok(false) => false,
@@ -458,19 +564,23 @@ impl Session {
             .into_iter()
             .any(|ok| ok);
 
-        let mut data = self.lock();
-        data.trigger_pending = false;
+        drop(trigger);
         if !played {
             // Nothing played: give the key back immediately.
-            data.last_trigger = None;
+            self.lock().last_trigger = None;
         }
     }
 
-    async fn handle_loop_end(self: Arc<Self>, track_id: String) {
+    async fn handle_loop_end(self: Arc<Self>, track_id: String, ended_sound: String) {
         let auto_momentum = self.config().auto_momentum;
         let planned = {
             let mut data = self.lock();
-            let Some(ctx) = data.loop_contexts.get(&track_id).cloned() else {
+            let Some(ctx) = data
+                .loop_contexts
+                .get(&track_id)
+                .filter(|ctx| ctx.sound_id == ended_sound)
+                .cloned()
+            else {
                 return;
             };
             let Some(profile) = data.profile.as_ref() else {
@@ -485,7 +595,7 @@ impl Session {
                 }
                 Some(binding) => {
                     let mode = binding.loop_mode.clone();
-                    let plan = Self::plan(profile, std::slice::from_ref(&binding), |s| {
+                    let plan = Self::plan(&data, profile, std::slice::from_ref(&binding), |s| {
                         rules::loop_replay_start(s, &mode, auto_momentum, &ctx)
                     });
                     match plan.into_iter().next() {
@@ -499,21 +609,26 @@ impl Session {
             }
         };
         let (profile_id, ctx, (binding, sound, next, start)) = planned;
-        match self.play_on_track(&track_id, &sound, start).await {
-            Ok(true) => {
-                self.commit_binding_index(&profile_id, &binding, next);
-                self.lock().loop_contexts.insert(
-                    track_id,
-                    LoopContext {
-                        persist_single_momentum: matches!(binding.loop_mode, LoopMode::Single)
-                            && (ctx.persist_single_momentum || start > 0.0),
-                        ..ctx
-                    },
-                );
-            }
+        let update = LoopUpdate::Set(LoopContext {
+            sound_id: sound.id.clone(),
+            persist_single_momentum: matches!(binding.loop_mode, LoopMode::Single)
+                && (ctx.persist_single_momentum || start > 0.0),
+            ..ctx
+        });
+        match self.play_on_track(&track_id, &sound, start, update).await {
+            Ok(true) => self.commit_binding_index(&profile_id, &binding, next),
             Ok(false) => {}
             Err(error) => {
-                self.lock().loop_contexts.remove(&track_id);
+                // The loop's previous sound already ended: nothing left to loop.
+                let mut data = self.lock();
+                if data
+                    .loop_contexts
+                    .get(&track_id)
+                    .is_some_and(|c| c.sound_id == ended_sound)
+                {
+                    data.loop_contexts.remove(&track_id);
+                }
+                drop(data);
                 self.report_playback_error(&error);
             }
         }
@@ -537,7 +652,7 @@ impl Session {
                     .into_iter()
                     .cloned()
                     .collect();
-            let plan = Self::plan(profile, &bindings, |s| {
+            let plan = Self::plan(&data, profile, &bindings, |s| {
                 if auto_momentum || s.momentum > 0.0 {
                     s.momentum
                 } else {
@@ -567,31 +682,20 @@ impl Session {
             let session = self.clone();
             let profile_id = profile_id.clone();
             async move {
+                let update = Self::loop_update(
+                    &binding,
+                    &sound,
+                    start,
+                    MomentumBehavior::PreferSoundMomentum,
+                );
                 let ok = matches!(
                     session
-                        .play_on_track(&binding.track_id, &sound, start)
+                        .play_on_track(&binding.track_id, &sound, start, update)
                         .await,
                     Ok(true)
                 );
                 if ok {
                     session.commit_binding_index(&profile_id, &binding, next);
-                    let mut data = session.lock();
-                    if matches!(binding.loop_mode, LoopMode::Off) {
-                        data.loop_contexts.remove(&binding.track_id);
-                    } else {
-                        data.loop_contexts.insert(
-                            binding.track_id.clone(),
-                            LoopContext {
-                                key_code: binding.key_code.clone(),
-                                track_id: binding.track_id.clone(),
-                                momentum: MomentumBehavior::PreferSoundMomentum,
-                                persist_single_momentum: matches!(
-                                    binding.loop_mode,
-                                    LoopMode::Single
-                                ) && start > 0.0,
-                            },
-                        );
-                    }
                 }
                 ok
             }
@@ -658,7 +762,10 @@ impl Session {
             .as_ref()
             .and_then(|p| p.sounds.iter().find(|s| s.id == sound_id).cloned())
             .ok_or("Sound not found in profile")?;
-        match self.play_on_track(track_id, &sound, start).await {
+        match self
+            .play_on_track(track_id, &sound, start, LoopUpdate::Keep)
+            .await
+        {
             Ok(_) => Ok(()),
             Err(error) => {
                 self.report_playback_error(&error);
@@ -747,13 +854,20 @@ impl Session {
         })
     }
 
-    fn sync_detector_bindings(&self, profile: Option<&Profile>) {
-        let mut keys: Vec<String> = profile
+    /// Push the profile's bound keys to the detector, only when they changed:
+    /// rebuilding the chord trie also resets held modifiers.
+    fn sync_detector_bindings(&self, data: &mut Data) {
+        let mut keys: Vec<String> = data
+            .profile
+            .as_ref()
             .map(|p| p.key_bindings.iter().map(|b| b.key_code.clone()).collect())
             .unwrap_or_default();
         keys.sort();
         keys.dedup();
-        self.state.key_detector.set_profile_bindings(&keys);
+        if keys != data.bound_keys {
+            self.state.key_detector.set_profile_bindings(&keys);
+            data.bound_keys = keys;
+        }
     }
 
     /// Edit the current profile. `action` names an undo step (None = not undoable,
@@ -769,7 +883,7 @@ impl Session {
                 data.history
                     .push(action, before, ProfileSnapshot::capture(profile));
             }
-            self.sync_detector_bindings(Some(profile));
+            self.sync_detector_bindings(data);
             result
         };
         self.schedule_save();
@@ -781,35 +895,51 @@ impl Session {
     }
 
     pub fn undo(&self) -> Option<String> {
-        let name = {
-            let mut data = self.lock();
-            let data = &mut *data;
-            let profile = data.profile.as_mut()?;
-            let name = data.history.undo(profile)?;
-            self.sync_detector_bindings(Some(profile));
-            name
-        };
-        self.after_history_move();
-        Some(name)
+        self.history_move(History::undo)
     }
 
     pub fn redo(&self) -> Option<String> {
-        let name = {
+        self.history_move(History::redo)
+    }
+
+    fn history_move(
+        &self,
+        apply: impl FnOnce(&mut History, &mut Profile) -> Option<String>,
+    ) -> Option<String> {
+        let (name, track_volumes, sound_volumes) = {
             let mut data = self.lock();
             let data = &mut *data;
             let profile = data.profile.as_mut()?;
-            let name = data.history.redo(profile)?;
-            self.sync_detector_bindings(Some(profile));
-            name
+            let name = apply(&mut data.history, profile)?;
+            // Restored tracks/sounds come back with their snapshot volumes.
+            let track_volumes: Vec<(String, f32)> = profile
+                .tracks
+                .iter()
+                .map(|t| (t.id.clone(), t.volume))
+                .collect();
+            let sound_volumes: Vec<(String, String, f32)> = data
+                .playing
+                .iter()
+                .filter_map(|(track, now)| {
+                    let sound = profile.sounds.iter().find(|s| s.id == now.sound_id)?;
+                    Some((track.clone(), sound.id.clone(), sound.volume))
+                })
+                .collect();
+            self.sync_detector_bindings(data);
+            (name, track_volumes, sound_volumes)
         };
-        self.after_history_move();
-        Some(name)
-    }
-
-    fn after_history_move(&self) {
+        if let Ok(engine) = self.state.get_audio_engine() {
+            for (track, volume) in track_volumes {
+                let _ = engine.set_track_volume(track, volume);
+            }
+            for (track, sound, volume) in sound_volumes {
+                let _ = engine.set_sound_volume(track, sound, volume);
+            }
+        }
         self.schedule_save();
         self.emit(SessionEvent::ProfileChanged);
         self.emit(SessionEvent::HistoryChanged);
+        Some(name)
     }
 
     pub fn undo_name(&self) -> Option<String> {
@@ -930,6 +1060,9 @@ impl Session {
     fn reset_runtime_state(&self, data: &mut Data) {
         data.history.clear();
         data.loop_contexts.clear();
+        data.pending_tracks.clear();
+        data.trigger_pending = None;
+        data.played_bindings.clear();
         data.active_mood = None;
         data.committed_mood = None;
         data.playing.clear();
@@ -979,8 +1112,8 @@ impl Session {
         {
             let mut data = self.lock();
             self.reset_runtime_state(&mut data);
-            self.sync_detector_bindings(Some(&profile));
             data.profile = Some(profile.clone());
+            self.sync_detector_bindings(&mut data);
             data.dirty = false;
             data.loading = false;
         }
@@ -1116,12 +1249,19 @@ impl Session {
     }
 
     pub async fn delete_profile(&self, id: &str) -> Result<(), String> {
+        // Hold the save lock so an in-flight flush can't write the file back.
+        let _ordered = self.save_lock.lock().await;
         let is_current = self.lock().profile.as_ref().is_some_and(|p| p.id == id);
         if is_current {
             let mut data = self.lock();
             data.dirty = false;
         }
-        service::library::delete_profile(&self.state, id.to_string())?;
+        if let Err(error) = service::library::delete_profile(&self.state, id.to_string()) {
+            if is_current {
+                self.lock().dirty = true;
+            }
+            return Err(error);
+        }
         if is_current {
             if let Ok(engine) = self.state.get_audio_engine() {
                 let _ = engine.stop_all();
@@ -1131,8 +1271,8 @@ impl Session {
                 data.load_gen += 1;
                 self.reset_runtime_state(&mut data);
                 data.profile = None;
+                self.sync_detector_bindings(&mut data);
             }
-            self.sync_detector_bindings(None);
             self.state.update_config(|c| c.current_profile_id = None);
             self.state.schedule_config_save();
             self.emit(SessionEvent::ProfileLoaded);
