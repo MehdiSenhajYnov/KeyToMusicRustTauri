@@ -83,11 +83,28 @@ pub(super) struct DiscoveryData {
     active_downloads: HashSet<String>,
     active_waveforms: HashSet<String>,
     download_seq: u64,
+    /// The last refill found nothing new: don't rerun it on every move.
+    exhausted: bool,
+    /// The saved pool came from other seeds: refill once even if not low.
+    stale: bool,
 }
 
 impl DiscoveryData {
     fn visible(&self) -> &[DiscoverySuggestion] {
         &self.all[..self.revealed.min(self.all.len())]
+    }
+
+    /// Forget work started for an older generation (it will never report back).
+    fn reset_in_flight(&mut self) {
+        self.background = false;
+        self.active_downloads.clear();
+        self.active_waveforms.clear();
+        for e in self.enrich.values_mut() {
+            if e.status == DownloadStatus::Downloading {
+                e.status = DownloadStatus::Idle;
+                e.download_id = None;
+            }
+        }
     }
 
     fn clear(&mut self) {
@@ -191,6 +208,7 @@ impl Session {
                     d.revealed = revealed.min(cached.suggestions.len());
                     d.cursor = cached.cursor_index.min(d.revealed.saturating_sub(1));
                     d.visited = cached.visited_index as i64;
+                    d.stale = cached.stale;
                     d.all = cached.suggestions;
                     self.assign_visible(&mut d);
                 }
@@ -225,6 +243,21 @@ impl Session {
                     session.discovery_merge(results.clone());
                     if results.is_empty() {
                         session.toast(ToastKind::Info, "No new suggestions found");
+                    }
+                    // Save the carousel's own order (visited items stay locked
+                    // in front), so a reload lands on the same card.
+                    let (pool, cursor, revealed, visited) = {
+                        let d = session.disco();
+                        (d.all.clone(), d.cursor, d.revealed, d.visited as i32)
+                    };
+                    if let Some(profile_id) = session.disco().profile_id.clone() {
+                        let _ = crate::discovery::cache::DiscoveryCache::update_pool(
+                            &profile_id,
+                            pool,
+                            cursor,
+                            revealed,
+                            visited,
+                        );
                     }
                 }
                 Err(error) if error.contains("cancelled") => {}
@@ -273,8 +306,13 @@ impl Session {
                 }
             }
             CoreEvent::DiscoveryResolving { count } => {
-                self.disco().resolving = Some(*count);
-                self.discovery_changed();
+                // Background refills resolve silently; only a visible run shows it.
+                let mut d = self.disco();
+                if d.generating {
+                    d.resolving = Some(*count);
+                    drop(d);
+                    self.discovery_changed();
+                }
             }
             CoreEvent::DiscoveryProgress {
                 current,
@@ -364,12 +402,17 @@ impl Session {
         let session = self.arc();
         self.runtime.spawn(async move {
             tokio::time::sleep(Duration::from_millis(500)).await;
-            let (cursor, revealed, visited) = {
+            let (cursor, revealed, visited, seen) = {
                 let d = session.disco();
                 if d.cursor_save_gen != gen {
                     return;
                 }
-                (d.cursor, d.revealed, d.visited as i32)
+                let seen_end = ((d.visited + 1).max(0) as usize).min(d.all.len());
+                let seen: Vec<String> = d.all[..seen_end]
+                    .iter()
+                    .map(|s| s.video_id.clone())
+                    .collect();
+                (d.cursor, d.revealed, d.visited as i32, seen)
             };
             let _ = crate::discovery::cache::DiscoveryCache::save_cursor(
                 &profile_id,
@@ -377,6 +420,7 @@ impl Session {
                 revealed,
                 visited,
             );
+            let _ = crate::discovery::cache::DiscoveryCache::mark_seen(&profile_id, &seen);
         });
     }
 
@@ -384,10 +428,15 @@ impl Session {
         let (profile_id, pool_ids, gen) = {
             let mut d = self.disco();
             let remaining = d.all.len().saturating_sub(d.revealed);
-            if remaining > BACKGROUND_THRESHOLD || d.background || d.generating || d.all.is_empty()
+            if (remaining > BACKGROUND_THRESHOLD && !d.stale)
+                || d.exhausted
+                || d.background
+                || d.generating
+                || d.all.is_empty()
             {
                 return;
             }
+            d.stale = false;
             let Some(profile_id) = d.profile_id.clone() else {
                 return;
             };
@@ -410,8 +459,10 @@ impl Session {
             d.background = false;
             if let Ok(results) = result {
                 let known: HashSet<String> = d.all.iter().map(|s| s.video_id.clone()).collect();
+                let before = d.all.len();
                 d.all
                     .extend(results.into_iter().filter(|s| !known.contains(&s.video_id)));
+                d.exhausted = d.all.len() == before;
             }
             drop(d);
             session.discovery_changed();
@@ -543,7 +594,7 @@ impl Session {
 
     /// Next batch: drop what the user has seen, or discover again when the pool is exhausted.
     pub fn discovery_refresh(&self) {
-        let (unseen, profile_id, gen, exclude) = {
+        let (unseen, profile_id, gen, exclude, seen) = {
             let mut d = self.disco();
             if d.generating {
                 return;
@@ -551,16 +602,22 @@ impl Session {
             let start = ((d.visited + 1).max(0) as usize).min(d.all.len());
             let unseen: Vec<DiscoverySuggestion> = d.all[start..].to_vec();
             let exclude: Vec<String> = d.all.iter().map(|s| s.video_id.clone()).collect();
+            let seen: Vec<String> = exclude[..start].to_vec();
             if unseen.is_empty() {
                 d.gen += 1;
+                d.reset_in_flight();
+                d.exhausted = false;
                 d.all.clear();
                 d.revealed = 0;
                 d.cursor = 0;
                 d.visited = -1;
             }
-            (unseen, d.profile_id.clone(), d.gen, exclude)
+            (unseen, d.profile_id.clone(), d.gen, exclude, seen)
         };
         self.discovery_stop_preview();
+        if let Some(profile_id) = &profile_id {
+            let _ = crate::discovery::cache::DiscoveryCache::mark_seen(profile_id, &seen);
+        }
         if unseen.is_empty() {
             self.discovery_generate(gen, exclude);
             return;
@@ -797,6 +854,10 @@ impl Session {
         });
         if added.is_none() {
             return Err("No profile open".into());
+        }
+        if let Some(profile_id) = self.disco().profile_id.clone() {
+            let _ =
+                crate::discovery::cache::DiscoveryCache::remove_suggestion(&profile_id, video_id);
         }
         self.discovery_remove(video_id);
         self.toast(ToastKind::Success, format!("Added: {name}"));

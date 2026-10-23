@@ -5,8 +5,67 @@ use crate::discovery::{self, engine::DiscoverySuggestion};
 use crate::events::CoreEvent;
 use crate::state::AppState;
 use crate::storage;
-use crate::types::SoundSource;
+use crate::types::{Profile, SoundSource};
 use crate::youtube;
+
+/// Seeds a run actually fetches Mixes for.
+const MAX_SEEDS: usize = 15;
+
+/// One seed per distinct video: the profile's YouTube sounds and the local
+/// sounds already matched to a video. Also the ids to never suggest.
+fn profile_seeds(profile: &Profile) -> Vec<discovery::engine::SeedInfo> {
+    let mut seeds: Vec<discovery::engine::SeedInfo> = Vec::new();
+    for sound in &profile.sounds {
+        let video_id = match &sound.source {
+            SoundSource::YouTube { url, .. } => youtube::downloader::extract_video_id(url),
+            SoundSource::Local { .. } => sound.resolved_video_id.clone(),
+        };
+        if let Some(video_id) = video_id {
+            if !seeds.iter().any(|s| s.video_id == video_id) {
+                seeds.push(discovery::engine::SeedInfo {
+                    video_id,
+                    sound_name: sound.name.clone(),
+                });
+            }
+        }
+    }
+    seeds
+}
+
+/// Hash of the profile's seeds; a cache built from other seeds is stale.
+pub fn profile_seed_hash(profile: &Profile) -> String {
+    let ids: Vec<String> = profile_seeds(profile)
+        .into_iter()
+        .map(|s| s.video_id)
+        .collect();
+    discovery::cache::DiscoveryCache::compute_seed_hash(&ids)
+}
+
+/// With more seeds than a run can fetch, keep the newest sounds (what the
+/// user is into right now) and a random pick of the rest, so every sound
+/// eventually feeds the suggestions.
+fn pick_seeds(mut seeds: Vec<discovery::engine::SeedInfo>) -> Vec<discovery::engine::SeedInfo> {
+    if seeds.len() <= MAX_SEEDS {
+        return seeds;
+    }
+    let newest = seeds.split_off(seeds.len() - MAX_SEEDS / 2);
+    // Fisher–Yates with a per-run random state; no need for a crypto RNG.
+    let mut state = {
+        use std::hash::{BuildHasher, Hasher};
+        let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+        hasher.write_usize(seeds.len());
+        hasher.finish() | 1
+    };
+    for i in (1..seeds.len()).rev() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        seeds.swap(i, (state % (i as u64 + 1)) as usize);
+    }
+    seeds.truncate(MAX_SEEDS - newest.len());
+    seeds.extend(newest);
+    seeds
+}
 
 /// Generate suggestions from the profile's YouTube and (resolved) local sounds.
 /// Foreground runs stream `Discovery*` events and replace the cache; background
@@ -30,33 +89,17 @@ pub async fn start_discovery(
 
     let profile = storage::load_profile(profile_id.clone())?;
 
-    let mut seeds = Vec::new();
-    let mut existing_ids = Vec::new();
-    let mut unresolved_locals: Vec<(String, String, String)> = Vec::new(); // (sound_id, path, name)
-
-    for sound in &profile.sounds {
-        match &sound.source {
-            SoundSource::YouTube { url, .. } => {
-                if let Some(video_id) = youtube::downloader::extract_video_id(url) {
-                    seeds.push(discovery::engine::SeedInfo {
-                        video_id: video_id.clone(),
-                        sound_name: sound.name.clone(),
-                    });
-                    existing_ids.push(video_id);
-                }
-            }
-            SoundSource::Local { path } => {
-                if let Some(ref video_id) = sound.resolved_video_id {
-                    seeds.push(discovery::engine::SeedInfo {
-                        video_id: video_id.clone(),
-                        sound_name: sound.name.clone(),
-                    });
-                } else {
-                    unresolved_locals.push((sound.id.clone(), path.clone(), sound.name.clone()));
-                }
-            }
-        }
-    }
+    let mut seeds = profile_seeds(&profile);
+    let mut existing_ids: Vec<String> = seeds.iter().map(|s| s.video_id.clone()).collect();
+    let unresolved_locals: Vec<(String, String, String)> = profile
+        .sounds
+        .iter()
+        .filter(|s| s.resolved_video_id.is_none())
+        .filter_map(|s| match &s.source {
+            SoundSource::Local { path } => Some((s.id.clone(), path.clone(), s.name.clone())),
+            SoundSource::YouTube { .. } => None,
+        })
+        .collect(); // (sound_id, path, name)
 
     // Resolve unresolved local sounds via YouTube search
     if !unresolved_locals.is_empty() {
@@ -67,16 +110,21 @@ pub async fn start_discovery(
         tracing::info!("Resolving {} local sounds for discovery seeds", count);
 
         let youtube_cache = state.youtube_cache.clone();
-        let resolved =
-            discovery::engine::resolve_local_seeds(unresolved_locals, youtube_cache).await;
+        let resolved = tokio::select! {
+            resolved = discovery::engine::resolve_local_seeds(unresolved_locals, youtube_cache) => resolved,
+            _ = discovery::engine::cancelled(&cancel_flag) => return Err("Discovery cancelled".into()),
+        };
 
         let mut resolved_updates: Vec<(String, String)> = Vec::new();
         for r in &resolved {
             if let Some(sound) = profile.sounds.iter().find(|s| s.id == r.sound_id) {
-                seeds.push(discovery::engine::SeedInfo {
-                    video_id: r.video_id.clone(),
-                    sound_name: sound.name.clone(),
-                });
+                if !seeds.iter().any(|s| s.video_id == r.video_id) {
+                    seeds.push(discovery::engine::SeedInfo {
+                        video_id: r.video_id.clone(),
+                        sound_name: sound.name.clone(),
+                    });
+                }
+                existing_ids.push(r.video_id.clone());
                 resolved_updates.push((r.sound_id.clone(), r.video_id.clone()));
             }
         }
@@ -96,15 +144,18 @@ pub async fn start_discovery(
         );
     }
 
-    // Preserve dismissed_ids from previous cache so dismissed suggestions don't reappear
-    let previous_dismissed = discovery::cache::DiscoveryCache::load(&profile_id)
-        .map(|d| d.dismissed_ids)
-        .unwrap_or_default();
+    let seed_ids: Vec<String> = seeds.iter().map(|s| s.video_id.clone()).collect();
+    let seed_hash = discovery::cache::DiscoveryCache::compute_seed_hash(&seed_ids);
 
-    let mut all_excluded = existing_ids.clone();
-    all_excluded.extend(previous_dismissed.iter().cloned());
+    // Dismissed and already-seen suggestions from previous runs don't come back.
+    let previous = discovery::cache::DiscoveryCache::load(&profile_id);
+    let mut all_excluded = existing_ids;
+    if let Some(previous) = &previous {
+        all_excluded.extend(previous.dismissed_ids.iter().cloned());
+    }
     all_excluded.extend(profile.disliked_videos.iter().cloned());
     all_excluded.extend(exclude_ids);
+    let seen_ids = previous.map(|d| d.seen_ids).unwrap_or_default();
 
     let yt_dlp_bin = match youtube::downloader::get_yt_dlp_bin() {
         Ok(path) => path,
@@ -126,8 +177,9 @@ pub async fn start_discovery(
     let partial_cancel = cancel_flag.clone();
     let suggestions = engine
         .generate_suggestions(
-            seeds.clone(),
+            pick_seeds(seeds),
             all_excluded,
+            seen_ids,
             yt_dlp_bin,
             move |current, total, seed_name| {
                 if !background && !progress_cancel.load(Ordering::Relaxed) {
@@ -150,9 +202,6 @@ pub async fn start_discovery(
         return Err("Discovery cancelled".to_string());
     }
 
-    let seed_ids: Vec<String> = seeds.iter().map(|s| s.video_id.clone()).collect();
-    let seed_hash = discovery::cache::DiscoveryCache::compute_seed_hash(&seed_ids);
-
     if background {
         discovery::cache::DiscoveryCache::append_suggestions(
             &profile_id,
@@ -161,17 +210,12 @@ pub async fn start_discovery(
         )
         .ok();
     } else {
-        let cache_data = discovery::cache::DiscoveryCacheData {
-            profile_id: profile_id.clone(),
-            seed_hash,
-            generated_at: chrono::Utc::now().to_rfc3339(),
-            suggestions: suggestions.clone(),
-            dismissed_ids: previous_dismissed,
-            cursor_index: 0,
-            revealed_count: 0,
-            visited_index: -1,
-        };
-        discovery::cache::DiscoveryCache::save(&cache_data).ok();
+        discovery::cache::DiscoveryCache::replace_suggestions(
+            &profile_id,
+            suggestions.clone(),
+            &seed_hash,
+        )
+        .ok();
 
         state.emit(CoreEvent::DiscoveryComplete {
             count: suggestions.len(),
@@ -196,14 +240,48 @@ pub struct DiscoveryCacheResponse {
     pub cursor_index: usize,
     pub revealed_count: usize,
     pub visited_index: i32,
+    /// Built from other seeds than the profile has now: refresh soon.
+    pub stale: bool,
 }
 
+/// The saved carousel, without what the profile gained or disliked since
+/// (a suggestion added to the profile must not come back).
 pub fn cached_suggestions(profile_id: &str) -> Option<DiscoveryCacheResponse> {
-    discovery::cache::DiscoveryCache::load(profile_id).map(|d| DiscoveryCacheResponse {
-        suggestions: d.suggestions,
-        cursor_index: d.cursor_index,
-        revealed_count: d.revealed_count,
-        visited_index: d.visited_index,
+    let data = discovery::cache::DiscoveryCache::load(profile_id)?;
+    let profile = storage::load_profile(profile_id.to_string()).ok();
+    let (owned, stale): (std::collections::HashSet<String>, bool) = match &profile {
+        Some(profile) => (
+            profile_seeds(profile)
+                .into_iter()
+                .map(|s| s.video_id)
+                .chain(profile.disliked_videos.iter().cloned())
+                .collect(),
+            profile_seed_hash(profile) != data.seed_hash,
+        ),
+        None => (Default::default(), false),
+    };
+    // Cursor fields index the saved list; shift them past removed entries.
+    let mut cursor_index = data.cursor_index;
+    let mut visited_index = data.visited_index;
+    let mut suggestions = Vec::with_capacity(data.suggestions.len());
+    for (index, suggestion) in data.suggestions.into_iter().enumerate() {
+        if owned.contains(&suggestion.video_id) {
+            if index < data.cursor_index {
+                cursor_index = cursor_index.saturating_sub(1);
+            }
+            if (index as i32) <= data.visited_index {
+                visited_index -= 1;
+            }
+            continue;
+        }
+        suggestions.push(suggestion);
+    }
+    Some(DiscoveryCacheResponse {
+        suggestions,
+        cursor_index,
+        revealed_count: data.revealed_count,
+        visited_index: visited_index.max(-1),
+        stale,
     })
 }
 
