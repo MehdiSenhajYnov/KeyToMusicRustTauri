@@ -69,14 +69,24 @@ pub fn load_profile(id: String) -> Result<Profile, String> {
     storage::load_profile(id)
 }
 
-#[tauri::command]
-pub fn save_profile(profile: Profile) -> Result<(), String> {
-    storage::save_profile(&profile)
+/// Run blocking filesystem work (profile writes, cache scans) off the async workers.
+async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("Background task failed: {}", e))?
 }
 
 #[tauri::command]
-pub fn delete_profile(state: AppStateRef<'_>, id: String) -> Result<(), String> {
-    service::library::delete_profile(&state, id)
+pub async fn save_profile(profile: Profile) -> Result<(), String> {
+    blocking(move || storage::save_profile(&profile)).await
+}
+
+#[tauri::command]
+pub async fn delete_profile(state: AppStateRef<'_>, id: String) -> Result<(), String> {
+    let state = Arc::clone(&state);
+    blocking(move || service::library::delete_profile(&state, id)).await
 }
 
 #[tauri::command]
@@ -174,6 +184,12 @@ pub fn enable_linux_background_detection() -> Result<LinuxInputAccessFixResult, 
 #[tauri::command]
 pub fn suspend_key_detection(state: AppStateRef<'_>, suspended: bool) {
     state.key_detector.set_suspended(suspended);
+}
+
+/// Typing in a text field: sound keys are muted, modifier shortcuts still work.
+#[tauri::command]
+pub fn set_key_detection_typing(state: AppStateRef<'_>, typing: bool) {
+    state.key_detector.set_typing(typing);
 }
 
 #[tauri::command]
@@ -420,12 +436,13 @@ pub fn update_discovery_pool(
 }
 
 #[tauri::command]
-pub fn dismiss_discovery(
+pub async fn dismiss_discovery(
     state: AppStateRef<'_>,
     profile_id: String,
     video_id: String,
 ) -> Result<(), String> {
-    service::discovery::dismiss(&state, &profile_id, video_id)
+    let state = Arc::clone(&state);
+    blocking(move || service::discovery::dismiss(&state, &profile_id, video_id)).await
 }
 
 #[tauri::command]

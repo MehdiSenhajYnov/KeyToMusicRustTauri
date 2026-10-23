@@ -112,6 +112,7 @@ fn main() {
             enable_linux_background_detection,
             set_key_detection,
             suspend_key_detection,
+            set_key_detection_typing,
             set_stop_all_shortcut,
             set_key_cooldown,
             set_profile_bindings,

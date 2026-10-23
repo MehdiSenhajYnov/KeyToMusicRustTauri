@@ -1,19 +1,19 @@
 import { useEffect } from "react";
-import { acquireKeyDetectionSuspension } from "../utils/keyDetectionSuspension";
+import { setKeyDetectionTyping } from "../utils/tauriCommands";
 import { isTextInput } from "../utils/inputHelpers";
 
 export function useTextInputFocus() {
   useEffect(() => {
-    let release: (() => void) | undefined;
+    // Typing mutes sound keys only: global shortcuts with Ctrl/Alt/Cmd keep
+    // working while a field has focus.
+    let typing = false;
     let timer: ReturnType<typeof setTimeout>;
-    const sync = () => {
-      if (isTextInput(document.activeElement) && document.hasFocus()) {
-        release ??= acquireKeyDetectionSuspension();
-      } else {
-        release?.();
-        release = undefined;
-      }
+    const setTyping = (next: boolean) => {
+      if (typing === next) return;
+      typing = next;
+      void setKeyDetectionTyping(next).catch(console.error);
     };
+    const sync = () => setTyping(isTextInput(document.activeElement) && document.hasFocus());
     const deferSync = () => { clearTimeout(timer); timer = setTimeout(sync, 0); };
     document.addEventListener("focusin", sync);
     document.addEventListener("focusout", deferSync);
@@ -26,7 +26,7 @@ export function useTextInputFocus() {
       document.removeEventListener("focusout", deferSync);
       window.removeEventListener("blur", deferSync);
       window.removeEventListener("focus", sync);
-      release?.();
+      setTyping(false);
     };
   }, []);
 }

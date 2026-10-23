@@ -33,7 +33,11 @@ fn is_modifier_code(code: &str) -> bool {
 /// Consolidated into a single RwLock for efficient concurrent reads.
 struct KeyDetectorConfig {
     enabled: bool,
+    /// Shortcut capture in progress: every key belongs to the UI.
     suspended: bool,
+    /// The user types in one of the host's text fields: sound keys stay quiet,
+    /// but global shortcuts that use Ctrl/Alt/Super still work.
+    typing: bool,
     cooldown_ms: u32,
     stop_all_shortcut: Vec<String>,
     key_detection_shortcut: Vec<String>,
@@ -61,6 +65,7 @@ impl KeyDetector {
             config: Arc::new(RwLock::new(KeyDetectorConfig {
                 enabled: true,
                 suspended: false,
+                typing: false,
                 cooldown_ms,
                 stop_all_shortcut,
                 key_detection_shortcut: Vec::new(),
@@ -93,115 +98,14 @@ impl KeyDetector {
         std::thread::spawn(move || {
             let cb = callback.clone();
             let cb_warning = callback.clone();
+            let shared = Shared {
+                config,
+                pressed_keys,
+                chord_detector,
+                timer_notify: timer_notify_clone,
+            };
             let handle_key_event = Arc::new(move |code: String, is_press: bool| {
-                if is_press {
-                    let mut pressed = pressed_keys.lock().unwrap();
-
-                    // Avoid key repeat (key held down)
-                    if pressed.contains(&code) {
-                        return;
-                    }
-                    pressed.insert(code.clone());
-
-                    // Single read-lock for all config fields (shortcuts + enabled)
-                    let cfg = config.read().unwrap();
-
-                    if cfg.suspended {
-                        return;
-                    }
-
-                    // Global shortcuts: work even when key detection is disabled
-                    if !cfg.key_detection_shortcut.is_empty()
-                        && is_shortcut_pressed(&pressed, &cfg.key_detection_shortcut)
-                    {
-                        drop(pressed);
-                        drop(cfg);
-                        cb(KeyEvent::ToggleKeyDetection);
-                        return;
-                    }
-
-                    if !cfg.stop_all_shortcut.is_empty()
-                        && is_shortcut_pressed(&pressed, &cfg.stop_all_shortcut)
-                    {
-                        drop(pressed);
-                        drop(cfg);
-                        cb(KeyEvent::StopAll);
-                        return;
-                    }
-
-                    if !cfg.auto_momentum_shortcut.is_empty()
-                        && is_shortcut_pressed(&pressed, &cfg.auto_momentum_shortcut)
-                    {
-                        drop(pressed);
-                        drop(cfg);
-                        cb(KeyEvent::ToggleAutoMomentum);
-                        return;
-                    }
-
-                    // If detection is disabled, don't trigger sound key presses
-                    if !cfg.enabled {
-                        return;
-                    }
-
-                    drop(cfg);
-
-                    // Track pressed modifiers for the with_shift flag
-                    let has_shift = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
-                    drop(pressed);
-
-                    // Use chord detector for key press
-                    match chord_detector.on_key_press(&code) {
-                        ChordResult::Trigger(combo) => {
-                            cb(KeyEvent::KeyPressed {
-                                key_code: combo,
-                                with_shift: has_shift,
-                            });
-                        }
-                        ChordResult::Pending => {
-                            // Wake the timer thread
-                            let (lock, cvar) = &*timer_notify_clone;
-                            let mut notified = lock.lock().unwrap();
-                            *notified = true;
-                            cvar.notify_one();
-                        }
-                        ChordResult::NoMatch => {
-                            // No binding matches - if it's a modifier-only press, ignore
-                            // Otherwise, we could still emit for fallback handling
-                            if !is_modifier_code(&code) {
-                                // Build old-style combo for backwards compatibility
-                                let pressed = pressed_keys.lock().unwrap();
-                                let has_ctrl = pressed.contains("ControlLeft")
-                                    || pressed.contains("ControlRight");
-                                let has_alt =
-                                    pressed.contains("AltLeft") || pressed.contains("AltRight");
-                                let has_shift_now =
-                                    pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
-                                drop(pressed);
-
-                                let mut combo = String::new();
-                                if has_ctrl {
-                                    combo.push_str("Ctrl+");
-                                }
-                                if has_shift_now {
-                                    combo.push_str("Shift+");
-                                }
-                                if has_alt {
-                                    combo.push_str("Alt+");
-                                }
-                                combo.push_str(&code);
-
-                                cb(KeyEvent::KeyPressed {
-                                    key_code: combo,
-                                    with_shift: has_shift_now,
-                                });
-                            }
-                        }
-                    }
-                } else {
-                    // Key release
-                    pressed_keys.lock().unwrap().remove(&code);
-                    chord_detector.on_key_release(&code);
-                }
+                shared.process(code, is_press, &*cb);
             });
 
             timer_running.store(true, Ordering::SeqCst);
@@ -312,7 +216,7 @@ impl KeyDetector {
                 *guard = false;
 
                 let cfg = config.read().unwrap();
-                if !cfg.enabled || cfg.suspended {
+                if !cfg.enabled || cfg.suspended || cfg.typing {
                     continue;
                 }
 
@@ -337,6 +241,17 @@ impl KeyDetector {
         if !enabled {
             self.chord_detector.clear();
         }
+    }
+
+    /// Typing in a host text field: mute sound keys, keep modifier shortcuts.
+    pub fn set_typing(&self, typing: bool) {
+        let mut cfg = self.config.write().unwrap();
+        if cfg.typing == typing {
+            return;
+        }
+        cfg.typing = typing;
+        drop(cfg);
+        self.chord_detector.clear();
     }
 
     /// Suspend UI typing/capture without changing the persisted enabled preference.
@@ -386,10 +301,242 @@ impl KeyDetector {
     }
 }
 
+/// State the listener threads share with the detector handle.
+struct Shared {
+    config: Arc<RwLock<KeyDetectorConfig>>,
+    pressed_keys: Arc<Mutex<HashSet<String>>>,
+    chord_detector: ChordDetectorHandle,
+    timer_notify: Arc<(Mutex<bool>, Condvar)>,
+}
+
+impl Shared {
+    /// Handle one physical key transition from any backend.
+    fn process(&self, code: String, is_press: bool, cb: &dyn Fn(KeyEvent)) {
+        if !is_press {
+            self.pressed_keys.lock().unwrap().remove(&code);
+            self.chord_detector.on_key_release(&code);
+            return;
+        }
+
+        let mut pressed = self.pressed_keys.lock().unwrap();
+        // Avoid key repeat (key held down)
+        if !pressed.insert(code.clone()) {
+            return;
+        }
+
+        // Single read-lock for all config fields (shortcuts + enabled)
+        let cfg = self.config.read().unwrap();
+        if cfg.suspended {
+            return;
+        }
+
+        // Global shortcuts: work even when key detection is disabled. While the
+        // user types, only shortcuts with a real modifier count, so plain
+        // letters typed into a field never toggle anything.
+        let shortcut_allowed = |keys: &[String]| {
+            !keys.is_empty()
+                && is_shortcut_pressed(&pressed, keys)
+                && (!cfg.typing || keys.iter().any(|k| is_command_modifier(k)))
+        };
+        let shortcut = if shortcut_allowed(&cfg.key_detection_shortcut) {
+            Some(KeyEvent::ToggleKeyDetection)
+        } else if shortcut_allowed(&cfg.stop_all_shortcut) {
+            Some(KeyEvent::StopAll)
+        } else if shortcut_allowed(&cfg.auto_momentum_shortcut) {
+            Some(KeyEvent::ToggleAutoMomentum)
+        } else {
+            None
+        };
+        if let Some(event) = shortcut {
+            drop(pressed);
+            drop(cfg);
+            cb(event);
+            return;
+        }
+
+        // If detection is disabled (or the user is typing), don't trigger sounds
+        if !cfg.enabled || cfg.typing {
+            return;
+        }
+        drop(cfg);
+
+        // Track pressed modifiers for the with_shift flag
+        let has_shift = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
+        drop(pressed);
+
+        match self.chord_detector.on_key_press(&code) {
+            ChordResult::Trigger(combo) => cb(KeyEvent::KeyPressed {
+                key_code: combo,
+                with_shift: has_shift,
+            }),
+            ChordResult::Pending => {
+                // Wake the timer thread
+                let (lock, cvar) = &*self.timer_notify;
+                *lock.lock().unwrap() = true;
+                cvar.notify_one();
+            }
+            ChordResult::NoMatch => {
+                // No binding matches; a modifier alone never triggers anything.
+                if is_modifier_code(&code) {
+                    return;
+                }
+                // Build old-style combo for backwards compatibility
+                let pressed = self.pressed_keys.lock().unwrap();
+                let has_ctrl = pressed.contains("ControlLeft") || pressed.contains("ControlRight");
+                let has_alt = pressed.contains("AltLeft") || pressed.contains("AltRight");
+                let has_shift_now = pressed.contains("ShiftLeft") || pressed.contains("ShiftRight");
+                drop(pressed);
+
+                let mut combo = String::new();
+                if has_ctrl {
+                    combo.push_str("Ctrl+");
+                }
+                if has_shift_now {
+                    combo.push_str("Shift+");
+                }
+                if has_alt {
+                    combo.push_str("Alt+");
+                }
+                combo.push_str(&code);
+                cb(KeyEvent::KeyPressed {
+                    key_code: combo,
+                    with_shift: has_shift_now,
+                });
+            }
+        }
+    }
+}
+
+/// Ctrl, Alt or Super: keys that never produce text on their own.
+fn is_command_modifier(code: &str) -> bool {
+    matches!(
+        code,
+        "ControlLeft" | "ControlRight" | "AltLeft" | "AltRight" | "MetaLeft" | "MetaRight"
+    )
+}
+
 /// Check if all keys in the shortcut are currently pressed.
 fn is_shortcut_pressed(pressed_keys: &HashSet<String>, shortcut_keys: &[String]) -> bool {
     if shortcut_keys.is_empty() {
         return false;
     }
     shortcut_keys.iter().all(|key| pressed_keys.contains(key))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn detector(bindings: &[&str]) -> (KeyDetector, Shared) {
+        let detector = KeyDetector::new(0, vec!["AltLeft".into(), "KeyS".into()], 30);
+        detector.set_key_detection_shortcut(vec!["AltLeft".into(), "KeyD".into()]);
+        detector.set_auto_momentum_shortcut(vec!["AltLeft".into(), "KeyQ".into()]);
+        let bindings: Vec<String> = bindings.iter().map(|b| b.to_string()).collect();
+        detector.set_profile_bindings(&bindings);
+        let shared = Shared {
+            config: detector.config.clone(),
+            pressed_keys: detector.pressed_keys.clone(),
+            chord_detector: detector.chord_detector.clone(),
+            timer_notify: detector.timer_notify.clone(),
+        };
+        (detector, shared)
+    }
+
+    /// Press then release each key in order, collecting emitted events.
+    fn tap(shared: &Shared, keys: &[&str]) -> Vec<KeyEvent> {
+        let events = std::cell::RefCell::new(Vec::new());
+        let cb = |e: KeyEvent| events.borrow_mut().push(e);
+        for key in keys {
+            shared.process(key.to_string(), true, &cb);
+        }
+        for key in keys.iter().rev() {
+            shared.process(key.to_string(), false, &cb);
+        }
+        events.into_inner()
+    }
+
+    fn names(events: &[KeyEvent]) -> Vec<String> {
+        events
+            .iter()
+            .map(|e| match e {
+                KeyEvent::KeyPressed { key_code, .. } => key_code.clone(),
+                KeyEvent::StopAll => "StopAll".into(),
+                KeyEvent::ToggleKeyDetection => "ToggleKeyDetection".into(),
+                KeyEvent::ToggleAutoMomentum => "ToggleAutoMomentum".into(),
+                KeyEvent::BackendWarning { .. } => "Warning".into(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn bound_key_triggers() {
+        let (_d, shared) = detector(&["KeyA"]);
+        assert_eq!(names(&tap(&shared, &["KeyA"])), ["KeyA"]);
+    }
+
+    #[test]
+    fn held_key_does_not_repeat() {
+        let (_d, shared) = detector(&["KeyA"]);
+        let events = std::cell::RefCell::new(Vec::new());
+        let cb = |e: KeyEvent| events.borrow_mut().push(e);
+        shared.process("KeyA".into(), true, &cb);
+        shared.process("KeyA".into(), true, &cb);
+        assert_eq!(events.borrow().len(), 1);
+    }
+
+    #[test]
+    fn shortcuts_work_while_detection_is_off() {
+        let (d, shared) = detector(&["KeyA"]);
+        d.set_enabled(false);
+        assert!(tap(&shared, &["KeyA"]).is_empty());
+        assert_eq!(
+            names(&tap(&shared, &["AltLeft", "KeyD"])),
+            ["ToggleKeyDetection"]
+        );
+        assert_eq!(
+            names(&tap(&shared, &["AltLeft", "KeyQ"])),
+            ["ToggleAutoMomentum"]
+        );
+        assert_eq!(names(&tap(&shared, &["AltLeft", "KeyS"])), ["StopAll"]);
+    }
+
+    #[test]
+    fn typing_mutes_sounds_but_keeps_modifier_shortcuts() {
+        let (d, shared) = detector(&["KeyA"]);
+        d.set_typing(true);
+        assert!(tap(&shared, &["KeyA"]).is_empty());
+        assert_eq!(
+            names(&tap(&shared, &["AltLeft", "KeyQ"])),
+            ["ToggleAutoMomentum"]
+        );
+        d.set_typing(false);
+        assert_eq!(names(&tap(&shared, &["KeyA"])), ["KeyA"]);
+    }
+
+    #[test]
+    fn typing_ignores_shortcuts_made_of_text_keys() {
+        let (d, shared) = detector(&["KeyA"]);
+        d.set_stop_all_shortcut(vec!["KeyX".into(), "KeyC".into()]);
+        d.set_typing(true);
+        assert!(tap(&shared, &["KeyX", "KeyC"]).is_empty());
+    }
+
+    #[test]
+    fn capture_suspends_everything() {
+        let (d, shared) = detector(&["KeyA"]);
+        d.set_suspended(true);
+        assert!(tap(&shared, &["AltLeft", "KeyD"]).is_empty());
+        assert!(tap(&shared, &["KeyA"]).is_empty());
+        d.set_suspended(false);
+        assert_eq!(
+            names(&tap(&shared, &["AltLeft", "KeyD"])),
+            ["ToggleKeyDetection"]
+        );
+    }
+
+    #[test]
+    fn modifier_alone_triggers_nothing() {
+        let (_d, shared) = detector(&["KeyA"]);
+        assert!(tap(&shared, &["ShiftLeft"]).is_empty());
+    }
 }

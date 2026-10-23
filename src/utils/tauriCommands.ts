@@ -433,6 +433,11 @@ export async function suspendKeyDetection(suspended: boolean): Promise<void> {
   return invoke("suspend_key_detection", { suspended });
 }
 
+/** Typing in a text field: mutes sound keys but keeps modifier shortcuts. */
+export async function setKeyDetectionTyping(typing: boolean): Promise<void> {
+  return invoke("set_key_detection_typing", { typing });
+}
+
 export async function flushConfig(): Promise<void> {
   return invoke("flush_config");
 }

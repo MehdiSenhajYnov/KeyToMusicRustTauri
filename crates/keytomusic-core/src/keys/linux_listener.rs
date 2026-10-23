@@ -242,6 +242,12 @@ pub(super) fn keycode_to_code(key: KeyCode) -> Option<&'static str> {
     }
 }
 
+/// How often to look for keyboards that appeared after startup (a wireless
+/// keyboard waking up, a dongle plugged in).
+const RESCAN_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Listen to every readable keyboard, now and as they come and go. Returns
+/// only when no keyboard is readable at all.
 pub fn listen_linux<T>(callback: T) -> Result<(), String>
 where
     T: Fn(LinuxKeyEvent) + Send + Sync + 'static,
@@ -266,20 +272,43 @@ where
         ));
     }
 
-    let callback = Arc::new(callback);
-    let mut handles = Vec::new();
+    let callback: Arc<dyn Fn(LinuxKeyEvent) + Send + Sync> = Arc::new(callback);
+    let active: Arc<std::sync::Mutex<HashSet<PathBuf>>> = Arc::default();
+    let mut devices = accessible_keyboards;
 
-    for (path, mut device) in accessible_keyboards {
-        let callback = callback.clone();
-        let path_for_log = path.clone();
-        let device_name = device.name().unwrap_or("unknown keyboard").to_string();
-        tracing::info!(
-            "Starting Linux evdev keyboard listener on {} ({})",
-            path.display(),
-            device_name
-        );
+    loop {
+        for (path, device) in devices {
+            if !active.lock().unwrap().insert(path.clone()) {
+                continue;
+            }
+            spawn_device_listener(path, device, callback.clone(), active.clone());
+        }
+        std::thread::sleep(RESCAN_INTERVAL);
+        let known = active.lock().unwrap().clone();
+        devices = enumerate()
+            .filter(|(path, device)| !known.contains(path) && is_keyboard_device(device))
+            .collect();
+    }
+}
 
-        let handle = std::thread::spawn(move || loop {
+fn spawn_device_listener(
+    path: PathBuf,
+    mut device: Device,
+    callback: Arc<dyn Fn(LinuxKeyEvent) + Send + Sync>,
+    active: Arc<std::sync::Mutex<HashSet<PathBuf>>>,
+) {
+    let device_name = device.name().unwrap_or("unknown keyboard").to_string();
+    tracing::info!(
+        "Starting Linux evdev keyboard listener on {} ({})",
+        path.display(),
+        device_name
+    );
+
+    std::thread::spawn(move || {
+        // Keys held on this device, released for it if the device goes away so
+        // they don't stay "pressed" (and swallowed as repeats) forever.
+        let mut held: HashSet<&'static str> = HashSet::new();
+        loop {
             match device.fetch_events() {
                 Ok(events) => {
                     for event in events {
@@ -289,30 +318,33 @@ where
                             };
 
                             match value {
-                                1 => callback(LinuxKeyEvent::Press(code.to_string())),
-                                0 => callback(LinuxKeyEvent::Release(code.to_string())),
+                                1 => {
+                                    held.insert(code);
+                                    callback(LinuxKeyEvent::Press(code.to_string()))
+                                }
+                                0 => {
+                                    held.remove(code);
+                                    callback(LinuxKeyEvent::Release(code.to_string()))
+                                }
                                 _ => {}
                             }
                         }
                     }
                 }
                 Err(err) => {
-                    tracing::warn!(
-                        "Linux evdev keyboard listener stopped on {}: {}",
-                        path_for_log.display(),
+                    tracing::info!(
+                        "Linux evdev keyboard listener stopped on {} ({}): {}",
+                        path.display(),
+                        device_name,
                         err
                     );
                     break;
                 }
             }
-        });
-
-        handles.push(handle);
-    }
-
-    for handle in handles {
-        let _ = handle.join();
-    }
-
-    Ok(())
+        }
+        for code in held {
+            callback(LinuxKeyEvent::Release(code.to_string()));
+        }
+        active.lock().unwrap().remove(&path);
+    });
 }
