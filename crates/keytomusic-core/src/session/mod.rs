@@ -114,7 +114,9 @@ struct Data {
 
 pub struct Session {
     state: Arc<AppState>,
-    runtime: tokio::runtime::Runtime,
+    /// Taken on drop: the last `Arc<Session>` may be released inside a task.
+    runtime_owner: Mutex<Option<tokio::runtime::Runtime>>,
+    runtime: tokio::runtime::Handle,
     host: HostSink,
     data: Mutex<Data>,
     discovery: Mutex<discovery::DiscoveryData>,
@@ -139,7 +141,8 @@ impl Session {
 
         let session = Arc::new_cyclic(|me| Session {
             state: state.clone(),
-            runtime: tokio,
+            runtime: tokio.handle().clone(),
+            runtime_owner: Mutex::new(Some(tokio)),
             host,
             data: Mutex::new(Data::default()),
             discovery: Mutex::new(discovery::DiscoveryData::default()),
@@ -168,7 +171,7 @@ impl Session {
 
     /// Runtime for host-initiated async work (`handle().spawn(...)`).
     pub fn handle(&self) -> tokio::runtime::Handle {
-        self.runtime.handle().clone()
+        self.runtime.clone()
     }
 
     pub fn config(&self) -> AppConfig {
@@ -1213,6 +1216,15 @@ impl Session {
             }
         });
         Ok(())
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        // Never block here: dropping from a runtime thread must not wait on it.
+        if let Some(runtime) = self.runtime_owner.get_mut().ok().and_then(Option::take) {
+            runtime.shutdown_background();
+        }
     }
 }
 
