@@ -161,11 +161,13 @@ pub fn display_combo(combo: &str, label: impl Fn(&str) -> Option<String>) -> Str
         .join("+")
 }
 
-/// Preferred order when a key must be picked automatically.
+/// Preferred order when a key must be picked automatically: the letter rows
+/// from the top left, as they sit under the fingers (A Z E R T Y… on AZERTY,
+/// Q W E R T Y… on QWERTY), then digits, function keys and the keypad.
 pub const AUTO_KEY_ORDER: &[&str] = &[
-    "KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyF", "KeyG", "KeyH", "KeyI", "KeyJ", "KeyK", "KeyL",
-    "KeyM", "KeyN", "KeyO", "KeyP", "KeyQ", "KeyR", "KeyS", "KeyT", "KeyU", "KeyV", "KeyW", "KeyX",
-    "KeyY", "KeyZ", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8",
+    "KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY", "KeyU", "KeyI", "KeyO", "KeyP", "KeyA", "KeyS",
+    "KeyD", "KeyF", "KeyG", "KeyH", "KeyJ", "KeyK", "KeyL", "KeyZ", "KeyX", "KeyC", "KeyV", "KeyB",
+    "KeyN", "KeyM", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8",
     "Digit9", "Digit0", "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
     "Numpad0", "Numpad1", "Numpad2", "Numpad3", "Numpad4", "Numpad5", "Numpad6", "Numpad7",
     "Numpad8", "Numpad9",
@@ -286,11 +288,11 @@ mod tests {
 
     #[test]
     fn next_key_skips_used_and_reserved() {
-        let used: HashSet<String> = ["KeyA".to_string()].into();
-        let reserved: HashSet<String> = ["KeyB".to_string()].into();
+        let used: HashSet<String> = ["KeyQ".to_string()].into();
+        let reserved: HashSet<String> = ["KeyW".to_string()].into();
         assert_eq!(
             next_available_key(&used, &reserved).as_deref(),
-            Some("KeyC")
+            Some("KeyE")
         );
     }
 }

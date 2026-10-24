@@ -336,7 +336,7 @@ mod tests {
     fn auto_assign_single_sound_profile_picks_free_key() {
         let p = profile();
         let a = auto_assign(&p, &[], &HashSet::new());
-        assert_eq!(a.key.as_deref(), Some("KeyC"));
+        assert_eq!(a.key.as_deref(), Some("KeyQ"));
         assert_eq!(a.track_id.as_deref(), Some("t1"));
     }
 

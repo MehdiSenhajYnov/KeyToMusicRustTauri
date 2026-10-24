@@ -353,6 +353,41 @@ pub fn add_sounds(
 }
 
 /// Track with the fewest bindings (first track on ties).
+/// The next `count` keys with no sound on any track, in the automatic order
+/// ([`keymap::AUTO_KEY_ORDER`]), skipping `reserved`. Fewer when the keyboard
+/// runs out.
+pub fn free_keys(profile: &Profile, count: usize, reserved: &HashSet<String>) -> Vec<String> {
+    let mut used: HashSet<String> = profile
+        .key_bindings
+        .iter()
+        .map(|b| b.key_code.clone())
+        .collect();
+    used.extend(reserved.iter().cloned());
+    let mut keys = Vec::with_capacity(count);
+    while keys.len() < count {
+        match super::keymap::next_available_key(&used, &HashSet::new()) {
+            Some(key) => {
+                used.insert(key.clone());
+                keys.push(key);
+            }
+            None => break,
+        }
+    }
+    keys
+}
+
+/// Give the bindings of `keys` on `track_id` that have no mood yet this one,
+/// so freshly added sounds answer Mood AI right away.
+pub fn tag_untagged_bindings(profile: &mut Profile, keys: &[String], track_id: &str, mood: BaseMood) {
+    for binding in profile
+        .key_bindings
+        .iter_mut()
+        .filter(|b| b.track_id == track_id && keys.contains(&b.key_code) && b.mood.is_none())
+    {
+        binding.mood = Some(mood);
+    }
+}
+
 pub fn least_used_track(profile: &Profile) -> Option<String> {
     let mut counts: HashMap<&str, usize> =
         profile.tracks.iter().map(|t| (t.id.as_str(), 0)).collect();
@@ -566,6 +601,27 @@ pub(crate) mod tests {
         remove_binding(&mut p, "KeyA", Some("t1"));
         assert_eq!(p.sounds.len(), 1);
         assert_eq!(p.key_bindings.len(), 1);
+    }
+
+    #[test]
+    fn free_keys_follow_the_rows_and_skip_bound_keys() {
+        let mut p = profile();
+        p.key_bindings.push(binding("KeyQ", "t2", &["s3"]));
+        let reserved: HashSet<String> = ["KeyE".to_string()].into();
+        assert_eq!(free_keys(&p, 3, &reserved), ["KeyW", "KeyR", "KeyT"]);
+        assert_eq!(free_keys(&p, 500, &HashSet::new()).len(), super::super::keymap::AUTO_KEY_ORDER.len() - 3);
+    }
+
+    #[test]
+    fn tagging_keeps_existing_moods() {
+        let mut p = profile();
+        p.key_bindings[0].mood = Some(BaseMood::Comedy);
+        p.key_bindings.push(binding("KeyC", "t1", &["s3"]));
+        let keys = ["KeyA".to_string(), "KeyC".to_string()];
+        tag_untagged_bindings(&mut p, &keys, "t1", BaseMood::Epic);
+        assert_eq!(p.key_bindings[0].mood, Some(BaseMood::Comedy));
+        assert_eq!(p.key_bindings[2].mood, Some(BaseMood::Epic));
+        assert_eq!(p.key_bindings[1].mood, None);
     }
 
     #[test]
