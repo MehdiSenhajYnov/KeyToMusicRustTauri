@@ -71,19 +71,29 @@ pub struct Placement {
 
 // ── What a sound is ──
 
+/// Words that say "background sound" on their own.
 const AMBIENCE_WORDS: &[&str] = &[
-    "ambience", "ambiance", "ambient", "atmosphere", "atmosphère", "rain", "pluie", "wind", "vent",
-    "storm", "orage", "thunder", "tonnerre", "forest", "forêt", "foret", "ocean", "océan", "sea",
-    "mer", "waves", "vagues", "river", "rivière", "city", "ville", "crowd", "foule", "night",
-    "nuit", "fire", "feu", "fireplace", "cafe", "café", "tavern", "taverne", "birds", "oiseaux",
-    "cave", "grotte", "room", "noise", "bruit", "background", "soundscape",
+    "ambience", "ambiance", "ambient", "atmosphere", "atmosphère", "soundscape", "background",
+    "noise", "bruit", "asmr", "sleep", "sleeping", "hour", "hours", "heure", "heures", "1h", "2h",
+    "3h", "10h",
 ];
+/// Places and weather: an ambience when long, or "rain sounds"; otherwise
+/// just words of a song title ("City of Tears", "Fire Force").
+const PLACE_WORDS: &[&str] = &[
+    "rain", "pluie", "wind", "vent", "storm", "orage", "thunder", "tonnerre", "forest", "forêt",
+    "foret", "ocean", "océan", "sea", "mer", "waves", "vagues", "river", "rivière", "city",
+    "ville", "crowd", "foule", "night", "nuit", "fire", "feu", "fireplace", "cafe", "café",
+    "tavern", "taverne", "birds", "oiseaux", "cave", "grotte", "room",
+];
+/// Words that say "sound effect" on their own.
+const EFFECT_MARKERS: &[&str] = &["sfx", "effect", "effects", "effet", "effets", "bruitage"];
+/// Things that make a sound: an effect when short.
 const EFFECT_WORDS: &[&str] = &[
-    "sfx", "effect", "effects", "effet", "door", "porte", "knock", "punch", "coup", "hit",
-    "explosion", "gunshot", "gun", "sword", "épée", "epee", "scream", "cri", "laugh", "rire",
-    "footsteps", "pas", "heartbeat", "cœur", "coeur", "glass", "verre", "slash", "whoosh",
-    "swoosh", "bell", "cloche", "click", "creak", "creaking", "grincement", "growl", "roar",
-    "magic", "magie", "spell", "impact", "crash", "jump", "saut", "gasp", "notification",
+    "door", "porte", "knock", "punch", "coup", "hit", "explosion", "gunshot", "gun", "sword",
+    "épée", "epee", "scream", "cri", "laugh", "rire", "footsteps", "heartbeat", "cœur", "coeur",
+    "glass", "verre", "slash", "whoosh", "swoosh", "bell", "cloche", "click", "creak", "creaking",
+    "grincement", "growl", "roar", "magic", "magie", "spell", "impact", "crash", "jump", "saut",
+    "gasp", "notification",
 ];
 const MUSIC_WORDS: &[&str] = &[
     "ost", "soundtrack", "theme", "thème", "bgm", "music", "musique", "song", "piano", "orchestra",
@@ -129,27 +139,41 @@ pub fn guess_role(hint: &SoundHint) -> SoundRole {
         text.push_str(folder);
     }
     let w = words(&text);
-    let (ambience, effect, music) = (
-        count_in(&w, AMBIENCE_WORDS),
-        count_in(&w, EFFECT_WORDS),
-        count_in(&w, MUSIC_WORDS),
-    );
-    let short = hint.duration > 0.0 && hint.duration < 20.0;
-    if music > 0 && music >= ambience && music >= effect {
-        // "Rain OST" is music; a 5 s "theme" sting is still an effect.
-        return if short && effect > 0 { SoundRole::Effect } else { SoundRole::Music };
-    }
-    if effect > ambience || (short && effect > 0) {
-        return SoundRole::Effect;
-    }
-    if ambience > 0 {
-        return if short { SoundRole::Effect } else { SoundRole::Ambience };
+    let ambience = count_in(&w, AMBIENCE_WORDS);
+    let place = count_in(&w, PLACE_WORDS);
+    let marker = count_in(&w, EFFECT_MARKERS);
+    let effect = count_in(&w, EFFECT_WORDS);
+    let music = count_in(&w, MUSIC_WORDS);
+    let sound = count_in(&w, &["sound", "sounds", "son", "sons"]);
+    let known = hint.duration > 0.0;
+    let short = known && hint.duration < 20.0;
+    let long = known && hint.duration >= 8.0 * 60.0;
+
+    // Said outright: "Door Creaking Sound Effect", "Rain Ambience 1 hour".
+    if marker > 0 && !(music > 0 && known && hint.duration > 180.0) {
+        return if ambience > 0 && !short {
+            SoundRole::Ambience
+        } else {
+            SoundRole::Effect
+        };
     }
     if short {
-        SoundRole::Effect
-    } else {
-        SoundRole::Music
+        return SoundRole::Effect;
     }
+    if ambience > 0 || (place > 0 && (sound > 0 || long)) {
+        return SoundRole::Ambience;
+    }
+    if music > 0 {
+        return SoundRole::Music;
+    }
+    // "Sword slash" of 3 s is an effect; "Sword Art Online…" of 3 min is not.
+    if effect > 0 && (!known || hint.duration <= 60.0 || sound > 0) {
+        return SoundRole::Effect;
+    }
+    if place > 0 && !known {
+        return SoundRole::Ambience;
+    }
+    SoundRole::Music
 }
 
 // ── Mood from a title ──
@@ -159,7 +183,7 @@ const MOOD_WORDS: [(BaseMood, &[&str]); 8] = [
         BaseMood::Epic,
         &[
             "epic", "epique", "battle", "bataille", "fight", "combat", "war", "guerre", "boss",
-            "heroic", "heroique", "hero", "heros", "victory", "victoire", "climax", "triumph",
+            "heroic", "heroique", "victory", "victoire", "climax", "triumph",
             "orchestral", "power",
         ],
     ),
@@ -196,7 +220,7 @@ const MOOD_WORDS: [(BaseMood, &[&str]); 8] = [
         BaseMood::Horror,
         &[
             "horror", "horreur", "scary", "creepy", "terror", "terreur", "ghost", "fantome",
-            "zombie", "nightmare", "cauchemar", "haunted", "hante", "demon", "evil", "sinister",
+            "zombie", "nightmare", "cauchemar", "haunted", "hante", "evil", "sinister",
             "sinistre", "effrayant", "peur",
         ],
     ),
@@ -216,6 +240,15 @@ const MOOD_WORDS: [(BaseMood, &[&str]); 8] = [
         ],
     ),
 ];
+
+/// The mood a title names. In "Franchise - Piece", only the piece counts
+/// ("Demon Slayer OST - Kamado Tanjiro no Uta" names no mood).
+pub fn guess_title_mood(title: &str) -> Option<BaseMood> {
+    match title.rsplit_once(" - ") {
+        Some((_, piece)) if !piece.trim().is_empty() => guess_mood(piece),
+        _ => guess_mood(title),
+    }
+}
 
 /// The mood `text` names, if it names one more than the others.
 pub fn guess_mood(text: &str) -> Option<BaseMood> {
@@ -292,6 +325,8 @@ pub fn track_role(p: &Profile, track: &str) -> SoundRole {
 
 fn track_for_role(p: &Profile, role: SoundRole) -> Option<String> {
     match role {
+        // None: a track of its own is needed (not the music's: an ambience
+        // there would cut the music).
         SoundRole::Ambience => ambience_track(p),
         SoundRole::Effect => effects_track(p),
         SoundRole::Music => {
@@ -328,18 +363,23 @@ pub fn style(p: &Profile, track: Option<&str>) -> Style {
         .iter()
         .filter(|b| track.is_none_or(|t| b.track_id == t))
         .collect();
-    let bindings: Vec<&KeyBinding> = if on_track.len() >= 2 {
-        on_track
-    } else {
+    let bindings: Vec<&KeyBinding> = if on_track.is_empty() {
         p.key_bindings.iter().collect()
+    } else {
+        on_track
     };
     if bindings.is_empty() {
         return Style::Empty;
     }
-    let groups = bindings.iter().filter(|b| b.sound_ids.len() >= 2).count();
+    // Most sounds live in groups (a few keys holding many count as much as
+    // many keys holding a few).
     let sounds: usize = bindings.iter().map(|b| b.sound_ids.len()).sum();
-    // Most keys hold several sounds, or a few hold many.
-    if groups * 2 >= bindings.len() && sounds as f64 / bindings.len() as f64 >= 1.8 {
+    let grouped: usize = bindings
+        .iter()
+        .filter(|b| b.sound_ids.len() >= 2)
+        .map(|b| b.sound_ids.len())
+        .sum();
+    if grouped * 2 >= sounds && grouped > 0 {
         Style::Grouped
     } else {
         Style::OnePerKey
@@ -509,21 +549,44 @@ pub fn place_all_reserving(
 ) -> Vec<Placement> {
     let mut taken: HashSet<String> = p.key_bindings.iter().map(|b| b.key_code.clone()).collect();
     taken.extend(reserved.iter().cloned());
-    // Keys given to earlier sounds of this batch: (key, track, mood).
-    let mut placed: Vec<(String, Option<String>, Option<BaseMood>)> = Vec::new();
+    // Earlier sounds of this batch on new keys.
+    let mut placed: Vec<Batch> = Vec::new();
     hints
         .iter()
         .map(|hint| {
             let placement = place_one(p, hint, &taken, &placed);
             if let Some(key) = &placement.key {
-                if placement.joins == 0 {
-                    taken.insert(key.clone());
-                    placed.push((key.clone(), placement.track_id.clone(), placement.mood));
+                match placed.iter_mut().find(|b| &b.key == key) {
+                    // Joined a group this batch started.
+                    Some(batch) => batch.count += 1,
+                    None if placement.joins == 0 => {
+                        taken.insert(key.clone());
+                        placed.push(Batch {
+                            key: key.clone(),
+                            track: placement.track_id.clone(),
+                            mood: placement.mood,
+                            group: placement.reason.starts_with("nouveau groupe"),
+                            count: 1,
+                            loop_mode: placement.loop_mode.clone(),
+                        });
+                    }
+                    None => {}
                 }
             }
             placement
         })
         .collect()
+}
+
+/// A new key given to sounds of the batch being placed.
+struct Batch {
+    key: String,
+    track: Option<String>,
+    mood: Option<BaseMood>,
+    /// It started a group (grouped track): the batch's kin join it.
+    group: bool,
+    count: usize,
+    loop_mode: LoopMode,
 }
 
 pub fn place(p: &Profile, hint: &SoundHint) -> Placement {
@@ -534,7 +597,7 @@ fn place_one(
     p: &Profile,
     hint: &SoundHint,
     taken: &HashSet<String>,
-    placed: &[(String, Option<String>, Option<BaseMood>)],
+    placed: &[Batch],
 ) -> Placement {
     // What it is: the chosen track says it, else the title and length.
     let role = match &hint.track_id {
@@ -560,8 +623,7 @@ fn place_one(
                 .max_by_key(|(_, s)| *s)
                 .map(|(b, _)| b.track_id.clone())
         })
-        .or_else(|| track_for_role(p, role))
-        .or_else(|| p.tracks.first().map(|t| t.id.clone()));
+        .or_else(|| track_for_role(p, role));
 
     // Its mood: chosen, else that of the sounds it was found from, else its
     // title's. Only music answers moods (an effect would fire with Mood AI).
@@ -574,7 +636,9 @@ fn place_one(
         if role != SoundRole::Music {
             return None;
         }
-        seed_mood(p, &hint.seed_video_ids).or_else(|| guess_mood(&text))
+        seed_mood(p, &hint.seed_video_ids)
+            .or_else(|| guess_title_mood(&hint.name))
+            .or_else(|| hint.folder.as_deref().and_then(guess_mood))
     });
 
     let on_track: Vec<&KeyBinding> = p
@@ -614,6 +678,26 @@ fn place_one(
                 by_kin()
             }
         });
+        // Its batch already started its family: join it.
+        if join.is_none() {
+            if let Some(batch) = placed
+                .iter()
+                .find(|b| b.group && b.track == track_id && b.mood == mood)
+            {
+                return Placement {
+                    role,
+                    key: Some(batch.key.clone()),
+                    track_id,
+                    mood,
+                    loop_mode: batch.loop_mode.clone(),
+                    joins: batch.count,
+                    reason: match mood {
+                        Some(m) => format!("même nouveau groupe {}", mood_label(m)),
+                        None => "même nouveau groupe".to_string(),
+                    },
+                };
+            }
+        }
         if let Some(b) = join {
             let reason = match (by_mood.is_some(), mood) {
                 (true, Some(m)) => format!(
@@ -646,13 +730,37 @@ fn place_one(
             key,
             track_id,
             mood,
-            loop_mode: majority_loop(&groups).unwrap_or(LoopMode::Random),
+            // Like the track's other groups; a first one plays like its kind.
+            loop_mode: majority_loop(&groups).unwrap_or_else(|| default_loop.clone()),
             joins: 0,
             reason: match mood {
                 Some(m) => format!("nouveau groupe {}", mood_label(m)),
                 None => "nouveau groupe".to_string(),
             },
         };
+    }
+
+    // A group of its mood exists anyway (some keys are groups): join it.
+    if let Some(m) = mood {
+        if let Some(b) = on_track
+            .iter()
+            .filter(|b| b.mood == Some(m) && b.sound_ids.len() >= 2)
+            .max_by_key(|b| b.sound_ids.len())
+        {
+            return Placement {
+                role,
+                key: Some(b.key_code.clone()),
+                track_id,
+                mood,
+                loop_mode: b.loop_mode.clone(),
+                joins: b.sound_ids.len(),
+                reason: format!(
+                    "rejoint {} {}",
+                    plural(b.sound_ids.len(), "son"),
+                    mood_label(m)
+                ),
+            };
+        }
     }
 
     // One sound per key: a free key next to its kin — same mood, else same
@@ -669,8 +777,8 @@ fn place_one(
         kin.extend(
             placed
                 .iter()
-                .filter(|(_, t, pm)| same_track(t) && *pm == Some(m))
-                .map(|(k, ..)| k.clone()),
+                .filter(|b| same_track(&b.track) && b.mood == Some(m))
+                .map(|b| b.key.clone()),
         );
     }
     let by_mood = !kin.is_empty();
@@ -679,8 +787,8 @@ fn place_one(
         kin.extend(
             placed
                 .iter()
-                .filter(|(_, t, _)| same_track(t))
-                .map(|(k, ..)| k.clone()),
+                .filter(|b| same_track(&b.track))
+                .map(|b| b.key.clone()),
         );
     }
     let key = free_key_near(&kin, role, taken);
@@ -729,15 +837,39 @@ pub fn volume_for_loudness(loudness: f32) -> f32 {
 
 // ── Start point ──
 
-/// Where a sound should start: music at its strong part (`suggested`), an
-/// ambience or an effect where it becomes audible (no leading silence).
-pub fn start_point(role: SoundRole, peaks: &[f32], duration: f64, suggested: Option<f64>) -> f64 {
-    if role == SoundRole::Music {
+/// Where a sound should start: music at its strong part (`suggested`) when
+/// `strong_part`, otherwise — and for ambiences and effects — where it
+/// becomes audible (no leading silence).
+pub fn start_point(
+    role: SoundRole,
+    peaks: &[f32],
+    duration: f64,
+    suggested: Option<f64>,
+    strong_part: bool,
+) -> f64 {
+    if role == SoundRole::Music && strong_part {
         if let Some(s) = suggested {
             return s.max(0.0);
         }
     }
     audible_start(peaks, duration)
+}
+
+/// Whether new music should start at its strong part: "Départ auto" is on,
+/// or the profile's music mostly does already (Mood AI plays from there).
+pub fn wants_strong_part(p: &Profile, auto_momentum: bool) -> bool {
+    if auto_momentum {
+        return true;
+    }
+    let music: Vec<f64> = p
+        .key_bindings
+        .iter()
+        .filter(|b| track_role(p, &b.track_id) == SoundRole::Music)
+        .flat_map(|b| b.sound_ids.iter())
+        .filter_map(|id| p.sounds.iter().find(|s| &s.id == id))
+        .map(|s| s.momentum)
+        .collect();
+    music.len() >= 2 && music.iter().filter(|m| **m > 1.0).count() * 2 >= music.len()
 }
 
 /// First moment louder than a whisper (a tenth of the loudest peak), a
@@ -816,6 +948,60 @@ mod tests {
         let mut folder = hint("track 03", 240.0);
         folder.folder = Some("Ambiances".into());
         assert_eq!(guess_role(&folder), SoundRole::Ambience);
+    }
+
+    #[test]
+    fn song_titles_are_not_taken_for_effects_or_ambiences() {
+        assert_eq!(guess_role(&hint("Sword Art Online - Crossing Field", 180.0)), SoundRole::Music);
+        assert_eq!(guess_role(&hint("Hollow Knight - City of Tears", 200.0)), SoundRole::Music);
+        assert_eq!(guess_role(&hint("1 hour rain sounds", 3600.0)), SoundRole::Ambience);
+        assert_eq!(guess_role(&hint("Anime sword slash sound effect", 2.0)), SoundRole::Effect);
+        assert_eq!(guess_role(&hint("Naruto OST - Sadness and Sorrow", 180.0)), SoundRole::Music);
+        assert_eq!(guess_title_mood("Demon Slayer OST - Kamado Tanjiro no Uta"), None);
+        assert_eq!(guess_title_mood("Naruto OST - Sadness and Sorrow"), Some(BaseMood::Sadness));
+    }
+
+    #[test]
+    fn a_grouped_batch_of_one_mood_makes_one_group() {
+        let mut p = scene();
+        let mut epic = binding("KeyQ", "m", &["s1", "s2", "s3"]);
+        epic.mood = Some(BaseMood::Epic);
+        p.key_bindings = vec![epic];
+        let placed = place_all(
+            &p,
+            &[
+                hint("Funny cartoon", 200.0),
+                hint("Funny gag", 200.0),
+                hint("Funny silly scene", 200.0),
+            ],
+        );
+        let keys: Vec<_> = placed.iter().map(|x| x.key.clone().unwrap()).collect();
+        assert_eq!(keys, ["KeyW", "KeyW", "KeyW"], "{placed:?}");
+        assert_eq!(placed[2].joins, 2);
+        // A first group of music does not loop like an ambience.
+        assert_eq!(placed[0].loop_mode, LoopMode::Off);
+    }
+
+    #[test]
+    fn background_sounds_never_land_on_the_music_track() {
+        let mut p = scene();
+        p.tracks = vec![track("m", "Musique", false)];
+        p.key_bindings = vec![binding("KeyQ", "m", &["s1"])];
+        let rain = place(&p, &hint("1 hour rain sounds", 3600.0));
+        assert_eq!(rain.track_id, None, "a track of its own is needed");
+        let door = place(&p, &hint("Door knock", 3.0));
+        assert_eq!(door.track_id, None);
+    }
+
+    #[test]
+    fn music_starts_at_its_strong_part_when_the_profile_does() {
+        let mut p = scene();
+        p.key_bindings = vec![binding("KeyQ", "m", &["s1", "s2"])];
+        assert!(!wants_strong_part(&p, false));
+        assert!(wants_strong_part(&p, true));
+        p.sounds[0].momentum = 30.0;
+        p.sounds[1].momentum = 12.0;
+        assert!(wants_strong_part(&p, false));
     }
 
     #[test]
@@ -949,7 +1135,8 @@ mod tests {
         let at = audible_start(&peaks, 10.0);
         assert!((at - 0.95).abs() < 1e-9, "{at}");
         assert_eq!(audible_start(&[0.5; 100], 10.0), 0.0);
-        assert_eq!(start_point(SoundRole::Music, &peaks, 10.0, Some(4.0)), 4.0);
-        assert!((start_point(SoundRole::Effect, &peaks, 10.0, Some(4.0)) - 0.95).abs() < 1e-9);
+        assert_eq!(start_point(SoundRole::Music, &peaks, 10.0, Some(4.0), true), 4.0);
+        assert!((start_point(SoundRole::Music, &peaks, 10.0, Some(4.0), false) - 0.95).abs() < 1e-9);
+        assert!((start_point(SoundRole::Effect, &peaks, 10.0, Some(4.0), true) - 0.95).abs() < 1e-9);
     }
 }

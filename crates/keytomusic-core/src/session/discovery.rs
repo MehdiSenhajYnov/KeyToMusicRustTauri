@@ -63,6 +63,8 @@ impl Enrichment {
             &waveform.points,
             waveform.duration,
             waveform.suggested_momentum,
+            // A card proposes its strong part (shown on its waveform).
+            true,
         );
     }
 
@@ -215,9 +217,20 @@ impl Session {
                 .collect();
             let hints: Vec<placement::SoundHint> =
                 todo.iter().map(|s| hint_for(s, None)).collect();
+            // A card needs a track to be added: the first one, if no other fits.
+            let first = profile.tracks.first().map(|t| t.id.clone());
             todo.iter()
                 .map(|s| s.video_id.clone())
-                .zip(placement::place_all_reserving(profile, &hints, &reserved))
+                .zip(
+                    placement::place_all_reserving(profile, &hints, &reserved)
+                        .into_iter()
+                        .map(|mut placed| {
+                            if placed.track_id.is_none() {
+                                placed.track_id = first.clone();
+                            }
+                            placed
+                        }),
+                )
                 .collect()
         });
         for (video_id, placed) in assignments {
@@ -306,7 +319,8 @@ impl Session {
                         let d = session.disco();
                         (d.all.clone(), d.cursor, d.revealed, d.visited as i32)
                     };
-                    if let Some(profile_id) = session.disco().profile_id.clone() {
+                    let saved = session.disco().focus.is_none();
+                    if let (true, Some(profile_id)) = (saved, session.disco().profile_id.clone()) {
                         let _ = crate::discovery::cache::DiscoveryCache::update_pool(
                             &profile_id,
                             pool,
@@ -457,6 +471,10 @@ impl Session {
     fn discovery_persist_cursor(&self) {
         let (profile_id, gen) = {
             let mut d = self.disco();
+            // A focused selection is not the saved one.
+            if d.focus.is_some() {
+                return;
+            }
             d.cursor_save_gen += 1;
             (d.profile_id.clone(), d.cursor_save_gen)
         };
@@ -713,9 +731,28 @@ impl Session {
     /// Suggestions from the sounds of `focus` only (None: all of them): a
     /// new selection starts at once.
     pub fn discovery_set_focus(&self, focus: Option<crate::types::BaseMood>) {
+        if self.disco().focus == focus {
+            return;
+        }
+        // Back to all sounds: the saved selection.
+        let Some(mood) = focus else {
+            self.discovery_open_profile();
+            return;
+        };
+        // Check before dropping the current selection.
+        let startable = self.with_profile(|p| {
+            p.is_some_and(|p| service::discovery::has_mood_seeds(p, mood))
+        });
+        if !startable {
+            self.toast(
+                ToastKind::Info,
+                "Aucun son YouTube de cette ambiance pour démarrer",
+            );
+            return;
+        }
         let (gen, exclude) = {
             let mut d = self.disco();
-            if d.focus == focus || d.profile_id.is_none() {
+            if d.profile_id.is_none() {
                 return;
             }
             d.focus = focus;
@@ -821,9 +858,14 @@ impl Session {
         let e = d.enrich.entry(video_id.to_string()).or_default();
         if let Some(placed) = replaced {
             e.take_placement(placed);
+            // Its kind may differ on that track: so may its start.
+            if let Some(waveform) = e.waveform.clone() {
+                e.take_waveform_start(&waveform);
+            }
         }
         if key.is_some() {
             e.key = key;
+            e.reason = Some("touche choisie".into());
         }
         if track_id.is_some() {
             e.track_id = track_id;

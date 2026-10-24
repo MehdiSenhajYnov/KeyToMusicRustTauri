@@ -79,6 +79,12 @@ pub async fn start_discovery(
     start_discovery_focused(state, profile_id, exclude_ids, background, None).await
 }
 
+/// Whether the sounds of `mood` can start a discovery (YouTube sounds, or
+/// local ones matched to a video).
+pub fn has_mood_seeds(profile: &Profile, mood: BaseMood) -> bool {
+    !mood_videos(profile, mood).is_empty()
+}
+
 /// The videos of the sounds on keys of `mood`: what a discovery focused on
 /// that mood starts from.
 fn mood_videos(profile: &Profile, mood: BaseMood) -> std::collections::HashSet<String> {
@@ -115,7 +121,7 @@ pub async fn start_discovery_focused(
         next
     };
 
-    let profile = storage::load_profile(profile_id.clone())?;
+    let mut profile = storage::load_profile(profile_id.clone())?;
 
     let mut seeds = profile_seeds(&profile);
     let mut existing_ids: Vec<String> = seeds.iter().map(|s| s.video_id.clone()).collect();
@@ -154,6 +160,12 @@ pub async fn start_discovery_focused(
                 }
                 existing_ids.push(r.video_id.clone());
                 resolved_updates.push((r.sound_id.clone(), r.video_id.clone()));
+            }
+        }
+        // Matched just now: they count for a focused run too.
+        for (sound_id, video_id) in &resolved_updates {
+            if let Some(sound) = profile.sounds.iter_mut().find(|s| &s.id == sound_id) {
+                sound.resolved_video_id = Some(video_id.clone());
             }
         }
 
@@ -238,7 +250,14 @@ pub async fn start_discovery_focused(
         return Err("Discovery cancelled".to_string());
     }
 
-    if background {
+    // A focused run is a passing look: the saved pool stays the profile's.
+    if focus.is_some() {
+        if !background {
+            state.emit(CoreEvent::DiscoveryComplete {
+                count: suggestions.len(),
+            });
+        }
+    } else if background {
         discovery::cache::DiscoveryCache::append_suggestions(
             &profile_id,
             suggestions.clone(),
