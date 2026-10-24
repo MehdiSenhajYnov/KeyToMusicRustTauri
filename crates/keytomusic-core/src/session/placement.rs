@@ -795,6 +795,18 @@ mod tests {
     }
 
     #[test]
+    fn titles_name_their_mood() {
+        assert_eq!(guess_mood("Epic Battle Theme (Naruto OST)"), Some(BaseMood::Epic));
+        assert_eq!(guess_mood("Sad Piano - Farewell"), Some(BaseMood::Sadness));
+        assert_eq!(guess_mood("Musique mystérieuse"), Some(BaseMood::Mystery));
+        assert_eq!(guess_mood("Bataille Combat"), Some(BaseMood::Epic));
+        assert_eq!(guess_mood("Funny Cartoon BGM"), Some(BaseMood::Comedy));
+        assert_eq!(guess_mood("Door creaking"), None);
+        assert_eq!(guess_mood("Sad but funny"), None);
+        assert_eq!(guess_mood(""), None);
+    }
+
+    #[test]
     fn titles_and_lengths_tell_what_a_sound_is() {
         assert_eq!(guess_role(&hint("Epic Battle Theme (Naruto OST)", 180.0)), SoundRole::Music);
         assert_eq!(guess_role(&hint("Rain sound for sleeping", 600.0)), SoundRole::Ambience);
