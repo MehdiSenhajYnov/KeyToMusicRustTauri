@@ -76,7 +76,7 @@ pub async fn start_discovery(
     exclude_ids: Vec<String>,
     background: bool,
 ) -> Result<Vec<DiscoverySuggestion>, String> {
-    start_discovery_focused(state, profile_id, exclude_ids, background, None).await
+    start_discovery_focused(state, profile_id, exclude_ids, background, None, None).await
 }
 
 /// Whether the sounds of `mood` can start a discovery (YouTube sounds, or
@@ -102,13 +102,15 @@ fn mood_videos(profile: &Profile, mood: BaseMood) -> std::collections::HashSet<S
 }
 
 /// [`start_discovery`], from the sounds of one mood only when `focus` is set
-/// (suggestions then fit that mood's keys).
+/// (suggestions then fit that mood's keys), or from one video only when
+/// `like` is ("more like this").
 pub async fn start_discovery_focused(
     state: &AppState,
     profile_id: String,
     exclude_ids: Vec<String>,
     background: bool,
     focus: Option<BaseMood>,
+    like: Option<discovery::engine::SeedInfo>,
 ) -> Result<Vec<DiscoverySuggestion>, String> {
     let cancel_flag = {
         let mut active = state
@@ -187,7 +189,9 @@ pub async fn start_discovery_focused(
     // The cache belongs to all the profile's seeds, focused or not.
     let seed_ids: Vec<String> = seeds.iter().map(|s| s.video_id.clone()).collect();
     let seed_hash = discovery::cache::DiscoveryCache::compute_seed_hash(&seed_ids);
-    if let Some(mood) = focus {
+    if let Some(seed) = like.clone() {
+        seeds = vec![seed];
+    } else if let Some(mood) = focus {
         let videos = mood_videos(&profile, mood);
         seeds.retain(|s| videos.contains(&s.video_id));
         if seeds.is_empty() {
@@ -251,7 +255,7 @@ pub async fn start_discovery_focused(
     }
 
     // A focused run is a passing look: the saved pool stays the profile's.
-    if focus.is_some() {
+    if focus.is_some() || like.is_some() {
         if !background {
             state.emit(CoreEvent::DiscoveryComplete {
                 count: suggestions.len(),

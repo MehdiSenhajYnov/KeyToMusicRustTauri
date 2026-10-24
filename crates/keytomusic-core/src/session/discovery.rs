@@ -111,6 +111,8 @@ pub struct DiscoverySnapshot {
     pub preview_volume: f32,
     /// The mood suggestions come from (None: all the profile's sounds).
     pub focus: Option<crate::types::BaseMood>,
+    /// The video suggestions come from ("more like this"), by title.
+    pub like: Option<String>,
 }
 
 #[derive(Default)]
@@ -138,9 +140,16 @@ pub(super) struct DiscoveryData {
     stale: bool,
     /// Suggestions only from the sounds of this mood.
     focus: Option<crate::types::BaseMood>,
+    /// Suggestions only from this one video ("more like this").
+    like: Option<crate::discovery::engine::SeedInfo>,
 }
 
 impl DiscoveryData {
+    /// A selection narrowed to a mood or a video: not the saved one.
+    fn narrowed(&self) -> bool {
+        self.focus.is_some() || self.like.is_some()
+    }
+
     fn visible(&self) -> &[DiscoverySuggestion] {
         &self.all[..self.revealed.min(self.all.len())]
     }
@@ -198,6 +207,7 @@ impl Session {
             progress: d.progress.clone(),
             preview_volume: d.preview_volume.unwrap_or(0.5),
             focus: d.focus,
+            like: d.like.as_ref().map(|s| s.sound_name.clone()),
         }
     }
 
@@ -297,7 +307,10 @@ impl Session {
         }
         self.discovery_changed();
         let session = self.arc();
-        let focus = self.disco().focus;
+        let (focus, like) = {
+            let d = self.disco();
+            (d.focus, d.like.clone())
+        };
         self.runtime.spawn(async move {
             let result = service::discovery::start_discovery_focused(
                 &session.state,
@@ -305,6 +318,7 @@ impl Session {
                 exclude,
                 false,
                 focus,
+                like,
             )
             .await;
             if session.disco().gen != gen {
@@ -322,7 +336,7 @@ impl Session {
                         let d = session.disco();
                         (d.all.clone(), d.cursor, d.revealed, d.visited as i32)
                     };
-                    let saved = session.disco().focus.is_none();
+                    let saved = !session.disco().narrowed();
                     if let (true, Some(profile_id)) = (saved, session.disco().profile_id.clone()) {
                         let _ = crate::discovery::cache::DiscoveryCache::update_pool(
                             &profile_id,
@@ -474,8 +488,8 @@ impl Session {
     fn discovery_persist_cursor(&self) {
         let (profile_id, gen) = {
             let mut d = self.disco();
-            // A focused selection is not the saved one.
-            if d.focus.is_some() {
+            // A narrowed selection is not the saved one.
+            if d.narrowed() {
                 return;
             }
             d.cursor_save_gen += 1;
@@ -508,7 +522,7 @@ impl Session {
     }
 
     fn discovery_background_fetch(&self) {
-        let (profile_id, pool_ids, gen, focus) = {
+        let (profile_id, pool_ids, gen, focus, like) = {
             let mut d = self.disco();
             let remaining = d.all.len().saturating_sub(d.revealed);
             if (remaining > BACKGROUND_THRESHOLD && !d.stale)
@@ -529,6 +543,7 @@ impl Session {
                 d.all.iter().map(|s| s.video_id.clone()).collect::<Vec<_>>(),
                 d.gen,
                 d.focus,
+                d.like.clone(),
             )
         };
         let session = self.arc();
@@ -540,6 +555,7 @@ impl Session {
                     pool_ids,
                     true,
                     focus,
+                    like,
                 )
                 .await;
             let mut d = session.disco();
@@ -734,8 +750,11 @@ impl Session {
     /// Suggestions from the sounds of `focus` only (None: all of them): a
     /// new selection starts at once.
     pub fn discovery_set_focus(&self, focus: Option<crate::types::BaseMood>) {
-        if self.disco().focus == focus {
-            return;
+        {
+            let d = self.disco();
+            if d.focus == focus && d.like.is_none() {
+                return;
+            }
         }
         // Back to all sounds: the saved selection.
         let Some(mood) = focus else {
@@ -759,12 +778,48 @@ impl Session {
                 return;
             }
             d.focus = focus;
+            d.like = None;
             d.gen += 1;
             d.reset_in_flight();
             d.exhausted = false;
             // Seen ones do not come back; the rest of the pool may.
             let start = ((d.visited + 1).max(0) as usize).min(d.all.len());
             let seen: Vec<String> = d.all[..start].iter().map(|s| s.video_id.clone()).collect();
+            d.all.clear();
+            d.revealed = 0;
+            d.cursor = 0;
+            d.visited = -1;
+            (d.gen, seen)
+        };
+        self.discovery_stop_preview();
+        self.discovery_changed();
+        self.discovery_generate(gen, exclude);
+    }
+
+    /// Suggestions close to one card ("more like this"): a new selection
+    /// from that video alone.
+    pub fn discovery_more_like(&self, video_id: &str) {
+        let (gen, exclude) = {
+            let mut d = self.disco();
+            let Some(card) = d.all.iter().find(|s| s.video_id == video_id).cloned() else {
+                return;
+            };
+            if d.profile_id.is_none() {
+                return;
+            }
+            d.like = Some(crate::discovery::engine::SeedInfo {
+                video_id: card.video_id.clone(),
+                sound_name: card.title.clone(),
+            });
+            d.focus = None;
+            d.gen += 1;
+            d.reset_in_flight();
+            d.exhausted = false;
+            // Seen ones (and the card itself) do not come back.
+            let start = ((d.visited + 1).max(0) as usize).min(d.all.len());
+            let mut seen: Vec<String> =
+                d.all[..start].iter().map(|s| s.video_id.clone()).collect();
+            seen.push(card.video_id);
             d.all.clear();
             d.revealed = 0;
             d.cursor = 0;
