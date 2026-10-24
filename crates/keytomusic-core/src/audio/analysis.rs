@@ -18,6 +18,10 @@ pub struct WaveformData {
     pub duration: f64,
     pub sample_rate: u32,
     pub suggested_momentum: Option<f64>,
+    /// Overall RMS level (0–1, before `points` are scaled to their peak), to
+    /// even out volumes between sounds. Absent from older cache entries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loudness: Option<f32>,
 }
 
 /// Audio metadata tags extracted from a local file.
@@ -274,6 +278,7 @@ fn compute_waveform_streaming(
             duration,
             sample_rate,
             suggested_momentum: None,
+            loudness: Some(0.0),
         });
     }
 
@@ -286,6 +291,8 @@ fn compute_waveform_streaming(
             rms_values.push(0.0);
         }
     }
+
+    let loudness = overall_rms(&rms_values);
 
     // Normalize to 0.0-1.0
     let max_val = rms_values.iter().cloned().fold(0.0f32, f32::max);
@@ -323,6 +330,7 @@ fn compute_waveform_streaming(
         duration,
         sample_rate,
         suggested_momentum,
+        loudness: Some(loudness),
     })
 }
 
@@ -487,8 +495,11 @@ pub fn compute_waveform_sampled(
             duration,
             sample_rate,
             suggested_momentum: None,
+            loudness: Some(0.0),
         });
     }
+
+    let loudness = overall_rms(&rms_values);
 
     // Normalize to 0.0-1.0
     let max_val = rms_values.iter().cloned().fold(0.0f32, f32::max);
@@ -522,7 +533,18 @@ pub fn compute_waveform_sampled(
         duration,
         sample_rate,
         suggested_momentum,
+        loudness: Some(loudness),
     })
+}
+
+/// Level of a whole sound from per-segment RMS values: the root of the mean
+/// power, skipping silent segments so long fades do not drag it down.
+fn overall_rms(rms_values: &[f32]) -> f32 {
+    let audible: Vec<f32> = rms_values.iter().copied().filter(|v| *v > 1e-4).collect();
+    if audible.is_empty() {
+        return 0.0;
+    }
+    (audible.iter().map(|v| v * v).sum::<f32>() / audible.len() as f32).sqrt()
 }
 
 /// Adaptive thresholds computed from the waveform's amplitude distribution.
@@ -883,6 +905,53 @@ fn file_mtime(path: &str) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 16-bit mono WAV of a 440 Hz sine at `amplitude` (0–1).
+    fn sine_wav(dir: &std::path::Path, name: &str, amplitude: f32, seconds: u32) -> String {
+        let rate = 22_050u32;
+        let samples: Vec<i16> = (0..rate * seconds)
+            .map(|i| {
+                let t = i as f32 / rate as f32;
+                (amplitude * (2.0 * std::f32::consts::PI * 440.0 * t).sin() * i16::MAX as f32)
+                    as i16
+            })
+            .collect();
+        let data_len = (samples.len() * 2) as u32;
+        let mut bytes = Vec::with_capacity(44 + data_len as usize);
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
+        bytes.extend_from_slice(&rate.to_le_bytes());
+        bytes.extend_from_slice(&(rate * 2).to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        for sample in samples {
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        let path = dir.join(name);
+        std::fs::write(&path, bytes).unwrap();
+        path.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn loudness_tracks_the_signal_level_not_its_peak() {
+        let dir = tempfile::tempdir().unwrap();
+        let loud = sine_wav(dir.path(), "loud.wav", 0.5, 3);
+        let quiet = sine_wav(dir.path(), "quiet.wav", 0.25, 3);
+        let loud = compute_waveform_sampled(&loud, 50, None).unwrap();
+        let quiet = compute_waveform_sampled(&quiet, 50, None).unwrap();
+        let (loud, quiet) = (loud.loudness.unwrap(), quiet.loudness.unwrap());
+        // RMS of a sine is amplitude / sqrt(2).
+        assert!((loud - 0.354).abs() < 0.03, "loud = {loud}");
+        assert!((quiet - 0.177).abs() < 0.02, "quiet = {quiet}");
+        // Peak-normalised points would hide the difference; loudness keeps it.
+        assert!((loud / quiet - 2.0).abs() < 0.1);
+    }
 
     #[test]
     fn mp3_waveform_keeps_reservoir_and_silence() {

@@ -58,6 +58,30 @@ pub async fn get_waveform(
     Ok(result)
 }
 
+/// Overall level of a sound (see `WaveformData::loudness`), from the cache
+/// when it already has it, else measured once and cached with the waveform.
+pub async fn get_loudness(state: &AppState, path: String) -> Result<f32, String> {
+    {
+        let mut cache = state.waveform_cache.lock().unwrap();
+        if let Some(loudness) = cache.get(&path).and_then(|data| data.loudness) {
+            return Ok(loudness);
+        }
+    }
+    let pool = state.cpu_pool.clone();
+    let measured = path.clone();
+    let data = tokio::task::spawn_blocking(move || {
+        pool.install(|| analysis::compute_waveform_sampled(&measured, WAVEFORM_POINTS, None))
+    })
+    .await
+    .map_err(|e| format!("Loudness task failed: {}", e))??;
+    let loudness = data.loudness.unwrap_or(0.0);
+    state.waveform_cache.lock().unwrap().insert(path, data);
+    Ok(loudness)
+}
+
+/// Points of the waveforms measured for loudness (as the native host uses).
+const WAVEFORM_POINTS: usize = 100;
+
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WaveformBatchEntry {
