@@ -69,6 +69,21 @@ pub struct Placement {
     pub reason: String,
 }
 
+impl Placement {
+    /// It starts a new group (grouped track).
+    pub fn starts_group(&self) -> bool {
+        self.joins == 0 && self.reason.starts_with("nouveau groupe")
+    }
+
+    /// Name for the key it creates: a new group of a mood reads as that
+    /// mood on the keyboard ("Comédie"), like the user's other groups.
+    pub fn key_name(&self) -> Option<String> {
+        self.starts_group()
+            .then(|| self.mood.map(|m| mood_label(m).to_string()))
+            .flatten()
+    }
+}
+
 // ── What a sound is ──
 
 /// Words that say "background sound" on their own.
@@ -565,7 +580,7 @@ pub fn place_all_reserving(
                             key: key.clone(),
                             track: placement.track_id.clone(),
                             mood: placement.mood,
-                            group: placement.reason.starts_with("nouveau groupe"),
+                            group: placement.starts_group(),
                             count: 1,
                             loop_mode: placement.loop_mode.clone(),
                         });
@@ -978,6 +993,8 @@ mod tests {
         let keys: Vec<_> = placed.iter().map(|x| x.key.clone().unwrap()).collect();
         assert_eq!(keys, ["KeyW", "KeyW", "KeyW"], "{placed:?}");
         assert_eq!(placed[2].joins, 2);
+        assert_eq!(placed[0].key_name().as_deref(), Some("Comédie"));
+        assert_eq!(placed[1].key_name(), None, "joins the group");
         // A first group of music does not loop like an ambience.
         assert_eq!(placed[0].loop_mode, LoopMode::Off);
     }

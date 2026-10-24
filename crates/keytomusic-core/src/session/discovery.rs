@@ -48,6 +48,8 @@ pub struct Enrichment {
     pub mood: Option<crate::types::BaseMood>,
     pub loop_mode: Option<LoopMode>,
     pub reason: Option<String>,
+    /// Name of the new key (a new group reads as its mood).
+    key_name: Option<String>,
     download_id: Option<String>,
 }
 
@@ -69,6 +71,7 @@ impl Enrichment {
     }
 
     fn take_placement(&mut self, placed: placement::Placement) {
+        self.key_name = placed.key_name();
         self.key = placed.key;
         self.track_id = placed.track_id;
         self.role = Some(placed.role);
@@ -866,6 +869,7 @@ impl Session {
         if key.is_some() {
             e.key = key;
             e.reason = Some("touche choisie".into());
+            e.key_name = None;
         }
         if track_id.is_some() {
             e.track_id = track_id;
@@ -1023,7 +1027,7 @@ impl Session {
                         sound_ids: vec![id],
                         loop_mode: info.loop_mode.clone().unwrap_or(LoopMode::Off),
                         current_index: 0,
-                        name: None,
+                        name: info.key_name.clone(),
                         mood,
                         mood_intensity: None,
                     })
