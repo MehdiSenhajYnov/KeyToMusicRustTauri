@@ -10,6 +10,7 @@
 pub mod discovery;
 pub mod editor;
 pub mod keymap;
+pub mod placement;
 pub mod rules;
 
 use std::collections::{HashMap, HashSet};

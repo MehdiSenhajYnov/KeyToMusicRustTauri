@@ -162,7 +162,7 @@ pub struct AutoAssign {
     pub track_id: Option<String>,
 }
 
-fn youtube_video_id(url: &str) -> Option<&str> {
+pub(crate) fn youtube_video_id(url: &str) -> Option<&str> {
     if let Some(pos) = url.find("v=") {
         let start = pos + 2;
         let preceded_ok = pos > 0 && matches!(url.as_bytes()[pos - 1], b'?' | b'&');
