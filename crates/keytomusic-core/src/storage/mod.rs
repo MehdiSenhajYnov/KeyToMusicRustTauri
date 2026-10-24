@@ -10,13 +10,35 @@ pub fn atomic_write(path: &std::path::Path, contents: &[u8]) -> Result<(), Strin
     use std::io::Write;
     let parent = path.parent().ok_or("Missing destination directory")?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    if path.is_dir() {
+        return Err(format!("Could not save {}: it is a folder", path.display()));
+    }
     let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
     temp.write_all(contents).map_err(|e| e.to_string())?;
     temp.as_file().sync_all().map_err(|e| e.to_string())?;
-    temp.persist(path)
-        .map_err(|e| format!("Could not save {}: {}", path.display(), e))?;
-    Ok(())
+    let mut attempt = 0;
+    loop {
+        match temp.persist(path) {
+            Ok(_) => return Ok(()),
+            // Windows refuses to replace a file that another writer, a reader,
+            // an antivirus or a sync client holds at that instant: wait a little.
+            Err(error)
+                if error.error.kind() == std::io::ErrorKind::PermissionDenied
+                    && attempt < PERSIST_RETRIES =>
+            {
+                temp = error.file;
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(5 * attempt));
+            }
+            Err(error) => {
+                return Err(format!("Could not save {}: {}", path.display(), error));
+            }
+        }
+    }
 }
+
+/// Up to about a second of retries in all.
+const PERSIST_RETRIES: u64 = 20;
 
 #[cfg(test)]
 mod tests {
