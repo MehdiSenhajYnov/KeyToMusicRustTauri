@@ -104,6 +104,8 @@ pub struct DiscoverySnapshot {
     pub resolving_locals: Option<usize>,
     pub progress: Option<(usize, usize, String)>,
     pub preview_volume: f32,
+    /// The mood suggestions come from (None: all the profile's sounds).
+    pub focus: Option<crate::types::BaseMood>,
 }
 
 #[derive(Default)]
@@ -129,6 +131,8 @@ pub(super) struct DiscoveryData {
     exhausted: bool,
     /// The saved pool came from other seeds: refill once even if not low.
     stale: bool,
+    /// Suggestions only from the sounds of this mood.
+    focus: Option<crate::types::BaseMood>,
 }
 
 impl DiscoveryData {
@@ -188,6 +192,7 @@ impl Session {
             resolving_locals: d.resolving,
             progress: d.progress.clone(),
             preview_volume: d.preview_volume.unwrap_or(0.5),
+            focus: d.focus,
         }
     }
 
@@ -276,10 +281,16 @@ impl Session {
         }
         self.discovery_changed();
         let session = self.arc();
+        let focus = self.disco().focus;
         self.runtime.spawn(async move {
-            let result =
-                service::discovery::start_discovery(&session.state, profile_id, exclude, false)
-                    .await;
+            let result = service::discovery::start_discovery_focused(
+                &session.state,
+                profile_id,
+                exclude,
+                false,
+                focus,
+            )
+            .await;
             if session.disco().gen != gen {
                 return;
             }
@@ -470,7 +481,7 @@ impl Session {
     }
 
     fn discovery_background_fetch(&self) {
-        let (profile_id, pool_ids, gen) = {
+        let (profile_id, pool_ids, gen, focus) = {
             let mut d = self.disco();
             let remaining = d.all.len().saturating_sub(d.revealed);
             if (remaining > BACKGROUND_THRESHOLD && !d.stale)
@@ -490,13 +501,20 @@ impl Session {
                 profile_id,
                 d.all.iter().map(|s| s.video_id.clone()).collect::<Vec<_>>(),
                 d.gen,
+                d.focus,
             )
         };
         let session = self.arc();
         self.runtime.spawn(async move {
             let result =
-                service::discovery::start_discovery(&session.state, profile_id, pool_ids, true)
-                    .await;
+                service::discovery::start_discovery_focused(
+                    &session.state,
+                    profile_id,
+                    pool_ids,
+                    true,
+                    focus,
+                )
+                .await;
             let mut d = session.disco();
             if d.gen != gen {
                 return;
@@ -684,6 +702,32 @@ impl Session {
         }
         self.discovery_changed();
         self.discovery_after_move();
+    }
+
+    /// Suggestions from the sounds of `focus` only (None: all of them): a
+    /// new selection starts at once.
+    pub fn discovery_set_focus(&self, focus: Option<crate::types::BaseMood>) {
+        let (gen, exclude) = {
+            let mut d = self.disco();
+            if d.focus == focus || d.profile_id.is_none() {
+                return;
+            }
+            d.focus = focus;
+            d.gen += 1;
+            d.reset_in_flight();
+            d.exhausted = false;
+            // Seen ones do not come back; the rest of the pool may.
+            let start = ((d.visited + 1).max(0) as usize).min(d.all.len());
+            let seen: Vec<String> = d.all[..start].iter().map(|s| s.video_id.clone()).collect();
+            d.all.clear();
+            d.revealed = 0;
+            d.cursor = 0;
+            d.visited = -1;
+            (d.gen, seen)
+        };
+        self.discovery_stop_preview();
+        self.discovery_changed();
+        self.discovery_generate(gen, exclude);
     }
 
     pub fn discovery_cancel(&self) {

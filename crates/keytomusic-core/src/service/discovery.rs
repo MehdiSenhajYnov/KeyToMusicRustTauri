@@ -5,7 +5,7 @@ use crate::discovery::{self, engine::DiscoverySuggestion};
 use crate::events::CoreEvent;
 use crate::state::AppState;
 use crate::storage;
-use crate::types::{Profile, SoundSource};
+use crate::types::{BaseMood, Profile, SoundSource};
 use crate::youtube;
 
 /// Seeds a run actually fetches Mixes for.
@@ -76,6 +76,34 @@ pub async fn start_discovery(
     exclude_ids: Vec<String>,
     background: bool,
 ) -> Result<Vec<DiscoverySuggestion>, String> {
+    start_discovery_focused(state, profile_id, exclude_ids, background, None).await
+}
+
+/// The videos of the sounds on keys of `mood`: what a discovery focused on
+/// that mood starts from.
+fn mood_videos(profile: &Profile, mood: BaseMood) -> std::collections::HashSet<String> {
+    profile
+        .key_bindings
+        .iter()
+        .filter(|b| b.mood == Some(mood))
+        .flat_map(|b| b.sound_ids.iter())
+        .filter_map(|id| profile.sounds.iter().find(|s| &s.id == id))
+        .filter_map(|s| match &s.source {
+            SoundSource::YouTube { url, .. } => youtube::downloader::extract_video_id(url),
+            SoundSource::Local { .. } => s.resolved_video_id.clone(),
+        })
+        .collect()
+}
+
+/// [`start_discovery`], from the sounds of one mood only when `focus` is set
+/// (suggestions then fit that mood's keys).
+pub async fn start_discovery_focused(
+    state: &AppState,
+    profile_id: String,
+    exclude_ids: Vec<String>,
+    background: bool,
+    focus: Option<BaseMood>,
+) -> Result<Vec<DiscoverySuggestion>, String> {
     let cancel_flag = {
         let mut active = state
             .discovery_cancel
@@ -144,8 +172,16 @@ pub async fn start_discovery(
         );
     }
 
+    // The cache belongs to all the profile's seeds, focused or not.
     let seed_ids: Vec<String> = seeds.iter().map(|s| s.video_id.clone()).collect();
     let seed_hash = discovery::cache::DiscoveryCache::compute_seed_hash(&seed_ids);
+    if let Some(mood) = focus {
+        let videos = mood_videos(&profile, mood);
+        seeds.retain(|s| videos.contains(&s.video_id));
+        if seeds.is_empty() {
+            return Err("No YouTube sound of this mood to start from".to_string());
+        }
+    }
 
     // Dismissed and already-seen suggestions from previous runs don't come back.
     let previous = discovery::cache::DiscoveryCache::load(&profile_id);
