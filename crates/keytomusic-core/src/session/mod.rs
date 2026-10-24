@@ -673,9 +673,13 @@ impl Session {
                 self.toast(
                     ToastKind::Info,
                     format!(
-                        "Mood: {} {} (no tagged keys)",
-                        rules::mood_display(mood),
-                        rules::intensity_display(intensity)
+                        "Ambiance {} ({}) : aucune touche associée",
+                        placement::mood_label(mood),
+                        match intensity {
+                            crate::types::MoodIntensity::Low => "calme",
+                            crate::types::MoodIntensity::Medium => "modérée",
+                            crate::types::MoodIntensity::High => "intense",
+                        }
                     ),
                 );
                 return;
@@ -872,7 +876,7 @@ impl Session {
         storage::list_profiles().unwrap_or_else(|error| {
             self.toast(
                 ToastKind::Error,
-                format!("Could not list profiles: {error}"),
+                format!("Impossible de lister les profils : {error}"),
             );
             Vec::new()
         })
@@ -1083,7 +1087,7 @@ impl Session {
                 self.set_save_status(SaveStatus::Error);
                 self.toast(
                     ToastKind::Error,
-                    format!("Changes could not be saved: {error}"),
+                    format!("Modifications non enregistrées : {error}"),
                 );
                 false
             }

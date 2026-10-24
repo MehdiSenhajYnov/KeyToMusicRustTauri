@@ -298,7 +298,7 @@ impl Session {
                 Ok(results) => {
                     session.discovery_merge(results.clone());
                     if results.is_empty() {
-                        session.toast(ToastKind::Info, "No new suggestions found");
+                        session.toast(ToastKind::Info, "Pas de nouvelle suggestion");
                     }
                     // Save the carousel's own order (visited items stay locked
                     // in front), so a reload lands on the same card.
@@ -317,7 +317,13 @@ impl Session {
                     }
                 }
                 Err(error) if error.contains("cancelled") => {}
-                Err(error) => session.toast(ToastKind::Error, format!("Discovery failed: {error}")),
+                Err(error) if error.contains("of this mood") => session.toast(
+                    ToastKind::Info,
+                    "Aucun son YouTube de cette ambiance pour démarrer",
+                ),
+                Err(error) => {
+                    session.toast(ToastKind::Error, format!("Découverte impossible : {error}"))
+                }
             }
             {
                 let mut d = session.disco();
@@ -928,7 +934,7 @@ impl Session {
             _ => {
                 self.toast(
                     ToastKind::Info,
-                    format!("Downloading: {}", suggestion.title),
+                    format!("Téléchargement : {}", suggestion.title),
                 );
                 let sound = self
                     .download_youtube(suggestion.url.clone(), format!("disc_{video_id}"))
@@ -990,7 +996,7 @@ impl Session {
                 crate::discovery::cache::DiscoveryCache::remove_suggestion(&profile_id, video_id);
         }
         self.discovery_remove(video_id);
-        self.toast(ToastKind::Success, format!("Added: {name}"));
+        self.toast(ToastKind::Success, format!("Ajouté : {name}"));
         Ok(())
     }
 }
