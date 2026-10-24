@@ -2,7 +2,33 @@ use crate::types::AppConfig;
 use std::fs;
 use std::path::PathBuf;
 
+/// Where profiles, caches and logs live. `KEYTOMUSIC_DATA_DIR` overrides it
+/// (tests, separate setups); a `portable` file next to the executable keeps
+/// everything in a `data` folder beside it (KeyToMusic on a USB stick).
 pub fn get_app_data_dir() -> PathBuf {
+    custom_data_dir()
+        .cloned()
+        .unwrap_or_else(system_app_data_dir)
+}
+
+/// The data folder when it is not the system default (see [`get_app_data_dir`]):
+/// hosts keep their own settings there too.
+pub fn custom_data_dir() -> Option<&'static PathBuf> {
+    static DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        if let Some(dir) = std::env::var_os("KEYTOMUSIC_DATA_DIR").filter(|dir| !dir.is_empty()) {
+            return Some(PathBuf::from(dir));
+        }
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.to_path_buf()))
+            .filter(|dir| dir.join("portable").is_file())
+            .map(|dir| dir.join("data"))
+    })
+    .as_ref()
+}
+
+fn system_app_data_dir() -> PathBuf {
     let base = dirs::data_dir()
         .expect("Could not determine system data directory — the app cannot function without it");
 
