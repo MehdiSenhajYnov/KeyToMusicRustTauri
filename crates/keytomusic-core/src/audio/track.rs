@@ -11,6 +11,10 @@ use crate::types::SoundId;
 /// eliminates audible clicks while staying responsive.
 const VOLUME_RAMP_STEP: f32 = 0.1;
 
+/// Ducking moves fast out of the way and comes back gently (full scale per second).
+const DUCK_ATTACK_PER_SEC: f32 = 1.0 / 0.12;
+const DUCK_RELEASE_PER_SEC: f32 = 1.0 / 0.8;
+
 /// Fade applied to a sink that must be cut (re-trigger during a crossfade),
 /// short enough to feel instant but long enough to avoid a click.
 const CUT_FADE: Duration = Duration::from_millis(60);
@@ -47,6 +51,11 @@ pub struct AudioTrack {
     // When playback was paused (position and sinks are frozen until resume)
     paused_at: Option<Instant>,
 
+    // Ducking: gain applied on top of everything while another track's
+    // effect plays (1.0 = untouched), moving toward `duck_target`.
+    duck_gain: f32,
+    duck_target: f32,
+
     // Reference to the output stream handle
     stream_handle: OutputStreamHandle,
 }
@@ -66,6 +75,8 @@ impl AudioTrack {
             current_volume: 0.0,
             target_volume: 0.0,
             paused_at: None,
+            duck_gain: 1.0,
+            duck_target: 1.0,
             stream_handle,
         }
     }
@@ -87,7 +98,37 @@ impl AudioTrack {
             } else {
                 self.current_volume -= VOLUME_RAMP_STEP;
             }
-            sink.set_volume(self.current_volume.max(0.0));
+            sink.set_volume((self.current_volume * self.duck_gain).max(0.0));
+        }
+    }
+
+    /// Where ducking should bring this track (1.0 = not ducked).
+    pub fn set_duck_target(&mut self, target: f32) {
+        self.duck_target = target.clamp(0.0, 1.0);
+    }
+
+    /// Advance the duck gain by `dt` seconds toward its target.
+    pub fn tick_duck(&mut self, dt: f32) {
+        let diff = self.duck_target - self.duck_gain;
+        if diff.abs() < f32::EPSILON {
+            return;
+        }
+        let rate = if diff < 0.0 {
+            DUCK_ATTACK_PER_SEC
+        } else {
+            DUCK_RELEASE_PER_SEC
+        };
+        let step = rate * dt;
+        self.duck_gain = if diff.abs() <= step {
+            self.duck_target
+        } else {
+            self.duck_gain + step.copysign(diff)
+        };
+        // During a crossfade, update_crossfade applies the gain on every tick.
+        if self.crossfade.is_none() {
+            if let Some(ref sink) = self.sink {
+                sink.set_volume((self.current_volume * self.duck_gain).max(0.0));
+            }
         }
     }
 
@@ -105,9 +146,11 @@ impl AudioTrack {
         });
     }
 
-    /// True while a crossfade or a cut fade-out needs regular ticks.
+    /// True while a crossfade, a cut fade-out or ducking needs regular ticks.
     pub fn is_animating(&self) -> bool {
-        self.crossfade.is_some() || !self.fading.is_empty()
+        self.crossfade.is_some()
+            || !self.fading.is_empty()
+            || (self.duck_gain - self.duck_target).abs() >= f32::EPSILON
     }
 
     fn fade_out(&mut self, sink: Sink, from: f32, duration: Duration) {
@@ -153,7 +196,7 @@ impl AudioTrack {
                     sink.stop();
                 }
             }
-            new_sink.set_volume(final_volume);
+            new_sink.set_volume(final_volume * self.duck_gain);
             self.current_volume = final_volume;
             self.target_volume = final_volume;
         }
@@ -276,7 +319,7 @@ impl AudioTrack {
             }
             self.current_volume = self.target_volume;
             if let Some(ref sink) = self.sink {
-                sink.set_volume(self.current_volume);
+                sink.set_volume(self.current_volume * self.duck_gain);
             }
         }
         for fading in self.fading.drain(..) {
@@ -355,7 +398,7 @@ impl AudioTrack {
                 // Set final volume on incoming
                 let final_volume = sound_volume * self.volume * master_volume;
                 if let Some(ref sink) = self.sink {
-                    sink.set_volume(final_volume);
+                    sink.set_volume(final_volume * self.duck_gain);
                 }
                 self.current_volume = final_volume;
                 self.target_volume = final_volume;
@@ -366,10 +409,10 @@ impl AudioTrack {
             let base_volume = sound_volume * self.volume * master_volume;
 
             if let Some(ref outgoing) = self.outgoing_sink {
-                outgoing.set_volume(crossfade.outgoing_gain());
+                outgoing.set_volume(crossfade.outgoing_gain() * self.duck_gain);
             }
             if let Some(ref sink) = self.sink {
-                sink.set_volume(base_volume * in_vol);
+                sink.set_volume(base_volume * in_vol * self.duck_gain);
                 self.current_volume = base_volume * in_vol;
             }
             return true;

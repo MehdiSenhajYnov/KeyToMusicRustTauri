@@ -32,6 +32,11 @@ fn validate_config_updates(updates: &serde_json::Value) -> Result<(), String> {
             return Err("Master volume must be between 0 and 1".into());
         }
     }
+    if let Some(v) = updates.get("duckLevel") {
+        if !v.as_f64().is_some_and(|v| (0.0..=1.0).contains(&v)) {
+            return Err("Duck level must be between 0 and 1".into());
+        }
+    }
     ranged(
         updates,
         "crossfadeDuration",
@@ -81,6 +86,9 @@ fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
     }
     if let Some(v) = updates.get("crossfadeDuration").and_then(|v| v.as_u64()) {
         config.crossfade_duration = u32::try_from(v).unwrap_or(u32::MAX).clamp(100, 2000);
+    }
+    if let Some(v) = updates.get("duckLevel").and_then(|v| v.as_f64()) {
+        config.duck_level = (v as f32).clamp(0.0, 1.0);
     }
     if let Some(v) = updates.get("stopFadeMs").and_then(|v| v.as_u64()) {
         config.stop_fade_ms = u32::try_from(v).unwrap_or(u32::MAX).min(3000);
@@ -183,6 +191,7 @@ fn sync_runtime_dependent_config(state: &AppState, config: &AppConfig) {
         let _ = engine.set_audio_device(config.audio_device.clone());
         let _ = engine.set_master_volume(config.master_volume);
         engine.set_stop_fade(config.stop_fade_ms);
+        engine.set_duck_level(config.duck_level);
     }
 
     state.key_detector.set_enabled(config.key_detection_enabled);

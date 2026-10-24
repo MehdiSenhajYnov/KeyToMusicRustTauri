@@ -77,6 +77,7 @@ pub fn add_track(profile: &mut Profile, name: &str) -> Result<String, String> {
         id: id.clone(),
         name: name.trim().to_string(),
         volume: 1.0,
+        ducks_others: false,
     });
     Ok(id)
 }
@@ -84,6 +85,12 @@ pub fn add_track(profile: &mut Profile, name: &str) -> Result<String, String> {
 pub fn rename_track(profile: &mut Profile, track_id: &str, name: &str) {
     if let Some(track) = profile.tracks.iter_mut().find(|t| t.id == track_id) {
         track.name = name.trim().to_string();
+    }
+}
+
+pub fn set_track_ducks_others(profile: &mut Profile, track_id: &str, ducks: bool) {
+    if let Some(track) = profile.tracks.iter_mut().find(|t| t.id == track_id) {
+        track.ducks_others = ducks;
     }
 }
 
@@ -536,11 +543,13 @@ pub(crate) mod tests {
                     id: "t1".into(),
                     name: "OST".into(),
                     volume: 1.0,
+                    ducks_others: false,
                 },
                 Track {
                     id: "t2".into(),
                     name: "SFX".into(),
                     volume: 1.0,
+                    ducks_others: false,
                 },
             ],
             key_bindings: vec![

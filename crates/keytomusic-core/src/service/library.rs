@@ -163,6 +163,7 @@ pub fn import_legacy_save(path: String) -> Result<Profile, String> {
         id: track_id.clone(),
         name: "OST".to_string(),
         volume: 1.0,
+        ducks_others: false,
     };
 
     let mut sounds: Vec<Sound> = Vec::new();

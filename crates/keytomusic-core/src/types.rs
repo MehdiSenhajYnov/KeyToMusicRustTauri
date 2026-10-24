@@ -271,6 +271,10 @@ pub struct Track {
     pub name: String,
     #[serde(default = "default_volume")]
     pub volume: f32,
+    /// While this track plays, the other tracks are lowered (sound effects
+    /// over the music).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ducks_others: bool,
 }
 
 fn default_volume() -> f32 {
@@ -309,6 +313,8 @@ pub struct AppConfig {
     pub crossfade_duration: u32,
     /// Fade-out when sounds are stopped (Stop all, a track's stop), in ms.
     pub stop_fade_ms: u32,
+    /// Gain of the other tracks while a ducking track plays (0–1).
+    pub duck_level: f32,
     pub key_cooldown: u32,
     pub current_profile_id: Option<ProfileId>,
     #[serde(default)]
@@ -345,6 +351,7 @@ impl Default for AppConfig {
             key_detection_shortcut: vec![],
             crossfade_duration: 500,
             stop_fade_ms: 400,
+            duck_level: 0.3,
             key_cooldown: 200,
             current_profile_id: None,
             audio_device: None,
@@ -375,5 +382,17 @@ mod tests {
         assert_eq!(none.mood_intensity, None);
         let json = serde_json::to_value(&from_text).unwrap();
         assert_eq!(json["moodIntensity"], 3);
+    }
+
+    #[test]
+    fn track_ducking_is_optional_on_the_wire() {
+        let old: Track = serde_json::from_str(r#"{"id":"t","name":"OST","volume":1.0}"#).unwrap();
+        assert!(!old.ducks_others);
+        assert!(serde_json::to_value(&old).unwrap().get("ducksOthers").is_none());
+        let ducking = Track {
+            ducks_others: true,
+            ..old
+        };
+        assert_eq!(serde_json::to_value(&ducking).unwrap()["ducksOthers"], true);
     }
 }

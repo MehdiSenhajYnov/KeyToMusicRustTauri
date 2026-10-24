@@ -61,6 +61,11 @@ pub enum AudioCommand {
     SetPaused {
         paused: bool,
     },
+    /// While a ducking track plays, every other track is lowered.
+    SetTrackDucking {
+        track_id: TrackId,
+        ducks: bool,
+    },
     SetMasterVolume {
         volume: f32,
     },
@@ -149,6 +154,8 @@ pub struct AudioEngineHandle {
     stop_fade_ms: Arc<AtomicU32>,
     /// Mirrors the audio thread's pause state.
     paused: Arc<AtomicBool>,
+    /// Gain of the other tracks while a ducking track plays (f32 bits).
+    duck_level: Arc<AtomicU32>,
 }
 
 impl AudioEngineHandle {
@@ -159,11 +166,13 @@ impl AudioEngineHandle {
         let master_volume = Arc::new(AtomicU32::new(0.8f32.to_bits()));
         let stop_fade_ms = Arc::new(AtomicU32::new(0));
         let paused = Arc::new(AtomicBool::new(false));
+        let duck_level = Arc::new(AtomicU32::new(0.3f32.to_bits()));
 
         let shared = Shared {
             master_volume: master_volume.clone(),
             stop_fade_ms: stop_fade_ms.clone(),
             paused: paused.clone(),
+            duck_level: duck_level.clone(),
         };
 
         // Spawn audio thread
@@ -178,6 +187,7 @@ impl AudioEngineHandle {
             master_volume,
             stop_fade_ms,
             paused,
+            duck_level,
         })
     }
 
@@ -281,6 +291,16 @@ impl AudioEngineHandle {
 
     pub fn is_paused(&self) -> bool {
         self.paused.load(Ordering::Relaxed)
+    }
+
+    /// Mark a track as ducking the others while it plays.
+    pub fn set_track_ducking(&self, track_id: TrackId, ducks: bool) -> Result<(), String> {
+        self.send_command(AudioCommand::SetTrackDucking { track_id, ducks })
+    }
+
+    /// Gain of the other tracks while a ducking track plays (0–1).
+    pub fn set_duck_level(&self, level: f32) {
+        atomic_store_f32(&self.duck_level, level.clamp(0.0, 1.0));
     }
 
     /// Fade-out used by later stops (0 cuts at once).
@@ -499,6 +519,7 @@ struct Shared {
     master_volume: Arc<AtomicU32>,
     stop_fade_ms: Arc<AtomicU32>,
     paused: Arc<AtomicBool>,
+    duck_level: Arc<AtomicU32>,
 }
 
 impl Shared {
@@ -547,6 +568,9 @@ fn audio_thread_main(
     let mut sound_volumes: HashMap<SoundId, f32> = HashMap::new();
     let mut track_sounds: HashMap<TrackId, SoundId> = HashMap::new();
     let mut track_volumes: HashMap<TrackId, f32> = HashMap::new();
+    let mut ducking_tracks: std::collections::HashSet<TrackId> = Default::default();
+    let mut was_ducked = false;
+    let mut last_tick = Instant::now();
     let mut error_sound_path: Option<String> = None;
 
     // Device management state
@@ -733,6 +757,13 @@ fn audio_thread_main(
                 sound_volumes.clear();
                 shared.set_paused(false, &mut tracks, &event_tx);
             }
+            Ok(AudioCommand::SetTrackDucking { track_id, ducks }) => {
+                if ducks {
+                    ducking_tracks.insert(track_id);
+                } else {
+                    ducking_tracks.remove(&track_id);
+                }
+            }
             Ok(AudioCommand::SetPaused { paused }) => {
                 // Nothing to freeze: stay unpaused rather than "pause" silence.
                 let any_playing = tracks
@@ -857,6 +888,27 @@ fn audio_thread_main(
                     tracks.values_mut().for_each(AudioTrack::pause);
                 }
             }
+        }
+
+        // Ducking: while a ducking track plays, the others make room for it.
+        let dt = last_tick.elapsed().as_secs_f32().min(0.25);
+        last_tick = Instant::now();
+        let ducked = tracks.iter().any(|(tid, track)| {
+            ducking_tracks.contains(tid) && track.is_playing() && !track.is_paused()
+        });
+        if ducked != was_ducked {
+            was_ducked = ducked;
+            tracing::debug!("Ducking {}", if ducked { "on" } else { "off" });
+        }
+        let duck_level = atomic_load_f32(&shared.duck_level);
+        for (tid, track) in tracks.iter_mut() {
+            let target = if ducked && !ducking_tracks.contains(tid) {
+                duck_level
+            } else {
+                1.0
+            };
+            track.set_duck_target(target);
+            track.tick_duck(dt);
         }
 
         // Update crossfades and volume ramps

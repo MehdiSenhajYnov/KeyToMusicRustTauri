@@ -130,6 +130,7 @@ pub fn spawn_audio_engine(state: &Arc<AppState>, error_sound_candidates: Vec<Pat
             Ok(engine) => {
                 let _ = engine.set_master_volume(config.master_volume);
                 engine.set_stop_fade(config.stop_fade_ms);
+                engine.set_duck_level(config.duck_level);
 
                 if let Some(path) = error_sound_candidates.into_iter().find(|p| p.exists()) {
                     let _ = engine.set_error_sound_path(path.to_string_lossy().to_string());

@@ -352,10 +352,15 @@ impl Session {
                     data.loop_contexts.insert(track_id.to_string(), ctx.clone())
                 }
             };
-            let track_volume = data
+            let track = data
                 .profile
                 .as_ref()
-                .and_then(|p| p.tracks.iter().find(|t| t.id == track_id).map(|t| t.volume));
+                .and_then(|p| p.tracks.iter().find(|t| t.id == track_id));
+            let track_volume = track.map(|t| t.volume);
+            let ducks = track.is_some_and(|t| t.ducks_others);
+            if let Ok(engine) = self.state.get_audio_engine() {
+                let _ = engine.set_track_ducking(track_id.to_string(), ducks);
+            }
             (token, track_volume, previous)
         };
         let track = track_id.to_string();
@@ -930,10 +935,10 @@ impl Session {
             let profile = data.profile.as_mut()?;
             let name = apply(&mut data.history, profile)?;
             // Restored tracks/sounds come back with their snapshot volumes.
-            let track_volumes: Vec<(String, f32)> = profile
+            let track_volumes: Vec<(String, f32, bool)> = profile
                 .tracks
                 .iter()
-                .map(|t| (t.id.clone(), t.volume))
+                .map(|t| (t.id.clone(), t.volume, t.ducks_others))
                 .collect();
             let sound_volumes: Vec<(String, String, f32)> = data
                 .playing
@@ -947,7 +952,8 @@ impl Session {
             (name, track_volumes, sound_volumes)
         };
         if let Ok(engine) = self.state.get_audio_engine() {
-            for (track, volume) in track_volumes {
+            for (track, volume, ducks) in track_volumes {
+                let _ = engine.set_track_ducking(track.clone(), ducks);
                 let _ = engine.set_track_volume(track, volume);
             }
             for (track, sound, volume) in sound_volumes {
@@ -987,6 +993,21 @@ impl Session {
             for track in tracks {
                 let _ = engine.set_sound_volume(track, sound_id.to_string(), volume);
             }
+        }
+    }
+
+    /// Lower the other tracks while this one plays (sound effects over music).
+    pub fn set_track_ducks_others(&self, track_id: &str, ducks: bool) {
+        let action = if ducks {
+            "Atténuer les autres pistes"
+        } else {
+            "Ne plus atténuer les autres pistes"
+        };
+        self.edit(Some(action), |p| {
+            editor::set_track_ducks_others(p, track_id, ducks)
+        });
+        if let Ok(engine) = self.state.get_audio_engine() {
+            let _ = engine.set_track_ducking(track_id.to_string(), ducks);
         }
     }
 
