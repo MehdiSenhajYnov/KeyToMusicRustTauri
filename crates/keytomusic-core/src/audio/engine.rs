@@ -893,8 +893,13 @@ fn audio_thread_main(
         // Ducking: while a ducking track plays, the others make room for it.
         let dt = last_tick.elapsed().as_secs_f32().min(0.25);
         last_tick = Instant::now();
+        // Paused, the ducking track still counts: resuming must not let the
+        // others jump back up for an instant.
+        let globally_paused = shared.paused.load(Ordering::Relaxed);
         let ducked = tracks.iter().any(|(tid, track)| {
-            ducking_tracks.contains(tid) && track.is_playing() && !track.is_paused()
+            ducking_tracks.contains(tid)
+                && track.is_playing()
+                && (globally_paused || !track.is_paused())
         });
         if ducked != was_ducked {
             was_ducked = ducked;

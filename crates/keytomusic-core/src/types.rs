@@ -346,7 +346,8 @@ impl Default for AppConfig {
             auto_momentum: false,
             key_detection_enabled: true,
             stop_all_shortcut: vec!["ControlLeft".into(), "ShiftLeft".into(), "KeyS".into()],
-            pause_shortcut: vec!["ControlLeft".into(), "ShiftLeft".into(), "KeyP".into()],
+            // Unset: Ctrl+Shift+P belongs to too many apps (VS Code, browsers).
+            pause_shortcut: vec![],
             auto_momentum_shortcut: vec![],
             key_detection_shortcut: vec![],
             crossfade_duration: 500,

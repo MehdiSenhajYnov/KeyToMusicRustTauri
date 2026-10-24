@@ -154,6 +154,8 @@ impl AudioTrack {
     }
 
     fn fade_out(&mut self, sink: Sink, from: f32, duration: Duration) {
+        // Callers pass the undocked gain: start from what is actually heard.
+        let from = from * self.duck_gain;
         self.fading.push(FadingSink {
             sink,
             from,

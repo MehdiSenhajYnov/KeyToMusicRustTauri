@@ -257,7 +257,7 @@ pub async fn download_audio(
             .arg("--no-playlist")
             // A live stream never ends: refuse it at once rather than time out.
             .arg("--match-filter")
-            .arg("!is_live & !is_upcoming")
+            .arg("live_status!=is_live & live_status!=is_upcoming")
             .arg("--newline")
             .arg("--force-overwrite")
             .arg("--no-update")
