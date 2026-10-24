@@ -97,6 +97,7 @@ impl KeyDetector {
 
         std::thread::spawn(move || {
             let cb = callback.clone();
+            #[cfg(target_os = "linux")]
             let cb_warning = callback.clone();
             let shared = Shared {
                 config,

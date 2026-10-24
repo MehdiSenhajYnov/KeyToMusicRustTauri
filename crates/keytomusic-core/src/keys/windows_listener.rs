@@ -2,6 +2,7 @@
 //! This implementation uses RegisterRawInputDevices and processes WM_INPUT messages
 //! in a hidden message-only window, which should work regardless of window focus.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::OnceLock;
 use tracing::{debug, info, warn};
@@ -28,6 +29,120 @@ pub enum WinKeyEvent {
 
 /// Global sender for the keyboard events
 static KEY_SENDER: OnceLock<Sender<WinKeyEvent>> = OnceLock::new();
+
+/// Name keys by physical position (scan code) instead of virtual key. The web
+/// UI matches by character, so it keeps virtual keys; the native UI stores
+/// physical positions like on Linux (KeyQ is KeyQ on AZERTY too).
+static PHYSICAL_CODES: AtomicBool = AtomicBool::new(false);
+
+pub fn set_physical_codes(enabled: bool) {
+    PHYSICAL_CODES.store(enabled, Ordering::Relaxed);
+}
+
+/// Physical key of a set-1 scan code (as Raw Input reports it).
+pub fn scan_to_code(scan: u32, extended: bool) -> Option<&'static str> {
+    Some(match (scan, extended) {
+        (0x01, _) => "Escape",
+        (0x02..=0x0A, false) => DIGIT_CODES[(scan - 0x01) as usize],
+        (0x0B, false) => "Digit0",
+        (0x0C, _) => "Minus",
+        (0x0D, _) => "Equal",
+        (0x0E, _) => "Backspace",
+        (0x0F, _) => "Tab",
+        (0x10, _) => "KeyQ",
+        (0x11, _) => "KeyW",
+        (0x12, _) => "KeyE",
+        (0x13, _) => "KeyR",
+        (0x14, _) => "KeyT",
+        (0x15, _) => "KeyY",
+        (0x16, _) => "KeyU",
+        (0x17, _) => "KeyI",
+        (0x18, _) => "KeyO",
+        (0x19, _) => "KeyP",
+        (0x1A, _) => "BracketLeft",
+        (0x1B, _) => "BracketRight",
+        (0x1C, false) => "Enter",
+        (0x1C, true) => "NumpadEnter",
+        (0x1D, false) => "ControlLeft",
+        (0x1D, true) => "ControlRight",
+        (0x1E, _) => "KeyA",
+        (0x1F, _) => "KeyS",
+        (0x20, _) => "KeyD",
+        (0x21, _) => "KeyF",
+        (0x22, _) => "KeyG",
+        (0x23, _) => "KeyH",
+        (0x24, _) => "KeyJ",
+        (0x25, _) => "KeyK",
+        (0x26, _) => "KeyL",
+        (0x27, _) => "Semicolon",
+        (0x28, _) => "Quote",
+        (0x29, _) => "Backquote",
+        (0x2A, false) => "ShiftLeft",
+        (0x2B, _) => "Backslash",
+        (0x2C, _) => "KeyZ",
+        (0x2D, _) => "KeyX",
+        (0x2E, _) => "KeyC",
+        (0x2F, _) => "KeyV",
+        (0x30, _) => "KeyB",
+        (0x31, _) => "KeyN",
+        (0x32, _) => "KeyM",
+        (0x33, _) => "Comma",
+        (0x34, _) => "Period",
+        (0x35, false) => "Slash",
+        (0x35, true) => "NumpadDivide",
+        (0x36, _) => "ShiftRight",
+        (0x37, false) => "NumpadMultiply",
+        (0x37, true) => "PrintScreen",
+        (0x38, false) => "AltLeft",
+        (0x38, true) => "AltRight",
+        (0x39, _) => "Space",
+        (0x3A, _) => "CapsLock",
+        (0x3B..=0x44, false) => F_KEY_CODES[(scan - 0x3B) as usize],
+        (0x45, _) => "NumLock",
+        (0x46, _) => "ScrollLock",
+        (0x47, false) => "Numpad7",
+        (0x47, true) => "Home",
+        (0x48, false) => "Numpad8",
+        (0x48, true) => "ArrowUp",
+        (0x49, false) => "Numpad9",
+        (0x49, true) => "PageUp",
+        (0x4A, _) => "NumpadSubtract",
+        (0x4B, false) => "Numpad4",
+        (0x4B, true) => "ArrowLeft",
+        (0x4C, _) => "Numpad5",
+        (0x4D, false) => "Numpad6",
+        (0x4D, true) => "ArrowRight",
+        (0x4E, _) => "NumpadAdd",
+        (0x4F, false) => "Numpad1",
+        (0x4F, true) => "End",
+        (0x50, false) => "Numpad2",
+        (0x50, true) => "ArrowDown",
+        (0x51, false) => "Numpad3",
+        (0x51, true) => "PageDown",
+        (0x52, false) => "Numpad0",
+        (0x52, true) => "Insert",
+        (0x53, false) => "NumpadDecimal",
+        (0x53, true) => "Delete",
+        (0x56, _) => "IntlBackslash",
+        (0x57, _) => "F11",
+        (0x58, _) => "F12",
+        (0x5B, true) => "MetaLeft",
+        (0x5C, true) => "MetaRight",
+        (0x5D, true) => "ContextMenu",
+        _ => return None,
+    })
+}
+
+/// Physical key of a GDK hardware keycode, which on Windows is the virtual key.
+pub fn virtual_key_to_code(vk: u32) -> Option<&'static str> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{MapVirtualKeyW, MAPVK_VK_TO_VSC_EX};
+    // SAFETY: plain table lookup in user32, no pointers involved.
+    let scan = unsafe { MapVirtualKeyW(vk, MAPVK_VK_TO_VSC_EX) };
+    if scan == 0 {
+        return None;
+    }
+    scan_to_code(scan & 0xFF, scan >> 8 == 0xE0)
+}
 
 /// Start listening for global keyboard events using Raw Input API.
 /// This function blocks and runs the Windows message loop.
@@ -190,7 +305,14 @@ unsafe fn process_raw_input(hrawinput: HRAWINPUT) {
         // RI_KEY_E0 (bit 1) = extended key
         let is_extended = (flags & 0x02) != 0;
 
-        let key_code = vk_to_code(vk_code as u32, scan_code as u32, is_extended);
+        let physical = PHYSICAL_CODES
+            .load(Ordering::Relaxed)
+            .then(|| scan_to_code(scan_code as u32, is_extended))
+            .flatten();
+        let key_code = match physical {
+            Some(code) => code.to_string(),
+            None => vk_to_code(vk_code as u32, scan_code as u32, is_extended),
+        };
 
         debug!(
             "[WinRawInput] Raw input: vk=0x{:02X} scan=0x{:02X} flags=0x{:02X} extended={} keyup={} code={}",
