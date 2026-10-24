@@ -255,6 +255,9 @@ pub async fn download_audio(
             .arg(&output_template)
             .arg("--write-info-json")
             .arg("--no-playlist")
+            // A live stream never ends: refuse it at once rather than time out.
+            .arg("--match-filter")
+            .arg("!is_live & !is_upcoming")
             .arg("--newline")
             .arg("--force-overwrite")
             .arg("--no-update")

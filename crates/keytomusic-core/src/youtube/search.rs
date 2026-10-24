@@ -118,6 +118,13 @@ pub async fn search_youtube_with_length(
             if video_id.is_empty() {
                 continue;
             }
+            // Live streams and premieres cannot become a sound.
+            if matches!(
+                json.get("live_status").and_then(|v| v.as_str()),
+                Some("is_live" | "is_upcoming")
+            ) {
+                continue;
+            }
 
             let title = json
                 .get("title")
