@@ -251,6 +251,8 @@ impl AudioTrack {
         self.start_time = Some(Instant::now());
         self.start_position_secs = start_position_secs;
         self.file_path = Some(file_path.to_string());
+        // A new sound plays at once, even on a track that was frozen.
+        self.paused_at = None;
 
         Ok(())
     }
