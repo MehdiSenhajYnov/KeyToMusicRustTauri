@@ -840,16 +840,20 @@ impl Session {
                 .find(|b| b.key_code == key && b.track_id == track_id)
             {
                 Some(binding) => binding.sound_ids.push(id),
-                None => p.key_bindings.push(KeyBinding {
-                    key_code: key.clone(),
-                    track_id: track_id.clone(),
-                    sound_ids: vec![id],
-                    loop_mode: LoopMode::Off,
-                    current_index: 0,
-                    name: None,
-                    mood: None,
-                    mood_intensity: None,
-                }),
+                None => {
+                    // A new key shares the mood of the sounds it was found from.
+                    let mood = rules::seed_mood(p, &suggestion.source_seed_ids);
+                    p.key_bindings.push(KeyBinding {
+                        key_code: key.clone(),
+                        track_id: track_id.clone(),
+                        sound_ids: vec![id],
+                        loop_mode: LoopMode::Off,
+                        current_index: 0,
+                        name: None,
+                        mood,
+                        mood_intensity: None,
+                    })
+                }
             }
         });
         if added.is_none() {

@@ -176,6 +176,41 @@ fn youtube_video_id(url: &str) -> Option<&str> {
         .map(|rest| rest.split(['?', '&', '#']).next().unwrap_or(rest))
 }
 
+/// The mood a sound found from `seed_video_ids` most likely shares: the most
+/// common mood among the bindings that play those seeds (None if untagged).
+pub fn seed_mood(profile: &Profile, seed_video_ids: &[String]) -> Option<BaseMood> {
+    let seeds: HashSet<&str> = seed_video_ids.iter().map(String::as_str).collect();
+    let seed_sounds: HashSet<&str> = profile
+        .sounds
+        .iter()
+        .filter(|s| {
+            let video = match &s.source {
+                SoundSource::YouTube { url, .. } => youtube_video_id(url),
+                SoundSource::Local { .. } => s.resolved_video_id.as_deref(),
+            };
+            video.is_some_and(|v| seeds.contains(v))
+        })
+        .map(|s| s.id.as_str())
+        .collect();
+    let mut counts: Vec<(BaseMood, usize)> = Vec::new();
+    for binding in &profile.key_bindings {
+        let Some(mood) = binding.mood else { continue };
+        if !binding.sound_ids.iter().any(|id| seed_sounds.contains(id.as_str())) {
+            continue;
+        }
+        match counts.iter_mut().find(|(m, _)| *m == mood) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((mood, 1)),
+        }
+    }
+    // First seen wins a tie.
+    counts
+        .into_iter()
+        .rev()
+        .max_by_key(|(_, n)| *n)
+        .map(|(mood, _)| mood)
+}
+
 /// "single-sound" profiles (≤ 2 sounds per binding on average) get the next free key on the
 /// least-used track; "multi-sound" profiles get the binding whose sounds share the most seed
 /// videos with the suggestion, else the binding with the most sounds.
@@ -338,6 +373,21 @@ mod tests {
         let a = auto_assign(&p, &[], &HashSet::new());
         assert_eq!(a.key.as_deref(), Some("KeyQ"));
         assert_eq!(a.track_id.as_deref(), Some("t1"));
+    }
+
+    #[test]
+    fn suggestions_inherit_the_mood_of_their_seeds() {
+        let mut p = profile();
+        p.sounds[0].source = SoundSource::YouTube {
+            url: "https://www.youtube.com/watch?v=seed1".into(),
+            cached_path: String::new(),
+        };
+        p.sounds[2].resolved_video_id = Some("seed2".into());
+        p.key_bindings[0].mood = Some(BaseMood::Epic); // KeyA: s1, s2
+        p.key_bindings[1].mood = Some(BaseMood::Sadness); // KeyB: s3
+        assert_eq!(seed_mood(&p, &["seed1".into()]), Some(BaseMood::Epic));
+        assert_eq!(seed_mood(&p, &["seed2".into()]), Some(BaseMood::Sadness));
+        assert_eq!(seed_mood(&p, &["other".into()]), None);
     }
 
     #[test]
