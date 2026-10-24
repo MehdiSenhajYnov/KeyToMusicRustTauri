@@ -223,14 +223,6 @@ pub fn auto_assign(
     let total: usize = bindings.iter().map(|b| b.sound_ids.len()).sum();
     let multi = !bindings.is_empty() && total as f64 / bindings.len() as f64 > 2.0;
 
-    if !multi {
-        let used: HashSet<String> = bindings.iter().map(|b| b.key_code.clone()).collect();
-        return AutoAssign {
-            key: next_available_key(&used, reserved_keys),
-            track_id: least_used_track(profile),
-        };
-    }
-
     let seeds: HashSet<&str> = seed_video_ids.iter().map(String::as_str).collect();
     let video_of: HashMap<&str, &str> = profile
         .sounds
@@ -247,6 +239,21 @@ pub fn auto_assign(
             .filter(|id| video_of.get(id.as_str()).is_some_and(|v| seeds.contains(v)))
             .count()
     };
+
+    if !multi {
+        let used: HashSet<String> = bindings.iter().map(|b| b.key_code.clone()).collect();
+        // A new key, on the track of the sound it resembles (a piece close
+        // to a music goes with the music, not on the ambience track).
+        let seed_track = bindings
+            .iter()
+            .filter(|b| score(b) > 0)
+            .max_by_key(|b| score(b))
+            .map(|b| b.track_id.clone());
+        return AutoAssign {
+            key: next_available_key(&used, reserved_keys),
+            track_id: seed_track.or_else(|| least_used_track(profile)),
+        };
+    }
     let best = bindings
         .iter()
         .fold(None::<(&KeyBinding, usize)>, |best, b| {
@@ -373,6 +380,26 @@ mod tests {
         let a = auto_assign(&p, &[], &HashSet::new());
         assert_eq!(a.key.as_deref(), Some("KeyQ"));
         assert_eq!(a.track_id.as_deref(), Some("t1"));
+    }
+
+    #[test]
+    fn suggestions_go_on_the_track_of_their_seed() {
+        let mut p = profile();
+        p.sounds[0].source = SoundSource::YouTube {
+            url: "https://www.youtube.com/watch?v=seed1".into(),
+            cached_path: String::new(),
+        };
+        // One sound per key; the music track (t1) is the busier one.
+        p.key_bindings = vec![
+            binding("KeyA", "t1", &["s1"]),
+            binding("KeyC", "t1", &["s2"]),
+            binding("KeyB", "t2", &["s3"]),
+        ];
+        let a = auto_assign(&p, &["seed1".into()], &HashSet::new());
+        assert_eq!(a.track_id.as_deref(), Some("t1"));
+        // No known seed: the least used track.
+        let a = auto_assign(&p, &["other".into()], &HashSet::new());
+        assert_eq!(a.track_id.as_deref(), Some("t2"));
     }
 
     #[test]
