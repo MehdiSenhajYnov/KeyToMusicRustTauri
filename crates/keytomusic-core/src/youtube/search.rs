@@ -21,10 +21,41 @@ pub struct YoutubeSearchResult {
     pub already_downloaded: bool,
 }
 
+/// Length filter of a YouTube search (YouTube's own "Duration" filter).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchLength {
+    Any,
+    /// Under 4 minutes: songs, jingles, effects.
+    Short,
+    /// 4 to 20 minutes: long pieces, never hour-long compilations.
+    Medium,
+}
+
+impl SearchLength {
+    /// YouTube's `sp` search parameter for this filter.
+    fn filter_param(self) -> Option<&'static str> {
+        match self {
+            SearchLength::Any => None,
+            SearchLength::Short => Some("EgIYAQ=="),
+            SearchLength::Medium => Some("EgIYAw=="),
+        }
+    }
+}
+
 /// Search YouTube using yt-dlp and return matching results.
 pub async fn search_youtube(
     query: &str,
     max_results: u32,
+    cache: Arc<Mutex<YouTubeCache>>,
+) -> Result<Vec<YoutubeSearchResult>, String> {
+    search_youtube_with_length(query, max_results, SearchLength::Any, cache).await
+}
+
+/// [`search_youtube`] keeping only results of a given length.
+pub async fn search_youtube_with_length(
+    query: &str,
+    max_results: u32,
+    length: SearchLength,
     cache: Arc<Mutex<YouTubeCache>>,
 ) -> Result<Vec<YoutubeSearchResult>, String> {
     let yt_dlp_bin = match get_yt_dlp_bin() {
@@ -33,11 +64,24 @@ pub async fn search_youtube(
     };
     let max = max_results.min(20).max(1);
 
-    let search_query = format!("ytsearch{}:{}", max, query);
-
     let mut cmd = yt_dlp_command(&yt_dlp_bin);
-    cmd.arg(&search_query)
-        .arg("--flat-playlist")
+    match length.filter_param() {
+        // A results page with the filter, read as a playlist of `max` entries.
+        Some(filter) => {
+            let url = reqwest::Url::parse_with_params(
+                "https://www.youtube.com/results",
+                &[("search_query", query), ("sp", filter)],
+            )
+            .map_err(|e| e.to_string())?;
+            cmd.arg(url.as_str())
+                .arg("--playlist-end")
+                .arg(max.to_string());
+        }
+        None => {
+            cmd.arg(format!("ytsearch{}:{}", max, query));
+        }
+    }
+    cmd.arg("--flat-playlist")
         .arg("--dump-json")
         .arg("--no-download")
         .arg("--no-warnings")
