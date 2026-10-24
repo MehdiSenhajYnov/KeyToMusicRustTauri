@@ -300,11 +300,15 @@ pub struct AppConfig {
     pub auto_momentum: bool,
     pub key_detection_enabled: bool,
     pub stop_all_shortcut: Vec<KeyCode>,
+    /// Pause or resume everything that plays.
+    pub pause_shortcut: Vec<KeyCode>,
     #[serde(default)]
     pub auto_momentum_shortcut: Vec<KeyCode>,
     #[serde(default)]
     pub key_detection_shortcut: Vec<KeyCode>,
     pub crossfade_duration: u32,
+    /// Fade-out when sounds are stopped (Stop all, a track's stop), in ms.
+    pub stop_fade_ms: u32,
     pub key_cooldown: u32,
     pub current_profile_id: Option<ProfileId>,
     #[serde(default)]
@@ -336,9 +340,11 @@ impl Default for AppConfig {
             auto_momentum: false,
             key_detection_enabled: true,
             stop_all_shortcut: vec!["ControlLeft".into(), "ShiftLeft".into(), "KeyS".into()],
+            pause_shortcut: vec!["ControlLeft".into(), "ShiftLeft".into(), "KeyP".into()],
             auto_momentum_shortcut: vec![],
             key_detection_shortcut: vec![],
             crossfade_duration: 500,
+            stop_fade_ms: 400,
             key_cooldown: 200,
             current_profile_id: None,
             audio_device: None,

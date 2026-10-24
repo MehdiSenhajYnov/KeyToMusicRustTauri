@@ -85,6 +85,7 @@ pub fn build_state(config: AppConfig) -> AppState {
     key_detector.set_enabled(config.key_detection_enabled);
     key_detector.set_key_detection_shortcut(config.key_detection_shortcut.clone());
     key_detector.set_auto_momentum_shortcut(config.auto_momentum_shortcut.clone());
+    key_detector.set_pause_shortcut(config.pause_shortcut.clone());
 
     // Index load deferred to first access via ensure_loaded
     let youtube_cache = youtube::YouTubeCache::new();
@@ -109,6 +110,7 @@ fn forward_audio_event(sink: &dyn EventSink, event: AudioEvent) {
         AudioEvent::PlaybackProgress { track_id, position } => {
             CoreEvent::PlaybackProgress { track_id, position }
         }
+        AudioEvent::PauseChanged { paused } => CoreEvent::PauseChanged { paused },
         AudioEvent::Error { message } => {
             tracing::error!("[audio] {}", message);
             CoreEvent::AudioError { message }
@@ -127,6 +129,7 @@ pub fn spawn_audio_engine(state: &Arc<AppState>, error_sound_candidates: Vec<Pat
         match AudioEngineHandle::new(config.audio_device.clone()) {
             Ok(engine) => {
                 let _ = engine.set_master_volume(config.master_volume);
+                engine.set_stop_fade(config.stop_fade_ms);
 
                 if let Some(path) = error_sound_candidates.into_iter().find(|p| p.exists()) {
                     let _ = engine.set_error_sound_path(path.to_string_lossy().to_string());
@@ -179,6 +182,12 @@ pub fn start_key_detection(state: &Arc<AppState>) {
                 let _ = engine.stop_all();
             }
             sink.emit(CoreEvent::StopAllTriggered);
+        }
+        // The engine reports the new state itself (PauseChanged).
+        KeyEvent::TogglePause => {
+            if let Some(engine) = audio_cell.get() {
+                let _ = engine.set_paused(!engine.is_paused());
+            }
         }
         KeyEvent::ToggleKeyDetection => sink.emit(CoreEvent::ToggleKeyDetection),
         KeyEvent::ToggleAutoMomentum => sink.emit(CoreEvent::ToggleAutoMomentum),

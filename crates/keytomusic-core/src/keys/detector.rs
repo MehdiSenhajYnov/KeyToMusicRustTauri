@@ -40,6 +40,7 @@ struct KeyDetectorConfig {
     typing: bool,
     cooldown_ms: u32,
     stop_all_shortcut: Vec<String>,
+    pause_shortcut: Vec<String>,
     key_detection_shortcut: Vec<String>,
     auto_momentum_shortcut: Vec<String>,
 }
@@ -68,6 +69,7 @@ impl KeyDetector {
                 typing: false,
                 cooldown_ms,
                 stop_all_shortcut,
+                pause_shortcut: Vec::new(),
                 key_detection_shortcut: Vec::new(),
                 auto_momentum_shortcut: Vec::new(),
             })),
@@ -272,6 +274,11 @@ impl KeyDetector {
         self.config.write().unwrap().stop_all_shortcut = keys;
     }
 
+    /// Update the pause/resume shortcut.
+    pub fn set_pause_shortcut(&self, keys: Vec<String>) {
+        self.config.write().unwrap().pause_shortcut = keys;
+    }
+
     /// Update the key detection toggle shortcut.
     pub fn set_key_detection_shortcut(&self, keys: Vec<String>) {
         self.config.write().unwrap().key_detection_shortcut = keys;
@@ -343,6 +350,8 @@ impl Shared {
             Some(KeyEvent::ToggleKeyDetection)
         } else if shortcut_allowed(&cfg.stop_all_shortcut) {
             Some(KeyEvent::StopAll)
+        } else if shortcut_allowed(&cfg.pause_shortcut) {
+            Some(KeyEvent::TogglePause)
         } else if shortcut_allowed(&cfg.auto_momentum_shortcut) {
             Some(KeyEvent::ToggleAutoMomentum)
         } else {
@@ -432,6 +441,7 @@ mod tests {
         let detector = KeyDetector::new(0, vec!["AltLeft".into(), "KeyS".into()], 30);
         detector.set_key_detection_shortcut(vec!["AltLeft".into(), "KeyD".into()]);
         detector.set_auto_momentum_shortcut(vec!["AltLeft".into(), "KeyQ".into()]);
+        detector.set_pause_shortcut(vec!["AltLeft".into(), "KeyP".into()]);
         let bindings: Vec<String> = bindings.iter().map(|b| b.to_string()).collect();
         detector.set_profile_bindings(&bindings);
         let shared = Shared {
@@ -462,6 +472,7 @@ mod tests {
             .map(|e| match e {
                 KeyEvent::KeyPressed { key_code, .. } => key_code.clone(),
                 KeyEvent::StopAll => "StopAll".into(),
+                KeyEvent::TogglePause => "TogglePause".into(),
                 KeyEvent::ToggleKeyDetection => "ToggleKeyDetection".into(),
                 KeyEvent::ToggleAutoMomentum => "ToggleAutoMomentum".into(),
                 KeyEvent::BackendWarning { .. } => "Warning".into(),
@@ -499,6 +510,7 @@ mod tests {
             ["ToggleAutoMomentum"]
         );
         assert_eq!(names(&tap(&shared, &["AltLeft", "KeyS"])), ["StopAll"]);
+        assert_eq!(names(&tap(&shared, &["AltLeft", "KeyP"])), ["TogglePause"]);
     }
 
     #[test]

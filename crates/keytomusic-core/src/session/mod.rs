@@ -787,6 +787,24 @@ impl Session {
         }
     }
 
+    /// Freeze everything that plays, or continue it. Playing any sound also
+    /// continues.
+    pub fn set_paused(&self, paused: bool) {
+        if let Ok(engine) = self.state.get_audio_engine() {
+            let _ = engine.set_paused(paused);
+        }
+    }
+
+    pub fn toggle_pause(&self) {
+        self.set_paused(!self.is_paused());
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.state
+            .get_audio_engine()
+            .is_ok_and(|engine| engine.is_paused())
+    }
+
     pub fn now_playing(&self) -> HashMap<String, NowPlaying> {
         self.lock().playing.clone()
     }

@@ -40,6 +40,12 @@ fn validate_config_updates(updates: &serde_json::Value) -> Result<(), String> {
     )?;
     ranged(
         updates,
+        "stopFadeMs",
+        0..=3000,
+        "Stop fade must be at most 3000ms",
+    )?;
+    ranged(
+        updates,
         "keyCooldown",
         0..=5000,
         "Cooldown must be at most 5000ms",
@@ -76,6 +82,9 @@ fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
     if let Some(v) = updates.get("crossfadeDuration").and_then(|v| v.as_u64()) {
         config.crossfade_duration = u32::try_from(v).unwrap_or(u32::MAX).clamp(100, 2000);
     }
+    if let Some(v) = updates.get("stopFadeMs").and_then(|v| v.as_u64()) {
+        config.stop_fade_ms = u32::try_from(v).unwrap_or(u32::MAX).min(3000);
+    }
     if let Some(v) = updates.get("keyCooldown").and_then(|v| v.as_u64()) {
         config.key_cooldown = u32::try_from(v).unwrap_or(u32::MAX).min(5000);
     }
@@ -87,6 +96,12 @@ fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
         if keys.len() >= 2 {
             config.stop_all_shortcut = keys;
         }
+    }
+    if let Some(v) = updates.get("pauseShortcut").and_then(|v| v.as_array()) {
+        config.pause_shortcut = v
+            .iter()
+            .filter_map(|k| k.as_str().map(|s| s.to_string()))
+            .collect();
     }
     if let Some(v) = updates
         .get("autoMomentumShortcut")
@@ -167,6 +182,7 @@ fn sync_runtime_dependent_config(state: &AppState, config: &AppConfig) {
     if let Ok(engine) = state.get_audio_engine() {
         let _ = engine.set_audio_device(config.audio_device.clone());
         let _ = engine.set_master_volume(config.master_volume);
+        engine.set_stop_fade(config.stop_fade_ms);
     }
 
     state.key_detector.set_enabled(config.key_detection_enabled);
@@ -177,6 +193,9 @@ fn sync_runtime_dependent_config(state: &AppState, config: &AppConfig) {
     state
         .key_detector
         .set_auto_momentum_shortcut(config.auto_momentum_shortcut.clone());
+    state
+        .key_detector
+        .set_pause_shortcut(config.pause_shortcut.clone());
     state
         .key_detector
         .set_key_detection_shortcut(config.key_detection_shortcut.clone());

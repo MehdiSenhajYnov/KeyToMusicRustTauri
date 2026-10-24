@@ -6,6 +6,7 @@ use rdev::Key;
 pub enum KeyEvent {
     KeyPressed { key_code: String, with_shift: bool },
     StopAll,
+    TogglePause,
     ToggleKeyDetection,
     ToggleAutoMomentum,
     BackendWarning { message: String },

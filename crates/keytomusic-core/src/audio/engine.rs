@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -57,6 +57,10 @@ pub enum AudioCommand {
         track_id: TrackId,
     },
     StopAll,
+    /// Freeze (or continue) every track where it is.
+    SetPaused {
+        paused: bool,
+    },
     SetMasterVolume {
         volume: f32,
     },
@@ -110,6 +114,9 @@ pub enum AudioEvent {
         track_id: TrackId,
         position: f64,
     },
+    PauseChanged {
+        paused: bool,
+    },
     Error {
         message: String,
     },
@@ -138,6 +145,10 @@ pub struct AudioEngineHandle {
     playback_requests: Mutex<PlaybackRequests>,
     pub event_rx: Arc<Mutex<Receiver<AudioEvent>>>,
     pub master_volume: Arc<AtomicU32>,
+    /// Fade-out applied when tracks are stopped (ms; 0 cuts at once).
+    stop_fade_ms: Arc<AtomicU32>,
+    /// Mirrors the audio thread's pause state.
+    paused: Arc<AtomicBool>,
 }
 
 impl AudioEngineHandle {
@@ -146,12 +157,18 @@ impl AudioEngineHandle {
         let (command_tx, command_rx) = mpsc::channel::<AudioCommand>();
         let (event_tx, event_rx) = mpsc::channel::<AudioEvent>();
         let master_volume = Arc::new(AtomicU32::new(0.8f32.to_bits()));
+        let stop_fade_ms = Arc::new(AtomicU32::new(0));
+        let paused = Arc::new(AtomicBool::new(false));
 
-        let master_volume_clone = master_volume.clone();
+        let shared = Shared {
+            master_volume: master_volume.clone(),
+            stop_fade_ms: stop_fade_ms.clone(),
+            paused: paused.clone(),
+        };
 
         // Spawn audio thread
         thread::spawn(move || {
-            audio_thread_main(command_rx, event_tx, master_volume_clone, initial_device);
+            audio_thread_main(command_rx, event_tx, shared, initial_device);
         });
 
         Ok(Self {
@@ -159,6 +176,8 @@ impl AudioEngineHandle {
             playback_requests: Mutex::new(PlaybackRequests::default()),
             event_rx: Arc::new(Mutex::new(event_rx)),
             master_volume,
+            stop_fade_ms,
+            paused,
         })
     }
 
@@ -253,6 +272,20 @@ impl AudioEngineHandle {
             .unwrap_or_else(|e| e.into_inner());
         requests.tracks.clear();
         self.send_command(AudioCommand::StopAll)
+    }
+
+    /// Pause or resume everything that plays. Playing a sound also resumes.
+    pub fn set_paused(&self, paused: bool) -> Result<(), String> {
+        self.send_command(AudioCommand::SetPaused { paused })
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Relaxed)
+    }
+
+    /// Fade-out used by later stops (0 cuts at once).
+    pub fn set_stop_fade(&self, fade_ms: u32) {
+        self.stop_fade_ms.store(fade_ms, Ordering::Relaxed);
     }
 
     /// Set master volume.
@@ -461,12 +494,45 @@ fn reopen_output(
 const NO_OUTPUT: &str = "No audio output device available";
 
 /// The main loop of the audio thread.
+/// State the handle shares with the audio thread.
+struct Shared {
+    master_volume: Arc<AtomicU32>,
+    stop_fade_ms: Arc<AtomicU32>,
+    paused: Arc<AtomicBool>,
+}
+
+impl Shared {
+    fn stop_fade(&self) -> Duration {
+        Duration::from_millis(u64::from(self.stop_fade_ms.load(Ordering::Relaxed)))
+    }
+
+    /// Pause or resume every track; tells listeners when the state changes.
+    fn set_paused(
+        &self,
+        paused: bool,
+        tracks: &mut HashMap<TrackId, AudioTrack>,
+        event_tx: &Sender<AudioEvent>,
+    ) {
+        for track in tracks.values_mut() {
+            if paused {
+                track.pause();
+            } else {
+                track.resume();
+            }
+        }
+        if self.paused.swap(paused, Ordering::Relaxed) != paused {
+            let _ = event_tx.send(AudioEvent::PauseChanged { paused });
+        }
+    }
+}
+
 fn audio_thread_main(
     command_rx: Receiver<AudioCommand>,
     event_tx: Sender<AudioEvent>,
-    master_volume: Arc<AtomicU32>,
+    shared: Shared,
     initial_device: Option<String>,
 ) {
+    let master_volume = shared.master_volume.clone();
     // Initialize audio output. A missing saved device falls back to the default;
     // with no output at all the thread stays alive and retries periodically.
     let mut output = Output {
@@ -494,7 +560,9 @@ fn audio_thread_main(
     loop {
         // Use shorter timeout when actively playing (crossfade needs ~60fps),
         // longer timeout when idle to reduce CPU usage
-        let has_active_playback = tracks.values().any(|t| t.is_playing() || t.is_animating());
+        let has_active_playback = tracks
+            .values()
+            .any(|t| (t.is_playing() && !t.is_paused()) || t.is_animating());
         let timeout = if has_active_playback {
             Duration::from_millis(16)
         } else {
@@ -518,6 +586,9 @@ fn audio_thread_main(
                     });
                     continue;
                 };
+                if !is_preview_track(&track_id) {
+                    shared.set_paused(false, &mut tracks, &event_tx);
+                }
 
                 // Create track if it doesn't exist
                 if !tracks.contains_key(&track_id) {
@@ -573,6 +644,9 @@ fn audio_thread_main(
                     let _ = reply.send(Err(NO_OUTPUT.to_string()));
                     continue;
                 };
+                if !is_preview_track(&track_id) {
+                    shared.set_paused(false, &mut tracks, &event_tx);
+                }
 
                 if !tracks.contains_key(&track_id) {
                     if tracks.keys().filter(|id| !is_preview_track(id)).count() >= 20
@@ -616,9 +690,19 @@ fn audio_thread_main(
                 }
             }
             Ok(AudioCommand::StopTrack { track_id }) => {
-                if let Some(mut track) = tracks.remove(&track_id) {
+                // The preview stops at once: the next preview follows right away.
+                let fade = if is_preview_track(&track_id) {
+                    Duration::ZERO
+                } else {
+                    shared.stop_fade()
+                };
+                if let Some(track) = tracks.get_mut(&track_id) {
                     let sound_id = track.currently_playing.clone();
-                    track.stop();
+                    track.stop_with_fade(fade);
+                    // A fading track stays until its fade-out is over.
+                    if !track.is_animating() {
+                        tracks.remove(&track_id);
+                    }
                     if let Some(sid) = sound_id {
                         let _ = event_tx.send(AudioEvent::SoundEnded {
                             track_id: track_id.clone(),
@@ -627,11 +711,15 @@ fn audio_thread_main(
                         });
                     }
                 }
+                if !tracks.values().any(AudioTrack::is_paused) {
+                    shared.set_paused(false, &mut tracks, &event_tx);
+                }
             }
             Ok(AudioCommand::StopAll) => {
+                let fade = shared.stop_fade();
                 for (tid, track) in tracks.iter_mut() {
                     let sound_id = track.currently_playing.clone();
-                    track.stop();
+                    track.stop_with_fade(fade);
                     if let Some(sid) = sound_id {
                         let _ = event_tx.send(AudioEvent::SoundEnded {
                             track_id: tid.clone(),
@@ -640,9 +728,17 @@ fn audio_thread_main(
                         });
                     }
                 }
-                tracks.clear();
+                tracks.retain(|_, track| track.is_animating());
                 track_sounds.clear();
                 sound_volumes.clear();
+                shared.set_paused(false, &mut tracks, &event_tx);
+            }
+            Ok(AudioCommand::SetPaused { paused }) => {
+                // Nothing to freeze: stay unpaused rather than "pause" silence.
+                let any_playing = tracks
+                    .iter()
+                    .any(|(tid, t)| !is_preview_track(tid) && t.currently_playing.is_some());
+                shared.set_paused(paused && any_playing, &mut tracks, &event_tx);
             }
             Ok(AudioCommand::SetMasterVolume { volume }) => {
                 let mv = volume;
@@ -697,6 +793,9 @@ fn audio_thread_main(
                     &event_tx,
                     true,
                 );
+                if shared.paused.load(Ordering::Relaxed) {
+                    tracks.values_mut().for_each(AudioTrack::pause);
+                }
                 last_device_check = Instant::now();
             }
             Ok(AudioCommand::SetErrorSoundPath { path }) => {
@@ -754,6 +853,9 @@ fn audio_thread_main(
                     &event_tx,
                     report,
                 );
+                if shared.paused.load(Ordering::Relaxed) {
+                    tracks.values_mut().for_each(AudioTrack::pause);
+                }
             }
         }
 
@@ -798,7 +900,7 @@ fn audio_thread_main(
         if last_progress_emit.elapsed() >= progress_interval {
             last_progress_emit = Instant::now();
             for (tid, track) in tracks.iter() {
-                if track.is_playing() {
+                if track.is_playing() && !track.is_paused() {
                     let _ = event_tx.send(AudioEvent::PlaybackProgress {
                         track_id: tid.clone(),
                         position: track.get_position(),

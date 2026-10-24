@@ -37,6 +37,10 @@ pub enum CoreEvent {
         with_shift: bool,
     },
     StopAllTriggered,
+    /// Playback was paused or resumed as a whole.
+    PauseChanged {
+        paused: bool,
+    },
     ToggleKeyDetection,
     ToggleAutoMomentum,
     KeyDetectionBackendWarning {
@@ -111,6 +115,7 @@ impl CoreEvent {
             CoreEvent::SoundNotFound { .. } => "sound_not_found",
             CoreEvent::KeyPressed { .. } => "key_pressed",
             CoreEvent::StopAllTriggered => "stop_all_triggered",
+            CoreEvent::PauseChanged { .. } => "pause_changed",
             CoreEvent::ToggleKeyDetection => "toggle_key_detection",
             CoreEvent::ToggleAutoMomentum => "toggle_auto_momentum",
             CoreEvent::KeyDetectionBackendWarning { .. } => "key_detection_backend_warning",
@@ -158,6 +163,7 @@ impl CoreEvent {
                 key_code,
                 with_shift,
             } => json!({ "keyCode": key_code, "withShift": with_shift }),
+            CoreEvent::PauseChanged { paused } => json!({ "paused": paused }),
             CoreEvent::StopAllTriggered
             | CoreEvent::ToggleKeyDetection
             | CoreEvent::ToggleAutoMomentum

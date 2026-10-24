@@ -203,9 +203,10 @@ fn shortcut_base_key(keys: &[String]) -> Option<&str> {
         .find(|k| !k.contains("Shift") && !k.contains("Control") && !k.contains("Alt"))
 }
 
-pub fn global_shortcuts(config: &AppConfig) -> [(&'static str, &Vec<String>); 3] {
+pub fn global_shortcuts(config: &AppConfig) -> [(&'static str, &Vec<String>); 4] {
     [
         ("Stop All", &config.stop_all_shortcut),
+        ("Pause", &config.pause_shortcut),
         ("Auto-Momentum", &config.auto_momentum_shortcut),
         ("Key Detection", &config.key_detection_shortcut),
     ]

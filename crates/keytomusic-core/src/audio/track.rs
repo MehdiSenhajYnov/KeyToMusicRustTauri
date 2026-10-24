@@ -20,6 +20,7 @@ struct FadingSink {
     sink: Sink,
     from: f32,
     start: Instant,
+    duration: Duration,
 }
 
 /// An active audio track that can play one sound at a time with crossfade support.
@@ -43,6 +44,9 @@ pub struct AudioTrack {
     current_volume: f32,
     target_volume: f32,
 
+    // When playback was paused (position and sinks are frozen until resume)
+    paused_at: Option<Instant>,
+
     // Reference to the output stream handle
     stream_handle: OutputStreamHandle,
 }
@@ -61,6 +65,7 @@ impl AudioTrack {
             fading: Vec::new(),
             current_volume: 0.0,
             target_volume: 0.0,
+            paused_at: None,
             stream_handle,
         }
     }
@@ -89,7 +94,7 @@ impl AudioTrack {
     /// Advance the short fade-outs of cut sinks. Call from the audio thread main loop.
     pub fn tick_fading(&mut self) {
         self.fading.retain(|f| {
-            let t = f.start.elapsed().as_secs_f32() / CUT_FADE.as_secs_f32();
+            let t = f.start.elapsed().as_secs_f32() / f.duration.as_secs_f32();
             if t >= 1.0 {
                 f.sink.stop();
                 false
@@ -105,11 +110,12 @@ impl AudioTrack {
         self.crossfade.is_some() || !self.fading.is_empty()
     }
 
-    fn fade_out(&mut self, sink: Sink, from: f32) {
+    fn fade_out(&mut self, sink: Sink, from: f32, duration: Duration) {
         self.fading.push(FadingSink {
             sink,
             from,
             start: Instant::now(),
+            duration,
         });
     }
 
@@ -123,7 +129,7 @@ impl AudioTrack {
                 .crossfade
                 .as_ref()
                 .map_or(0.0, CrossfadeState::outgoing_gain);
-            self.fade_out(outgoing, from);
+            self.fade_out(outgoing, from, CUT_FADE);
         }
         self.crossfade = None;
 
@@ -142,7 +148,7 @@ impl AudioTrack {
             if let Some(sink) = self.sink.take() {
                 if is_playing {
                     let from = self.current_volume;
-                    self.fade_out(sink, from);
+                    self.fade_out(sink, from, CUT_FADE);
                 } else {
                     sink.stop();
                 }
@@ -225,6 +231,78 @@ impl AudioTrack {
         self.file_path = None;
         self.current_volume = 0.0;
         self.target_volume = 0.0;
+        self.paused_at = None;
+    }
+
+    /// Stop the current sound, fading it out over `fade` (instantly when
+    /// zero or paused: a frozen sink has nothing audible to fade).
+    pub fn stop_with_fade(&mut self, fade: Duration) {
+        if fade.is_zero() || self.paused_at.is_some() {
+            self.stop();
+            return;
+        }
+        if let Some(outgoing) = self.outgoing_sink.take() {
+            let from = self
+                .crossfade
+                .as_ref()
+                .map_or(0.0, CrossfadeState::outgoing_gain);
+            self.fade_out(outgoing, from, fade);
+        }
+        if let Some(sink) = self.sink.take() {
+            if sink.empty() {
+                sink.stop();
+            } else {
+                let from = self.current_volume;
+                self.fade_out(sink, from, fade);
+            }
+        }
+        self.crossfade = None;
+        self.currently_playing = None;
+        self.start_time = None;
+        self.file_path = None;
+        self.current_volume = 0.0;
+        self.target_volume = 0.0;
+    }
+
+    /// Freeze playback where it is. A crossfade in progress completes at once
+    /// and cut sounds stop, so that resuming brings back only the current one.
+    pub fn pause(&mut self) {
+        if self.paused_at.is_some() {
+            return;
+        }
+        if self.crossfade.take().is_some() {
+            if let Some(outgoing) = self.outgoing_sink.take() {
+                outgoing.stop();
+            }
+            self.current_volume = self.target_volume;
+            if let Some(ref sink) = self.sink {
+                sink.set_volume(self.current_volume);
+            }
+        }
+        for fading in self.fading.drain(..) {
+            fading.sink.stop();
+        }
+        if let Some(ref sink) = self.sink {
+            sink.pause();
+        }
+        self.paused_at = Some(Instant::now());
+    }
+
+    /// Continue after [`AudioTrack::pause`], from the same position.
+    pub fn resume(&mut self) {
+        let Some(paused_at) = self.paused_at.take() else {
+            return;
+        };
+        if let Some(start_time) = self.start_time {
+            self.start_time = Some(start_time + paused_at.elapsed());
+        }
+        if let Some(ref sink) = self.sink {
+            sink.play();
+        }
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused_at.is_some()
     }
 
     /// Set the volume for this track (0.0 to 1.0).
@@ -253,7 +331,11 @@ impl AudioTrack {
     /// Get the current playback position in seconds.
     pub fn get_position(&self) -> f64 {
         if let Some(start_time) = self.start_time {
-            self.start_position_secs + start_time.elapsed().as_secs_f64()
+            let elapsed = match self.paused_at {
+                Some(paused_at) => paused_at.saturating_duration_since(start_time),
+                None => start_time.elapsed(),
+            };
+            self.start_position_secs + elapsed.as_secs_f64()
         } else {
             0.0
         }
