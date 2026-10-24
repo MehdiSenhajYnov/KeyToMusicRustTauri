@@ -4,8 +4,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::types::{BaseMood, KeyBinding, LoopMode, MoodIntensity, Profile, Sound, SoundSource};
 
-use super::editor::least_used_track;
-use super::keymap::next_available_key;
 
 /// How a loop replays its next sound's start position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,13 +153,6 @@ pub fn intensity_display(intensity: MoodIntensity) -> &'static str {
     }
 }
 
-/// Where a discovery suggestion should land by default.
-#[derive(Debug, Clone, PartialEq)]
-pub struct AutoAssign {
-    pub key: Option<String>,
-    pub track_id: Option<String>,
-}
-
 pub(crate) fn youtube_video_id(url: &str) -> Option<&str> {
     if let Some(pos) = url.find("v=") {
         let start = pos + 2;
@@ -209,70 +200,6 @@ pub fn seed_mood(profile: &Profile, seed_video_ids: &[String]) -> Option<BaseMoo
         .rev()
         .max_by_key(|(_, n)| *n)
         .map(|(mood, _)| mood)
-}
-
-/// "single-sound" profiles (≤ 2 sounds per binding on average) get the next free key on the
-/// least-used track; "multi-sound" profiles get the binding whose sounds share the most seed
-/// videos with the suggestion, else the binding with the most sounds.
-pub fn auto_assign(
-    profile: &Profile,
-    seed_video_ids: &[String],
-    reserved_keys: &HashSet<String>,
-) -> AutoAssign {
-    let bindings = &profile.key_bindings;
-    let total: usize = bindings.iter().map(|b| b.sound_ids.len()).sum();
-    let multi = !bindings.is_empty() && total as f64 / bindings.len() as f64 > 2.0;
-
-    let seeds: HashSet<&str> = seed_video_ids.iter().map(String::as_str).collect();
-    let video_of: HashMap<&str, &str> = profile
-        .sounds
-        .iter()
-        .filter_map(|s| match &s.source {
-            SoundSource::YouTube { url, .. } => youtube_video_id(url).map(|v| (s.id.as_str(), v)),
-            SoundSource::Local { .. } => s.resolved_video_id.as_deref().map(|v| (s.id.as_str(), v)),
-        })
-        .collect();
-
-    let score = |b: &KeyBinding| {
-        b.sound_ids
-            .iter()
-            .filter(|id| video_of.get(id.as_str()).is_some_and(|v| seeds.contains(v)))
-            .count()
-    };
-
-    if !multi {
-        let used: HashSet<String> = bindings.iter().map(|b| b.key_code.clone()).collect();
-        // A new key, on the track of the sound it resembles (a piece close
-        // to a music goes with the music, not on the ambience track).
-        let seed_track = bindings
-            .iter()
-            .filter(|b| score(b) > 0)
-            .max_by_key(|b| score(b))
-            .map(|b| b.track_id.clone());
-        return AutoAssign {
-            key: next_available_key(&used, reserved_keys),
-            track_id: seed_track.or_else(|| least_used_track(profile)),
-        };
-    }
-    let best = bindings
-        .iter()
-        .fold(None::<(&KeyBinding, usize)>, |best, b| {
-            let s = score(b);
-            match best {
-                Some((current, cs))
-                    if cs > s || (cs == s && current.sound_ids.len() >= b.sound_ids.len()) =>
-                {
-                    Some((current, cs))
-                }
-                _ => Some((b, s)),
-            }
-        })
-        .map(|(b, _)| b);
-
-    AutoAssign {
-        key: best.map(|b| b.key_code.clone()),
-        track_id: best.map(|b| b.track_id.clone()),
-    }
 }
 
 #[cfg(test)]
@@ -372,34 +299,6 @@ mod tests {
             loop_replay_start(&s, &LoopMode::Single, false, &single),
             12.0
         );
-    }
-
-    #[test]
-    fn auto_assign_single_sound_profile_picks_free_key() {
-        let p = profile();
-        let a = auto_assign(&p, &[], &HashSet::new());
-        assert_eq!(a.key.as_deref(), Some("KeyQ"));
-        assert_eq!(a.track_id.as_deref(), Some("t1"));
-    }
-
-    #[test]
-    fn suggestions_go_on_the_track_of_their_seed() {
-        let mut p = profile();
-        p.sounds[0].source = SoundSource::YouTube {
-            url: "https://www.youtube.com/watch?v=seed1".into(),
-            cached_path: String::new(),
-        };
-        // One sound per key; the music track (t1) is the busier one.
-        p.key_bindings = vec![
-            binding("KeyA", "t1", &["s1"]),
-            binding("KeyC", "t1", &["s2"]),
-            binding("KeyB", "t2", &["s3"]),
-        ];
-        let a = auto_assign(&p, &["seed1".into()], &HashSet::new());
-        assert_eq!(a.track_id.as_deref(), Some("t1"));
-        // No known seed: the least used track.
-        let a = auto_assign(&p, &["other".into()], &HashSet::new());
-        assert_eq!(a.track_id.as_deref(), Some("t2"));
     }
 
     #[test]

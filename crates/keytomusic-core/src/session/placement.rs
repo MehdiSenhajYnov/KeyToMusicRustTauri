@@ -391,7 +391,7 @@ fn key_position(code: &str) -> Option<(f64, f64)> {
 
 fn distance(a: (f64, f64), b: (f64, f64)) -> f64 {
     // Moving along a row is cheaper than changing rows.
-    ((a.0 - b.0) * 1.6).hypot(a.1 - b.1)
+    ((a.0 - b.0) * 3.5).hypot(a.1 - b.1)
 }
 
 /// The row a role starts on when nothing guides it.
@@ -497,7 +497,18 @@ fn plural(n: usize, word: &str) -> String {
 /// Where each of `hints` goes, in order: keys taken by an earlier one are
 /// not offered again, and one-per-key sounds gather next to each other.
 pub fn place_all(p: &Profile, hints: &[SoundHint]) -> Vec<Placement> {
+    place_all_reserving(p, hints, &HashSet::new())
+}
+
+/// [`place_all`], without offering the `reserved` keys either (keys already
+/// proposed elsewhere).
+pub fn place_all_reserving(
+    p: &Profile,
+    hints: &[SoundHint],
+    reserved: &HashSet<String>,
+) -> Vec<Placement> {
     let mut taken: HashSet<String> = p.key_bindings.iter().map(|b| b.key_code.clone()).collect();
+    taken.extend(reserved.iter().cloned());
     // Keys given to earlier sounds of this batch: (key, track, mood).
     let mut placed: Vec<(String, Option<String>, Option<BaseMood>)> = Vec::new();
     hints
@@ -702,6 +713,20 @@ fn place_one(
     }
 }
 
+// ── Level ──
+
+/// Loudness (RMS) the sounds of a profile are brought to.
+pub const REFERENCE_LOUDNESS: f32 = 0.12;
+
+/// Volume that brings a sound of `loudness` to the reference (sounds can
+/// only be turned down, so quieter ones stay at full volume).
+pub fn volume_for_loudness(loudness: f32) -> f32 {
+    if loudness <= f32::EPSILON {
+        return 1.0;
+    }
+    (REFERENCE_LOUDNESS / loudness).clamp(0.05, 1.0)
+}
+
 // ── Start point ──
 
 /// Where a sound should start: music at its strong part (`suggested`), an
@@ -810,6 +835,25 @@ mod tests {
         let door = place(&p, &hint("Door knock", 3.0));
         assert_eq!(door.track_id.as_deref(), Some("e"));
         assert_eq!(door.key.as_deref(), Some("KeyZ"));
+    }
+
+    #[test]
+    fn kin_stay_on_their_row_rather_than_below() {
+        let mut p = scene();
+        let mut keys = Vec::new();
+        for (i, key) in ["KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY"].iter().enumerate() {
+            let mut b = binding(key, "m", &[&format!("s{}", i + 1)]);
+            b.mood = Some(if *key == "KeyE" || *key == "KeyR" {
+                BaseMood::Tension
+            } else {
+                BaseMood::Epic
+            });
+            keys.push(b);
+        }
+        p.key_bindings = keys;
+        let placed = place(&p, &hint("Tense chase", 200.0));
+        // Along the row (U), not under E/R (D).
+        assert_eq!(placed.key.as_deref(), Some("KeyU"), "{}", placed.reason);
     }
 
     #[test]

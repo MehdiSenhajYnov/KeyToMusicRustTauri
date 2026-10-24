@@ -13,7 +13,7 @@ use crate::discovery::engine::DiscoverySuggestion;
 use crate::service;
 use crate::types::{KeyBinding, LoopMode, SoundSource};
 
-use super::{editor, rules, Session, SessionEvent, ToastKind, PREVIEW_TRACK};
+use super::{editor, placement, rules, Session, SessionEvent, ToastKind, PREVIEW_TRACK};
 
 const INITIAL_REVEAL: usize = 10;
 const REVEAL_INCREMENT: usize = 10;
@@ -41,7 +41,49 @@ pub struct Enrichment {
     pub key: Option<String>,
     pub track_id: Option<String>,
     pub momentum: f64,
+    /// The user moved the start point: waveforms no longer set it.
+    momentum_chosen: bool,
+    /// What the placement guessed: kind, mood, loop mode, and why.
+    pub role: Option<placement::SoundRole>,
+    pub mood: Option<crate::types::BaseMood>,
+    pub loop_mode: Option<LoopMode>,
+    pub reason: Option<String>,
     download_id: Option<String>,
+}
+
+impl Enrichment {
+    /// Start point from a waveform: music at its strong part, the rest
+    /// where it becomes audible (unless the user chose one).
+    fn take_waveform_start(&mut self, waveform: &WaveformData) {
+        if self.momentum_chosen {
+            return;
+        }
+        self.momentum = placement::start_point(
+            self.role.unwrap_or(placement::SoundRole::Music),
+            &waveform.points,
+            waveform.duration,
+            waveform.suggested_momentum,
+        );
+    }
+
+    fn take_placement(&mut self, placed: placement::Placement) {
+        self.key = placed.key;
+        self.track_id = placed.track_id;
+        self.role = Some(placed.role);
+        self.mood = placed.mood;
+        self.loop_mode = Some(placed.loop_mode);
+        self.reason = Some(placed.reason);
+    }
+}
+
+fn hint_for(s: &DiscoverySuggestion, track_id: Option<String>) -> placement::SoundHint {
+    placement::SoundHint {
+        name: s.title.clone(),
+        duration: s.duration,
+        seed_video_ids: s.source_seed_ids.clone(),
+        track_id,
+        ..Default::default()
+    }
 }
 
 /// One visible card.
@@ -149,33 +191,36 @@ impl Session {
         }
     }
 
-    /// Give every visible card without an assignment its default key/track.
+    /// Give every visible card without an assignment its guessed key, track,
+    /// mood and loop mode (see [`placement`]).
     fn assign_visible(&self, d: &mut DiscoveryData) {
-        let assignments: Vec<(String, rules::AutoAssign)> = self.with_profile(|profile| {
+        let assignments: Vec<(String, placement::Placement)> = self.with_profile(|profile| {
             let Some(profile) = profile else {
                 return Vec::new();
             };
-            let mut reserved: HashSet<String> = d
+            let reserved: HashSet<String> = d
                 .visible()
                 .iter()
                 .filter_map(|s| d.enrich.get(&s.video_id).and_then(|e| e.key.clone()))
                 .collect();
-            d.visible()
-                .iter()
+            let todo: Vec<&DiscoverySuggestion> = d
+                .visible()
+                .into_iter()
                 .filter(|s| d.enrich.get(&s.video_id).is_none_or(|e| e.key.is_none()))
-                .map(|s| {
-                    let assign = rules::auto_assign(profile, &s.source_seed_ids, &reserved);
-                    if let Some(key) = &assign.key {
-                        reserved.insert(key.clone());
-                    }
-                    (s.video_id.clone(), assign)
-                })
+                .collect();
+            let hints: Vec<placement::SoundHint> =
+                todo.iter().map(|s| hint_for(s, None)).collect();
+            todo.iter()
+                .map(|s| s.video_id.clone())
+                .zip(placement::place_all_reserving(profile, &hints, &reserved))
                 .collect()
         });
-        for (video_id, assign) in assignments {
+        for (video_id, placed) in assignments {
             let e = d.enrich.entry(video_id).or_default();
-            e.key = assign.key;
-            e.track_id = assign.track_id;
+            e.take_placement(placed);
+            if let Some(waveform) = e.waveform.clone() {
+                e.take_waveform_start(&waveform);
+            }
         }
     }
 
@@ -528,9 +573,8 @@ impl Session {
                             e.progress = 100.0;
                             e.cached_path = Some(r.cached_path);
                             e.duration = Some(r.duration);
-                            if let Some(m) = r.waveform.as_ref().and_then(|w| w.suggested_momentum)
-                            {
-                                e.momentum = m;
+                            if let Some(waveform) = &r.waveform {
+                                e.take_waveform_start(waveform);
                             }
                             e.waveform = r.waveform;
                         }
@@ -581,9 +625,7 @@ impl Session {
                 }
                 d.active_waveforms.remove(&video_id);
                 if let (Ok(waveform), Some(e)) = (result, d.enrich.get_mut(&video_id)) {
-                    if let Some(m) = waveform.suggested_momentum {
-                        e.momentum = m;
-                    }
+                    e.take_waveform_start(&waveform);
                     e.waveform = Some(waveform);
                     drop(d);
                     session.discovery_changed();
@@ -697,8 +739,39 @@ impl Session {
         key: Option<String>,
         track_id: Option<String>,
     ) {
+        // Another track: the key, mood and loop mode follow it (unless the
+        // key is chosen too).
+        let replaced = match (&key, &track_id) {
+            (None, Some(track)) => {
+                let d = self.disco();
+                let suggestion = d.all.iter().find(|s| s.video_id == video_id).cloned();
+                let reserved: HashSet<String> = d
+                    .visible()
+                    .iter()
+                    .filter(|s| s.video_id != video_id)
+                    .filter_map(|s| d.enrich.get(&s.video_id).and_then(|e| e.key.clone()))
+                    .collect();
+                drop(d);
+                suggestion.and_then(|s| {
+                    self.with_profile(|p| {
+                        p.map(|p| {
+                            placement::place_all_reserving(
+                                p,
+                                &[hint_for(&s, Some(track.clone()))],
+                                &reserved,
+                            )
+                            .remove(0)
+                        })
+                    })
+                })
+            }
+            _ => None,
+        };
         let mut d = self.disco();
         let e = d.enrich.entry(video_id.to_string()).or_default();
+        if let Some(placed) = replaced {
+            e.take_placement(placed);
+        }
         if key.is_some() {
             e.key = key;
         }
@@ -710,11 +783,11 @@ impl Session {
     }
 
     pub fn discovery_set_momentum(&self, video_id: &str, momentum: f64) {
-        self.disco()
-            .enrich
-            .entry(video_id.to_string())
-            .or_default()
-            .momentum = momentum.max(0.0);
+        let mut d = self.disco();
+        let e = d.enrich.entry(video_id.to_string()).or_default();
+        e.momentum = momentum.max(0.0);
+        e.momentum_chosen = true;
+        drop(d);
         self.discovery_changed();
     }
 
@@ -820,6 +893,12 @@ impl Session {
             }
         };
 
+        // Even out its level with the profile's sounds.
+        let volume = info
+            .waveform
+            .as_ref()
+            .and_then(|w| w.loudness)
+            .map_or(1.0, placement::volume_for_loudness);
         let added = self.edit(Some("Add from Discovery"), |p| {
             let id = uuid::Uuid::new_v4().to_string();
             editor::add_sound(
@@ -829,7 +908,7 @@ impl Session {
                     name: name.clone(),
                     source,
                     momentum: info.momentum,
-                    volume: 1.0,
+                    volume,
                     duration,
                     resolved_video_id: None,
                 },
@@ -841,13 +920,16 @@ impl Session {
             {
                 Some(binding) => binding.sound_ids.push(id),
                 None => {
-                    // A new key shares the mood of the sounds it was found from.
-                    let mood = rules::seed_mood(p, &suggestion.source_seed_ids);
+                    // A new key gets the guessed mood (that of the sounds it
+                    // was found from, or of its title) and loop mode.
+                    let mood = info
+                        .mood
+                        .or_else(|| rules::seed_mood(p, &suggestion.source_seed_ids));
                     p.key_bindings.push(KeyBinding {
                         key_code: key.clone(),
                         track_id: track_id.clone(),
                         sound_ids: vec![id],
-                        loop_mode: LoopMode::Off,
+                        loop_mode: info.loop_mode.clone().unwrap_or(LoopMode::Off),
                         current_index: 0,
                         name: None,
                         mood,
