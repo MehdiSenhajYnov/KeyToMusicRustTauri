@@ -4,14 +4,20 @@
 use std::path::PathBuf;
 
 use crate::events::CoreEvent;
+use crate::mood::chatgpt::{self, Account};
+use crate::mood::provider::{AuthMode, ModelInfo};
 use crate::mood::{engine::ChapterSnapshot, extension, provider, secret, server};
 use crate::state::AppState;
-use crate::types::AppConfig;
+use crate::types::{AppConfig, MoodAuth};
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MoodServiceStatus {
     pub enabled: bool,
+    /// "chatgpt" (the user's ChatGPT plan) or "api_key".
+    pub auth: String,
+    /// Signed-in ChatGPT account, if any.
+    pub account: Option<Account>,
     /// "running", "stopped" or "disabled".
     pub api: String,
     pub port: u16,
@@ -28,6 +34,9 @@ pub struct MoodServiceStatus {
     pub chapter: Option<ChapterSnapshot>,
 }
 
+/// Where users review and limit what apps use of their ChatGPT plan.
+pub const CHATGPT_USAGE_URL: &str = chatgpt::USAGE_URL;
+
 /// Ready-made endpoints: (name, base URL, needs a key).
 pub fn presets() -> &'static [(&'static str, &'static str, bool)] {
     provider::PRESETS
@@ -35,6 +44,12 @@ pub fn presets() -> &'static [(&'static str, &'static str, bool)] {
 
 pub fn provider_settings(config: &AppConfig) -> provider::ProviderSettings {
     provider::ProviderSettings {
+        auth: match config.mood_auth {
+            MoodAuth::Chatgpt => AuthMode::ChatGpt {
+                plan: chatgpt::global().can_use_plan(),
+            },
+            MoodAuth::ApiKey => AuthMode::ApiKey,
+        },
         base_url: config.mood_base_url.clone(),
         model: config.mood_model.clone(),
         api_key: secret::load(&config.mood_base_url),
@@ -74,6 +89,8 @@ pub fn status(state: &AppState) -> MoodServiceStatus {
         .clone();
     MoodServiceStatus {
         enabled: config.mood_ai_enabled,
+        auth: config.mood_auth.as_str().into(),
+        account: chatgpt::global().account(),
         api: api_state(state, &config).into(),
         port: config.mood_api_port,
         local: settings.is_local(),
@@ -189,15 +206,57 @@ pub async fn set_api_key(state: &AppState, key: Option<String>) -> Result<(), St
     Ok(())
 }
 
-/// Check the endpoint and key; returns the models it offers.
-pub async fn test_connection(state: &AppState) -> Result<Vec<String>, String> {
+/// Check the connection; returns the models the account or endpoint offers.
+pub async fn test_connection(state: &AppState) -> Result<Vec<ModelInfo>, String> {
     let settings = provider_settings(&state.get_config());
-    if !settings.is_local() && settings.api_key.is_none() {
-        return Err("Ajoute d'abord ta clé API".into());
+    match settings.auth {
+        AuthMode::ChatGpt { .. } if chatgpt::global().account().is_none() => {
+            return Err("Connecte-toi d'abord avec ChatGPT".into())
+        }
+        AuthMode::ApiKey if !settings.is_local() && settings.api_key.is_none() => {
+            return Err("Ajoute d'abord ta clé API".into())
+        }
+        _ => {}
     }
     provider::list_models(&settings)
         .await
         .map_err(|e| e.message)
+}
+
+fn emit_account(sink: &crate::events::SharedSink, error: Option<String>) {
+    let account = chatgpt::global().account();
+    sink.emit(CoreEvent::MoodAccount {
+        email: account.as_ref().and_then(|a| a.email.clone()),
+        plan_enabled: account.is_some_and(|a| a.plan_enabled),
+        error,
+    });
+}
+
+/// Start "Sign in with ChatGPT": returns the page to open in the browser.
+/// When the browser comes back, Mood AI switches to the ChatGPT plan and a
+/// `MoodAccount` event reports the result.
+pub async fn chatgpt_sign_in(state: &AppState) -> Result<String, String> {
+    let engine = state.mood.clone();
+    let sink = state.event_sink();
+    let config = state.get_config();
+    chatgpt::global()
+        .begin_sign_in(move |result| {
+            let error = result.err().map(|e| e.message);
+            let mut config = config;
+            config.mood_auth = MoodAuth::Chatgpt;
+            engine.configure(provider_settings(&config));
+            emit_account(&sink, error);
+        })
+        .await
+        .map_err(|e| e.message)
+}
+
+/// Sign out of ChatGPT (the session is revoked at OpenAI when reachable).
+pub async fn chatgpt_sign_out(state: &AppState) -> Result<(), String> {
+    let result = chatgpt::global().sign_out().await.map_err(|e| e.message);
+    state.mood.configure(provider_settings(&state.get_config()));
+    emit_account(&state.event_sink(), result.clone().err());
+    result
 }
 
 /// Forget every scene already decided (they will be analyzed again).

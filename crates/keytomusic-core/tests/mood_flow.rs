@@ -7,7 +7,8 @@ use std::time::Duration;
 use axum::routing::post;
 use axum::{Json, Router};
 use base64::Engine as _;
-use keytomusic_core::mood::{engine::MoodEngine, provider::ProviderSettings, server};
+use keytomusic_core::mood::provider::{AuthMode, ProviderSettings};
+use keytomusic_core::mood::{engine::MoodEngine, server};
 use keytomusic_core::types::MoodImageDetail;
 use keytomusic_core::CoreEvent;
 use serde_json::{json, Value};
@@ -100,6 +101,7 @@ async fn a_chapter_read_in_the_browser_drives_the_music() {
     let sink = events.clone();
     let engine = Arc::new(MoodEngine::new(None));
     engine.configure(ProviderSettings {
+        auth: AuthMode::ApiKey,
         base_url: format!("http://127.0.0.1:{model_port}/v1"),
         model: "gpt-5-mini".into(),
         api_key: None,

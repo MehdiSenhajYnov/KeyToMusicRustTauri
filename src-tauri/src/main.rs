@@ -163,6 +163,8 @@ fn main() {
             get_mood_service_status,
             set_mood_api_key,
             test_mood_connection,
+            chatgpt_sign_in,
+            chatgpt_sign_out,
             export_mood_extension,
             clear_mood_cache,
         ])

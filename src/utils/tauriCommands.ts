@@ -412,8 +412,20 @@ export interface MoodChapter {
   current: MoodPageMood | null;
 }
 
+export interface MoodAccount {
+  email: string | null;
+  planEnabled: boolean;
+}
+
+export interface MoodModel {
+  id: string;
+  name: string;
+}
+
 export interface MoodServiceStatus {
   enabled: boolean;
+  auth: "chatgpt" | "api_key";
+  account: MoodAccount | null;
   api: "disabled" | "stopped" | "running";
   port: number;
   baseUrl: string;
@@ -437,8 +449,16 @@ export async function setMoodApiKey(key: string | null): Promise<void> {
   return invoke("set_mood_api_key", { key });
 }
 
-export async function testMoodConnection(): Promise<string[]> {
-  return invoke<string[]>("test_mood_connection");
+export async function testMoodConnection(): Promise<MoodModel[]> {
+  return invoke<MoodModel[]>("test_mood_connection");
+}
+
+export async function chatgptSignIn(): Promise<string> {
+  return invoke<string>("chatgpt_sign_in");
+}
+
+export async function chatgptSignOut(): Promise<void> {
+  return invoke("chatgpt_sign_out");
 }
 
 export async function exportMoodExtension(): Promise<string> {

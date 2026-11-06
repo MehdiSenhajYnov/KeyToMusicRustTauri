@@ -3,9 +3,12 @@
 //!
 //! ```sh
 //! OPENAI_API_KEY=… cargo run -p keytomusic-core --example mood_eval -- \
-//!     path/to/RealTest [--chapters BL/2,OP/1] [--model gpt-5-mini] [--detail high] \
+//!     path/to/RealTest [--chapters BL/2,OP/1] [--model gpt-6.1-sol] [--detail high] \
 //!     [--base-url https://api.openai.com/v1] [--out results.json]
 //! ```
+//!
+//! `--chatgpt` uses the ChatGPT plan of the account signed in in the app
+//! (point `KEYTOMUSIC_DATA_DIR` at the app's data folder if needed).
 //!
 //! Every chapter goes through the same batching and prompt as the app.
 
@@ -17,7 +20,8 @@ use std::time::Instant;
 use base64::Engine as _;
 use keytomusic_core::mood::analyzer::{self, PageLabel};
 use keytomusic_core::mood::chapter::{Chapter, Next};
-use keytomusic_core::mood::provider::ProviderSettings;
+use keytomusic_core::mood::chatgpt;
+use keytomusic_core::mood::provider::{AuthMode, ProviderSettings};
 use keytomusic_core::mood::server::prepare_image;
 use keytomusic_core::types::{BaseMood, MoodImageDetail};
 use serde_json::{json, Value};
@@ -90,11 +94,21 @@ async fn main() {
         std::process::exit(2);
     };
     let base_url = arg(&args, "--base-url").unwrap_or_else(|| "https://api.openai.com/v1".into());
+    let plan = args.iter().any(|a| a == "--chatgpt");
+    if plan && !chatgpt::global().can_use_plan() {
+        eprintln!("--chatgpt: sign in with ChatGPT in the app first (Mood AI page)");
+        std::process::exit(2);
+    }
     let settings = ProviderSettings {
+        auth: if plan {
+            AuthMode::ChatGpt { plan: true }
+        } else {
+            AuthMode::ApiKey
+        },
         api_key: std::env::var("KEYTOMUSIC_MOOD_API_KEY")
             .or_else(|_| std::env::var("OPENAI_API_KEY"))
             .ok(),
-        model: arg(&args, "--model").unwrap_or_else(|| "gpt-5-mini".into()),
+        model: arg(&args, "--model").unwrap_or_else(|| "gpt-6.1-sol".into()),
         image_detail: arg(&args, "--detail")
             .and_then(|d| MoodImageDetail::from_str_opt(&d))
             .unwrap_or_default(),

@@ -444,7 +444,11 @@ impl MoodEngine {
                 Self::play_focus(&mut state)
             }
             Err(error) => {
-                chapter.fail(&plan, &error.message, Instant::now());
+                let now = Instant::now();
+                chapter.fail(&plan, &error.message, now);
+                if let Some(pause) = error.pause {
+                    chapter.pause_until(now + pause);
+                }
                 if error.settings {
                     state.blocked = Some(error.message.clone());
                 }

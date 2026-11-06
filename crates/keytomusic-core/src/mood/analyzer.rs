@@ -231,11 +231,7 @@ pub async fn analyze(
     let answer =
         provider::chat_json(settings, SYSTEM_PROMPT, &parts, "manga_scenes", &schema()).await?;
     let numbers: Vec<u32> = pages.iter().map(|(p, _)| *p).collect();
-    parse_scenes(&answer, &numbers).map_err(|message| ProviderError {
-        message,
-        retryable: true,
-        settings: false,
-    })
+    parse_scenes(&answer, &numbers).map_err(ProviderError::retryable)
 }
 
 #[cfg(test)]

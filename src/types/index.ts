@@ -96,8 +96,9 @@ export interface AppConfig {
   playlistImportEnabled: boolean;     // Remember "download entire playlist" checkbox state
   moodAiEnabled: boolean;             // Enable Manga Mood AI integration
   moodApiPort: number;                // HTTP API port for the browser extension (default: 8765)
-  moodBaseUrl: string;                // OpenAI-compatible endpoint (default: https://api.openai.com/v1)
-  moodModel: string;                  // Vision model (default: gpt-5-mini)
+  moodAuth: "chatgpt" | "api_key";    // ChatGPT plan (Sign in with ChatGPT) or an API key
+  moodBaseUrl: string;                // OpenAI-compatible endpoint for API keys (default: https://api.openai.com/v1)
+  moodModel: string;                  // Vision model (default: gpt-6.1-sol)
   moodImageDetail: "low" | "high";    // Page resolution sent to the model
 }
 

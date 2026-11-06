@@ -13,6 +13,7 @@
 
 pub mod analyzer;
 pub mod chapter;
+pub mod chatgpt;
 pub mod engine;
 pub mod extension;
 pub mod provider;

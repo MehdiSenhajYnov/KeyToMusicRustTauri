@@ -23,7 +23,7 @@ interface SettingsState {
   setPlaylistImportEnabled: (enabled: boolean) => Promise<void>;
   setMoodAiEnabled: (enabled: boolean) => Promise<void>;
   setMoodApiPort: (port: number) => Promise<void>;
-  setMoodProvider: (updates: Partial<Pick<AppConfig, "moodBaseUrl" | "moodModel" | "moodImageDetail">>) => Promise<void>;
+  setMoodProvider: (updates: Partial<Pick<AppConfig, "moodAuth" | "moodBaseUrl" | "moodModel" | "moodImageDetail">>) => Promise<void>;
   loadConfig: () => Promise<void>;
 }
 
@@ -43,8 +43,9 @@ const defaultConfig: AppConfig = {
   playlistImportEnabled: false,
   moodAiEnabled: false,
   moodApiPort: 8765,
+  moodAuth: "chatgpt",
   moodBaseUrl: "https://api.openai.com/v1",
-  moodModel: "gpt-5-mini",
+  moodModel: "gpt-6.1-sol",
   moodImageDetail: "high",
 };
 

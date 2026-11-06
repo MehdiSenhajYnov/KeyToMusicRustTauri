@@ -29,6 +29,9 @@ axum = "0.8"
 flate2 = "1"
 tar = "0.4"
 tempfile = "3"
+sha2 = "0.10"
+jsonwebtoken = "9"
+urlencoding = "2"
 
 [target."cfg(not(any(target_os = \"macos\", target_os = \"windows\")))".dependencies]
 # Use RustDesk's fork of rdev for Linux

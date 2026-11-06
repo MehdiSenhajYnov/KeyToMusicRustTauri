@@ -189,6 +189,11 @@ impl Chapter {
         self.last_error = Some(error.to_string());
     }
 
+    /// Hold every request until `until` (usage limit reached).
+    pub fn pause_until(&mut self, until: Instant) {
+        self.retry_at = Some(self.retry_at.map_or(until, |at| at.max(until)));
+    }
+
     /// Forget a past failure (new settings): try again right away.
     pub fn clear_backoff(&mut self) {
         self.failures = 0;

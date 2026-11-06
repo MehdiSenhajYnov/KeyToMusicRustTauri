@@ -329,7 +329,10 @@ pub struct AppConfig {
     pub mood_ai_enabled: bool,
     #[serde(default = "default_mood_api_port")]
     pub mood_api_port: u16,
-    /// OpenAI-compatible endpoint used by Mood AI (OpenAI, OpenRouter, Ollama…).
+    /// How Mood AI pays for requests: the ChatGPT plan, or an API key.
+    #[serde(default)]
+    pub mood_auth: MoodAuth,
+    /// OpenAI-compatible endpoint used with an API key (OpenAI, OpenRouter, Ollama…).
     #[serde(default = "default_mood_base_url")]
     pub mood_base_url: String,
     /// Vision model asked to split chapters into scenes.
@@ -338,6 +341,34 @@ pub struct AppConfig {
     /// How much of each page the model sees (cost vs. reading the text).
     #[serde(default)]
     pub mood_image_detail: MoodImageDetail,
+}
+
+/// How Mood AI requests are paid for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MoodAuth {
+    /// Sign in with ChatGPT: requests use the user's ChatGPT plan.
+    #[default]
+    Chatgpt,
+    /// An API key on an OpenAI-compatible endpoint (or a local server).
+    ApiKey,
+}
+
+impl MoodAuth {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MoodAuth::Chatgpt => "chatgpt",
+            MoodAuth::ApiKey => "api_key",
+        }
+    }
+
+    pub fn from_str_opt(s: &str) -> Option<Self> {
+        match s {
+            "chatgpt" => Some(MoodAuth::Chatgpt),
+            "api_key" => Some(MoodAuth::ApiKey),
+            _ => None,
+        }
+    }
 }
 
 /// Image resolution sent to the Mood AI model.
@@ -369,7 +400,7 @@ impl MoodImageDetail {
 }
 
 pub const DEFAULT_MOOD_BASE_URL: &str = "https://api.openai.com/v1";
-pub const DEFAULT_MOOD_MODEL: &str = "gpt-5-mini";
+pub const DEFAULT_MOOD_MODEL: &str = "gpt-6.1-sol";
 
 fn default_mood_base_url() -> String {
     DEFAULT_MOOD_BASE_URL.to_string()
@@ -409,6 +440,7 @@ impl Default for AppConfig {
             playlist_import_enabled: false,
             mood_ai_enabled: false,
             mood_api_port: 8765,
+            mood_auth: MoodAuth::default(),
             mood_base_url: default_mood_base_url(),
             mood_model: default_mood_model(),
             mood_image_detail: MoodImageDetail::default(),

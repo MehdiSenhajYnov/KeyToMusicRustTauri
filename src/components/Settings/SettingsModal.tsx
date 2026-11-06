@@ -38,16 +38,16 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 }
 
 function MoodAiSection({ config }: { config: import("../../types").AppConfig }) {
-  const { status, presets, models, isTesting, refreshServiceStatus, loadPresets, saveApiKey, testConnection, exportExtension, clearCache } =
-    useMoodStore();
+  const {
+    status, presets, models, isTesting, isSigningIn, refreshServiceStatus, loadPresets, saveApiKey,
+    testConnection, signIn, signOut, onAccount, exportExtension, clearCache,
+  } = useMoodStore();
   const [keyDraft, setKeyDraft] = useState("");
-  const [modelDraft, setModelDraft] = useState(config.moodModel);
   const [urlDraft, setUrlDraft] = useState(config.moodBaseUrl);
   const [exportedTo, setExportedTo] = useState<string | null>(null);
   const settings = useSettingsStore.getState();
 
   useEffect(() => { refreshServiceStatus(); loadPresets(); }, [refreshServiceStatus, loadPresets]);
-  useEffect(() => setModelDraft(config.moodModel), [config.moodModel]);
   useEffect(() => setUrlDraft(config.moodBaseUrl), [config.moodBaseUrl]);
 
   useEffect(() => {
@@ -57,11 +57,23 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
     for (const name of ["mood_api_status", "mood_progress"]) {
       listen(name, () => { refreshServiceStatus(); }).then(register);
     }
+    listen<{ planEnabled: boolean; error: string | null }>("mood_account", (e) => { onAccount(e.payload); }).then(register);
     return () => { disposed = true; cleanups.forEach((u) => u()); };
-  }, [refreshServiceStatus]);
+  }, [refreshServiceStatus, onAccount]);
+
+  const plan = config.moodAuth === "chatgpt";
+  const account = status?.account ?? null;
+  const canListModels = plan ? Boolean(account) : Boolean(status && (status.local || status.apiKey));
+  // Load the account's models once it can answer.
+  useEffect(() => {
+    if (canListModels && models.length === 0) testConnection(true);
+  }, [canListModels, config.moodAuth, config.moodBaseUrl, account?.email]); // eslint-disable-line react-hooks/exhaustive-deps
+  const modelChoices = models.some((m) => m.id === config.moodModel)
+    ? models
+    : [{ id: config.moodModel, name: config.moodModel }, ...models];
 
   const preset = presets.find((p) => p.baseUrl === config.moodBaseUrl);
-  const needsKey = status ? !status.local : true;
+  const needsKey = !plan && (status ? !status.local : true);
   const chapter = status?.chapter ?? null;
   const inputClass = "bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary focus:border-border-focus outline-none";
   const buttonClass = "px-2 py-1 text-xs bg-accent-primary/20 text-accent-primary rounded hover:bg-accent-primary/30 disabled:opacity-50";
@@ -93,6 +105,39 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
         <div className="space-y-2 rounded border border-border-color bg-bg-tertiary/40 p-3">
           <p className="text-text-secondary text-sm font-medium">Model</p>
           <div className="flex items-center gap-2">
+            <label className="text-text-muted text-xs w-20">Pay with</label>
+            <select
+              value={config.moodAuth}
+              onChange={(e) => { useMoodStore.setState({ models: [] }); settings.setMoodProvider({ moodAuth: e.target.value as "chatgpt" | "api_key" }); }}
+              className={`${inputClass} flex-1`}
+            >
+              <option value="chatgpt">My ChatGPT plan (Plus / Pro)</option>
+              <option value="api_key">An API key or a local server</option>
+            </select>
+          </div>
+          {plan && (
+            <div className="flex items-center gap-2">
+              <label className="text-text-muted text-xs w-20">Account</label>
+              <span className="text-text-secondary text-sm flex-1 truncate">
+                {account
+                  ? account.planEnabled
+                    ? `${account.email ?? "ChatGPT"} · Using ChatGPT plan`
+                    : `${account.email ?? "ChatGPT"} · plan usage not allowed`
+                  : isSigningIn
+                    ? "Finish signing in in your browser…"
+                    : "Not signed in"}
+              </span>
+              {!account?.planEnabled && (
+                <button disabled={isSigningIn} onClick={signIn} className={buttonClass}>Continue with ChatGPT</button>
+              )}
+              {account && <button onClick={signOut} className="text-xs text-text-muted hover:underline">Sign out</button>}
+              <button onClick={() => open("https://chatgpt.com/settings/usage")} className="text-xs text-text-muted hover:underline">
+                Manage usage
+              </button>
+            </div>
+          )}
+          {!plan && (
+          <div className="flex items-center gap-2">
             <label className="text-text-muted text-xs w-20">Provider</label>
             <select
               value={preset ? preset.baseUrl : "custom"}
@@ -106,7 +151,8 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
               <option value="custom">Other (OpenAI-compatible)</option>
             </select>
           </div>
-          {!preset && (
+          )}
+          {!plan && !preset && (
             <div className="flex items-center gap-2">
               <label className="text-text-muted text-xs w-20">URL</label>
               <input
@@ -142,18 +188,15 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
           )}
           <div className="flex items-center gap-2">
             <label className="text-text-muted text-xs w-20">Model</label>
-            <input
-              list="mood-models"
-              value={modelDraft}
-              onChange={(e) => setModelDraft(e.target.value)}
-              onBlur={() => modelDraft.trim() && modelDraft !== config.moodModel && settings.setMoodProvider({ moodModel: modelDraft.trim() })}
+            <select
+              value={config.moodModel}
+              onChange={(e) => settings.setMoodProvider({ moodModel: e.target.value })}
               className={`${inputClass} flex-1`}
-            />
-            <datalist id="mood-models">
-              {models.map((m) => <option key={m} value={m} />)}
-            </datalist>
-            <button disabled={isTesting} onClick={testConnection} className={buttonClass}>
-              {isTesting ? "Testing…" : "Test"}
+            >
+              {modelChoices.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            <button disabled={isTesting || !canListModels} onClick={() => testConnection()} className={buttonClass}>
+              {isTesting ? "Loading…" : "Refresh"}
             </button>
           </div>
           <div className="flex items-center gap-2">

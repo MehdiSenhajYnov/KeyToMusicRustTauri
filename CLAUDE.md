@@ -134,7 +134,7 @@ engine: batches of 10 pages around the page read → OpenAI-compatible chat API
 
 - **Base moods:** 8 values — `epic`, `tension`, `sadness`, `comedy`, `romance`, `horror`, `peaceful`, `mystery`; **intensity** `1..3`
 - **Mood Tagging:** Manual per-binding. `KeyBinding.mood: Option<BaseMood>` and `KeyBinding.moodIntensity: Option<MoodIntensity>` (minimum intensity). Per track, the binding with the highest minimum ≤ current intensity plays; an intensity change that keeps the same key does not restart it.
-- **Backend (`crates/keytomusic-core/src/mood/`):** `provider.rs` (chat + `/models`, drops `reasoning_effort` / falls back from `json_schema` when an endpoint rejects them), `analyzer.rs` (system prompt, schema, scenes → pages), `chapter.rs` (scheduling: page read first, then ahead, then behind; waits 1.5s for streaming pages; exponential backoff), `engine.rs` (2 workers, playback decision, disk cache), `server.rs` (axum, 64 MB body limit, re-encodes pages to ≤900px JPEG), `extension.rs` (extension files embedded with `include_bytes!`), `secret.rs`.
+- **Backend (`crates/keytomusic-core/src/mood/`):** `chatgpt.rs` (Sign in with ChatGPT: loopback OAuth + PKCE, dynamic client registration, JWKS-checked ID token, refresh, revoke; tokens in `data/mood_chatgpt.json`), `provider.rs` (ChatGPT plan → streamed `POST /v1/responses`; API key → chat completions + `/models`, drops `reasoning_effort` / falls back from `json_schema` when an endpoint rejects them), `analyzer.rs` (system prompt, schema, scenes → pages), `chapter.rs` (scheduling: page read first, then ahead, then behind; waits 1.5s for streaming pages; exponential backoff), `engine.rs` (2 workers, playback decision, disk cache), `server.rs` (axum, 64 MB body limit, re-encodes pages to ≤900px JPEG), `extension.rs` (extension files embedded with `include_bytes!`), `secret.rs`.
 - **Service (`service/mood.rs`):** `start_on_launch` (called by `Session::start` and the Tauri setup), `sync_service_config` (on config changes), `status`, `set_api_key`, `test_connection`, `export_extension`, `clear_cache`.
 - **Frontend:** `moodStore.ts` (status, presets, models, key/test/export/cache actions, playing mood), `useMoodPlayback.ts` (plays on `mood_committed`), `MoodAiSection` in SettingsModal, Sidebar `MoodIndicator`.
 - **Evaluation:** `cargo run --release -p keytomusic-core --example mood_eval -- <dataset>` (see docs/COMMANDS_REFERENCE.md).
@@ -193,7 +193,7 @@ Binding uniqueness = `(keyCode, trackId)`. One key can have multiple bindings on
 ### Profiles & Config
 
 - Profiles: `data/profiles/{uuid}.json` with sounds, tracks, bindings, disliked_videos. All sounds stopped on switch.
-- Config (`data/config.json`): masterVolume, autoMomentum, keyDetectionEnabled, shortcuts, crossfadeDuration (500ms), keyCooldown (200ms), currentProfileId, audioDevice, chordWindowMs (30ms), momentumModifier, playlistImportEnabled, moodAiEnabled, moodApiPort (8765), moodBaseUrl, moodModel (gpt-5-mini), moodImageDetail (high) — the API key lives in `data/mood_api_key` (0600), never in config.json
+- Config (`data/config.json`): masterVolume, autoMomentum, keyDetectionEnabled, shortcuts, crossfadeDuration (500ms), keyCooldown (200ms), currentProfileId, audioDevice, chordWindowMs (30ms), momentumModifier, playlistImportEnabled, moodAiEnabled, moodApiPort (8765), moodAuth (chatgpt | api_key), moodBaseUrl, moodModel (gpt-6.1-sol), moodImageDetail (high) — the API key lives in `data/mood_api_key` (0600), never in config.json
 - Atomic writes (`.tmp` → remove dest → rename, for Windows compat). Config: debounced saves via `AtomicBool` dirty flag, flushed every 2s by background thread. Profile list: partial JSON parsing (`serde_json::Value`) for O(1) field extraction instead of full deserialization.
 
 ### Import/Export
@@ -258,7 +258,7 @@ pub struct AppState {
 **YouTube:** `add_sound_from_youtube(url, download_id)`, `search_youtube`, `fetch_playlist`, `get_youtube_stream_url(video_id)`, `check_yt_dlp_installed`, `install_yt_dlp`, `check_ffmpeg_installed`, `install_ffmpeg`
 **Discovery:** `start_discovery(profile_id, exclude_ids, background)`, `get_discovery_suggestions`, `save_discovery_cursor`, `update_discovery_pool`, `dismiss_discovery`, `dislike_discovery`, `undislike_discovery`, `list_disliked_videos`, `cancel_discovery`, `predownload_suggestion`
 **Import/Export:** `export_profile`, `import_profile`, `pick_save_location`, `cleanup_export_temp`, `cancel_export`, `pick_ktm_file`, `pick_legacy_file`, `import_legacy_save`
-**Mood AI:** `get_mood_presets`, `get_mood_service_status`, `set_mood_api_key`, `test_mood_connection`, `export_mood_extension`, `clear_mood_cache` (enabling/port/model/endpoint go through `update_config`)
+**Mood AI:** `get_mood_presets`, `get_mood_service_status`, `chatgpt_sign_in`, `chatgpt_sign_out`, `set_mood_api_key`, `test_mood_connection` (returns `{id, name}` models), `export_mood_extension`, `clear_mood_cache` (enabling/port/model/endpoint go through `update_config`)
 **Utility:** `verify_profile_sounds`, `pick_audio_file`, `pick_audio_files`, `get_logs_folder`, `get_data_folder`, `open_folder`
 
 ## Backend → Frontend Events
@@ -279,6 +279,7 @@ pub struct AppState {
 | `discovery_partial` | `Vec<DiscoverySuggestion>` |
 | `waveform_progress` | `{ path, points, duration, sampleRate }` (streaming waveform, every 5 iterations) |
 | `mood_progress` | `{ analyzed, total, inFlight, error? }` (chapter analysis) |
+| `mood_account` | `{ email?, planEnabled, error? }` (ChatGPT sign-in finished / signed out) |
 | `mood_api_status` | `{ status: "running" \| "stopped" \| "disabled", enabled, port }` |
 | `mood_detected` | `{ mood, intensity, source }` |
 | `mood_committed` | `{ mood, intensity, source, previous_mood?, summary }` (the scene changed: play it) |

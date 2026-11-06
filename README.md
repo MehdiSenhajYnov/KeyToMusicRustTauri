@@ -13,7 +13,7 @@ Application desktop Tauri pour piloter une soundboard de lecture manga, avec :
 
 Le coeur soundboard/audio est stable. Mood AI (dans `keytomusic-core`, partagé avec l'édition native Awra) repose sur :
 
-- un modèle de vision derrière une API compatible OpenAI (OpenAI par défaut, `gpt-5-mini` ; OpenRouter, Ollama, LM Studio possibles)
+- un modèle de vision OpenAI payé par l'abonnement ChatGPT (« Sign in with ChatGPT », `gpt-6.1-sol` par défaut), ou par une clé API sur tout service compatible OpenAI (OpenRouter, Ollama, LM Studio…)
 - une API HTTP locale sur `127.0.0.1:8765` par défaut, démarrée avec l'app quand Mood AI est activé
 - une extension navigateur intégrée à l'app (bouton « Install extension ») qui envoie les pages du chapitre lu et la page à l'écran
 - un découpage du chapitre en scènes (10 pages par requête, 2 pages de contexte) : la musique change avec la scène, pas à chaque page

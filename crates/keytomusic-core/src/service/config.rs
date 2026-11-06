@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use crate::types::{AppConfig, MomentumModifier, MoodImageDetail};
+use crate::types::{AppConfig, MomentumModifier, MoodAuth, MoodImageDetail};
 
 use super::mood;
 
@@ -83,6 +83,14 @@ fn validate_config_updates(updates: &serde_json::Value) -> Result<(), String> {
             .is_some_and(|v| !v.trim().is_empty() && v.len() <= 200)
         {
             return Err("Choisis un modèle".into());
+        }
+    }
+    if let Some(v) = updates.get("moodAuth") {
+        if !v
+            .as_str()
+            .is_some_and(|v| MoodAuth::from_str_opt(v).is_some())
+        {
+            return Err("Mode de connexion inconnu".into());
         }
     }
     if let Some(v) = updates.get("moodImageDetail") {
@@ -192,6 +200,13 @@ fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
     {
         config.mood_api_port = v;
     }
+    if let Some(v) = updates
+        .get("moodAuth")
+        .and_then(|v| v.as_str())
+        .and_then(MoodAuth::from_str_opt)
+    {
+        config.mood_auth = v;
+    }
     if let Some(v) = updates.get("moodBaseUrl").and_then(|v| v.as_str()) {
         config.mood_base_url = normalize_base_url(v);
     }
@@ -263,6 +278,7 @@ pub async fn update_config(state: &AppState, updates: serde_json::Value) -> Resu
     let touches_mood_service = [
         "moodAiEnabled",
         "moodApiPort",
+        "moodAuth",
         "moodBaseUrl",
         "moodModel",
         "moodImageDetail",

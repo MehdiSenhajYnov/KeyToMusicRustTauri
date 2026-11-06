@@ -114,7 +114,7 @@ Lance les tests Rust classiques.
 
 ```bash
 OPENAI_API_KEY=sk-… cargo run --release -p keytomusic-core --example mood_eval -- \
-    chemin/vers/RealTest --chapters BL,OP/1 --model gpt-5-mini --detail high --out resultats.json
+    chemin/vers/RealTest --chapters BL,OP/1 --model gpt-6.1-sol --detail high --out resultats.json
 ```
 
 Passe chaque chapitre du jeu annoté (un dossier par chapitre + `ground_truth.json`)
@@ -123,6 +123,7 @@ par famille d'ambiance, la référence « toujours tension » et le nombre de
 changements de musique. `--base-url` permet de viser un autre service compatible
 OpenAI (Ollama : `http://localhost:11434/v1`). Le jeu RealTest n'est plus dans le
 dépôt : il reste dans l'historique git (`git show <commit>:manga-mood-ai/...`).
+`--chatgpt` utilise le compte ChatGPT connecté dans l'app à la place d'une clé.
 
 ## Recommandations rapides
 

@@ -33,7 +33,7 @@ async function refresh() {
   if (!response.enabled) {
     setState('warn', 'Mood AI est désactivé dans KeyToMusic');
   } else if (!response.configured) {
-    setState('warn', 'Modèle à configurer', 'Ajoute ta clé API dans KeyToMusic → Mood AI.');
+    setState('warn', 'Modèle à configurer', 'Connecte-toi avec ChatGPT (ou ajoute une clé API) dans KeyToMusic → Mood AI.');
   } else if (response.error) {
     setState('bad', 'Erreur du modèle', response.error);
   } else {

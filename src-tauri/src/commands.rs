@@ -568,8 +568,21 @@ pub async fn set_mood_api_key(state: AppStateRef<'_>, key: Option<String>) -> Re
 }
 
 #[tauri::command]
-pub async fn test_mood_connection(state: AppStateRef<'_>) -> Result<Vec<String>, String> {
+pub async fn test_mood_connection(
+    state: AppStateRef<'_>,
+) -> Result<Vec<keytomusic_core::mood::provider::ModelInfo>, String> {
     service::mood::test_connection(&state).await
+}
+
+/// Starts "Sign in with ChatGPT"; returns the page to open in the browser.
+#[tauri::command]
+pub async fn chatgpt_sign_in(state: AppStateRef<'_>) -> Result<String, String> {
+    service::mood::chatgpt_sign_in(&state).await
+}
+
+#[tauri::command]
+pub async fn chatgpt_sign_out(state: AppStateRef<'_>) -> Result<(), String> {
+    service::mood::chatgpt_sign_out(&state).await
 }
 
 #[tauri::command]

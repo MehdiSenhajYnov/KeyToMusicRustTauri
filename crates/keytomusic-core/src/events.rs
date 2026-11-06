@@ -82,6 +82,12 @@ pub enum CoreEvent {
         in_flight: u32,
         error: Option<String>,
     },
+    /// "Sign in with ChatGPT" finished (or the account signed out).
+    MoodAccount {
+        email: Option<String>,
+        plan_enabled: bool,
+        error: Option<String>,
+    },
     MoodApiStatus {
         status: String,
         enabled: bool,
@@ -127,6 +133,7 @@ impl CoreEvent {
             CoreEvent::DiscoveryPartial(_) => "discovery_partial",
             CoreEvent::DiscoveryComplete { .. } => "discovery_complete",
             CoreEvent::MoodProgress { .. } => "mood_progress",
+            CoreEvent::MoodAccount { .. } => "mood_account",
             CoreEvent::MoodApiStatus { .. } => "mood_api_status",
             CoreEvent::MoodDetected { .. } => "mood_detected",
             CoreEvent::MoodCommitted { .. } => "mood_committed",
@@ -209,6 +216,11 @@ impl CoreEvent {
                 "inFlight": in_flight,
                 "error": error,
             }),
+            CoreEvent::MoodAccount {
+                email,
+                plan_enabled,
+                error,
+            } => json!({ "email": email, "planEnabled": plan_enabled, "error": error }),
             CoreEvent::MoodApiStatus {
                 status,
                 enabled,
