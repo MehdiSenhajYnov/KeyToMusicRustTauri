@@ -95,7 +95,10 @@ export interface AppConfig {
   momentumModifier: MomentumModifier; // Modifier key to trigger momentum (default: "Shift")
   playlistImportEnabled: boolean;     // Remember "download entire playlist" checkbox state
   moodAiEnabled: boolean;             // Enable Manga Mood AI integration
-  moodApiPort: number;                // HTTP API port for external tools (default: 8765)
+  moodApiPort: number;                // HTTP API port for the browser extension (default: 8765)
+  moodBaseUrl: string;                // OpenAI-compatible endpoint (default: https://api.openai.com/v1)
+  moodModel: string;                  // Vision model (default: gpt-5-mini)
+  moodImageDetail: "low" | "high";    // Page resolution sent to the model
 }
 
 export interface InputRuntime {

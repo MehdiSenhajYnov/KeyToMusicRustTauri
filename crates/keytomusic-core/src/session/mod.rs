@@ -199,6 +199,12 @@ impl Session {
         runtime::spawn_audio_engine(&state, error_sound_candidates);
         runtime::start_key_detection(&state);
         runtime::spawn_background_maintenance(&state);
+        {
+            let state = state.clone();
+            session
+                .runtime
+                .spawn(async move { service::mood::start_on_launch(&state).await });
+        }
         session
     }
 
@@ -653,11 +659,36 @@ impl Session {
             let Some(profile) = data.profile.as_ref() else {
                 return;
             };
-            let bindings: Vec<KeyBinding> =
+            // Same mood, other intensity: a track whose key does not change
+            // keeps playing instead of restarting.
+            let unchanged: Vec<(String, String)> = match data.active_mood {
+                Some((active, level)) if active == mood => {
+                    rules::select_mood_bindings(&profile.key_bindings, active, level)
+                        .into_iter()
+                        .map(|b| (b.key_code.clone(), b.track_id.clone()))
+                        .collect()
+                }
+                _ => Vec::new(),
+            };
+            let selected: Vec<KeyBinding> =
                 rules::select_mood_bindings(&profile.key_bindings, mood, intensity)
                     .into_iter()
                     .cloned()
                     .collect();
+            let has_keys = !selected.is_empty();
+            let bindings: Vec<KeyBinding> = selected
+                .into_iter()
+                .filter(|b| {
+                    !unchanged
+                        .iter()
+                        .any(|(key, track)| *key == b.key_code && *track == b.track_id)
+                })
+                .collect();
+            if has_keys && bindings.is_empty() {
+                data.active_mood = Some((mood, intensity));
+                data.committed_mood = Some((mood, intensity));
+                return;
+            }
             let plan = Self::plan(&data, profile, &bindings, |s| {
                 if auto_momentum || s.momentum > 0.0 {
                     s.momentum

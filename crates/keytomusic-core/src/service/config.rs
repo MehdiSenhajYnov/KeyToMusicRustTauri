@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use crate::types::{AppConfig, MomentumModifier};
+use crate::types::{AppConfig, MomentumModifier, MoodImageDetail};
 
 use super::mood;
 
@@ -69,6 +69,28 @@ fn validate_config_updates(updates: &serde_json::Value) -> Result<(), String> {
     if let Some(v) = updates.get("momentumModifier") {
         if v.as_str().and_then(parse_momentum_modifier).is_none() {
             return Err("Unknown momentum modifier".into());
+        }
+    }
+    if let Some(v) = updates.get("moodBaseUrl") {
+        let url = v.as_str().map(normalize_base_url).unwrap_or_default();
+        if !(url.starts_with("http://") || url.starts_with("https://")) || url.len() < 10 {
+            return Err("L'adresse de l'API doit commencer par http:// ou https://".into());
+        }
+    }
+    if let Some(v) = updates.get("moodModel") {
+        if !v
+            .as_str()
+            .is_some_and(|v| !v.trim().is_empty() && v.len() <= 200)
+        {
+            return Err("Choisis un modèle".into());
+        }
+    }
+    if let Some(v) = updates.get("moodImageDetail") {
+        if !v
+            .as_str()
+            .is_some_and(|v| MoodImageDetail::from_str_opt(v).is_some())
+        {
+            return Err("Qualité d'image inconnue".into());
         }
     }
     Ok(())
@@ -170,6 +192,30 @@ fn apply_config_updates(config: &mut AppConfig, updates: &serde_json::Value) {
     {
         config.mood_api_port = v;
     }
+    if let Some(v) = updates.get("moodBaseUrl").and_then(|v| v.as_str()) {
+        config.mood_base_url = normalize_base_url(v);
+    }
+    if let Some(v) = updates.get("moodModel").and_then(|v| v.as_str()) {
+        config.mood_model = v.trim().to_string();
+    }
+    if let Some(v) = updates
+        .get("moodImageDetail")
+        .and_then(|v| v.as_str())
+        .and_then(MoodImageDetail::from_str_opt)
+    {
+        config.mood_image_detail = v;
+    }
+}
+
+/// `https://host/v1/` and `https://host/v1/chat/completions` both mean `https://host/v1`.
+pub(crate) fn normalize_base_url(url: &str) -> String {
+    let mut url = url.trim().trim_end_matches('/').to_string();
+    for suffix in ["/chat/completions", "/models"] {
+        if let Some(stripped) = url.strip_suffix(suffix) {
+            url = stripped.trim_end_matches('/').to_string();
+        }
+    }
+    url
 }
 
 fn restore_config_fields(
@@ -214,8 +260,15 @@ fn sync_runtime_dependent_config(state: &AppState, config: &AppConfig) {
 /// Apply a partial config update (camelCase JSON fields), keep runtime
 /// services in sync, persist it, and roll back the touched fields on failure.
 pub async fn update_config(state: &AppState, updates: serde_json::Value) -> Result<(), String> {
-    let touches_mood_service =
-        updates.get("moodAiEnabled").is_some() || updates.get("moodApiPort").is_some();
+    let touches_mood_service = [
+        "moodAiEnabled",
+        "moodApiPort",
+        "moodBaseUrl",
+        "moodModel",
+        "moodImageDetail",
+    ]
+    .iter()
+    .any(|key| updates.get(*key).is_some());
     let _lifecycle = if touches_mood_service {
         Some(state.mood_lifecycle.lock().await)
     } else {

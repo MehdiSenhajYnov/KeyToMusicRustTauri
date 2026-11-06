@@ -14,7 +14,7 @@ use keytomusic_core::service::{
 };
 use keytomusic_core::state::AppState;
 use keytomusic_core::types::{AppConfig, Profile, Sound};
-use keytomusic_core::{discovery, import_export, mood, storage, youtube};
+use keytomusic_core::{discovery, import_export, storage, youtube};
 use tauri::State;
 
 type AppStateRef<'a> = State<'a, Arc<AppState>>;
@@ -542,40 +542,44 @@ pub fn get_initial_state(state: AppStateRef<'_>) -> Result<InitialState, String>
 
 // ─── Mood AI Commands ────────────────────────────────────────────────────────
 
-#[tauri::command]
-pub fn check_llama_server_installed() -> bool {
-    mood::llama_manager::is_llama_server_installed()
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoodPreset {
+    name: &'static str,
+    base_url: &'static str,
+    needs_key: bool,
 }
 
 #[tauri::command]
-pub async fn install_llama_server() -> Result<String, String> {
-    service::mood::install_llama_server().await
+pub fn get_mood_presets() -> Vec<MoodPreset> {
+    service::mood::presets()
+        .iter()
+        .map(|(name, base_url, needs_key)| MoodPreset {
+            name,
+            base_url,
+            needs_key: *needs_key,
+        })
+        .collect()
 }
 
 #[tauri::command]
-pub fn check_mood_model_installed() -> bool {
-    mood::llama_manager::is_model_downloaded()
+pub async fn set_mood_api_key(state: AppStateRef<'_>, key: Option<String>) -> Result<(), String> {
+    service::mood::set_api_key(&state, key).await
 }
 
 #[tauri::command]
-pub async fn install_mood_model(state: AppStateRef<'_>) -> Result<String, String> {
-    service::mood::install_model(&state).await
+pub async fn test_mood_connection(state: AppStateRef<'_>) -> Result<Vec<String>, String> {
+    service::mood::test_connection(&state).await
 }
 
 #[tauri::command]
-pub async fn start_mood_server(state: AppStateRef<'_>) -> Result<(), String> {
-    service::mood::start_server(&state).await
+pub fn export_mood_extension() -> Result<String, String> {
+    service::mood::export_extension(None).map(|path| path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
-pub async fn stop_mood_server(state: AppStateRef<'_>) -> Result<(), String> {
-    service::mood::stop_server(&state).await;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn get_mood_server_status(state: AppStateRef<'_>) -> Result<String, String> {
-    Ok(service::mood::runtime_status(&state).await)
+pub fn clear_mood_cache(state: AppStateRef<'_>) {
+    service::mood::clear_cache(&state);
 }
 
 #[tauri::command]

@@ -7,20 +7,18 @@ Application desktop Tauri pour piloter une soundboard de lecture manga, avec :
 - import/export de profils
 - telechargement et recherche YouTube
 - systeme de decouverte
-- pipeline Manga Mood local avec extension navigateur + runtime VLM local
+- Mood AI : un modèle de vision (GPT ou tout service compatible OpenAI) découpe le chapitre lu dans le navigateur en scènes et lance la musique associée
 
 ## Etat actuel
 
-Le coeur soundboard/audio est stable.  
-Le sous-systeme Manga Mood actif repose sur :
+Le coeur soundboard/audio est stable. Mood AI (dans `keytomusic-core`, partagé avec l'édition native Awra) repose sur :
 
-- un runtime local `llama-server` pilote par l'app Tauri
-- une API HTTP locale sur `127.0.0.1:8765` par defaut
-- une extension navigateur qui precharge les pages manga dans le navigateur, les capture en base64, et alimente le cache mood du chapitre
-- une couche de commit OST qui lisse les changements musicaux et filtre les spikes isoles de type `comedy` au milieu d'une zone action
-- un pipeline cible oriente lecture utilisateur, avec buffer analyse vise `X-10 .. X+20`
+- un modèle de vision derrière une API compatible OpenAI (OpenAI par défaut, `gpt-5-mini` ; OpenRouter, Ollama, LM Studio possibles)
+- une API HTTP locale sur `127.0.0.1:8765` par défaut, démarrée avec l'app quand Mood AI est activé
+- une extension navigateur intégrée à l'app (bouton « Install extension ») qui envoie les pages du chapitre lu et la page à l'écran
+- un découpage du chapitre en scènes (10 pages par requête, 2 pages de contexte) : la musique change avec la scène, pas à chaque page
 
-La source de verite pour ce flux est [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md).
+Voir [docs/MOOD_AI.md](docs/MOOD_AI.md).
 
 ## Stack
 
@@ -28,8 +26,8 @@ La source de verite pour ce flux est [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/
 - Frontend: React 18 + TypeScript + Zustand + Tailwind CSS
 - Backend: Rust
 - Audio: rodio + cpal + symphonia
-- Mood AI: llama.cpp `llama-server` + `Qwen3-VL-4B-Thinking`
-- Extension: WebExtension compatible Chromium + Firefox
+- Mood AI: API compatible OpenAI (GPT par défaut)
+- Extension: WebExtension MV3 compatible Chromium + Firefox (`crates/keytomusic-core/extension/`)
 
 ## Commandes
 
@@ -42,8 +40,7 @@ npm run tauri:build
 cargo fmt --all
 cargo clippy --workspace --all-targets
 cargo test --workspace
-python3 scripts/serve-realtest-viewer.py
-python3 scripts/run-realtest-prod-benchmark.py start
+cargo run --release -p keytomusic-core --example mood_eval -- <dataset>
 ```
 
 Reference complete des commandes utiles :
@@ -53,20 +50,20 @@ Reference complete des commandes utiles :
 
 ```text
 src/                     Frontend React/TypeScript
-src-tauri/src/           Backend Rust/Tauri
-WebExtension/manga-mood/ Extension navigateur Manga Mood
+src-tauri/src/           Backend Rust/Tauri (commandes)
+crates/keytomusic-core/  Moteur partagé (audio, touches, YouTube, Mood AI…)
+crates/keytomusic-core/extension/ Extension navigateur Mood AI
 docs/                    Documentation canonique et audit
 Tasks/                   Suivi des taches et historique d'implementation
-manga-mood-ai/           Recherche, plans et benchmarks mood
 resources/               Ressources statiques packagees
 data/                    Donnees runtime generees localement
 ```
 
 ## Documentation
 
-- [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md) : architecture produit actuelle du systeme Manga Mood
-- [docs/COMMANDS_REFERENCE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/COMMANDS_REFERENCE.md) : index rapide des commandes lancables du repo, viewer RealTest et benchmark inclus
-- [WebExtension/manga-mood/README.md](/home/mehdi/Dev/KeyToMusicRustTauri/WebExtension/manga-mood/README.md) : installation, workflow et debug de l'extension
+- [docs/MOOD_AI.md](docs/MOOD_AI.md) : fonctionnement de Mood AI
+- [docs/COMMANDS_REFERENCE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/COMMANDS_REFERENCE.md) : index rapide des commandes lancables du repo
+- [crates/keytomusic-core/extension/README.md](crates/keytomusic-core/extension/README.md) : installation et fonctionnement de l'extension
 - [docs/KeyToMusic_Technical_Specification.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/KeyToMusic_Technical_Specification.md) : specification technique large de l'app
 - [docs/DOCUMENTATION_AUDIT.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/DOCUMENTATION_AUDIT.md) : statut de chaque famille documentaire
 - [Tasks/README.md](/home/mehdi/Dev/KeyToMusicRustTauri/Tasks/README.md) : suivi des taches actives, livrees et post-dev
@@ -75,4 +72,4 @@ data/                    Donnees runtime generees localement
 ## Notes
 
 - Ne pas committer `data/`, `src-tauri/target/`, `.env*` ni les binaires auto-telecharges.
-- Les docs `manga-mood-ai/plans/`, `manga-mood-ai/research/` et `manga-mood-ai/results/` contiennent de la recherche, de l'historique et des artefacts de benchmark. Elles ne remplacent pas la doc produit canonique.
+- L'ancienne recherche Mood AI locale (`manga-mood-ai/`, llama.cpp, Qwen3-VL) a été retirée ; elle reste dans l'historique git.

@@ -7,7 +7,7 @@ mod keyboard_layout;
 use std::sync::Arc;
 
 use commands::*;
-use keytomusic_core::{mood, runtime, AppState, CoreEvent};
+use keytomusic_core::{runtime, service, AppState, CoreEvent};
 use tauri::{DeviceEventFilter, Emitter, Manager};
 
 #[cfg(target_os = "linux")]
@@ -33,16 +33,6 @@ fn main() {
     apply_linux_webkit_workarounds();
 
     runtime::init_directories();
-
-    if std::env::var_os("KEYTOMUSIC_RUN_REALTEST_BENCHMARK").is_some() {
-        tracing::info!("Running in RealTest benchmark CLI mode");
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("failed to create tokio runtime for RealTest benchmark");
-        runtime.block_on(mood::director_realtest_suite::run());
-        return;
-    }
 
     // Audio engine and key detection start in the setup hook, once events can reach the webview.
     let app_state: Arc<AppState> = Arc::new(runtime::build_state(runtime::load_config()));
@@ -73,6 +63,12 @@ fn main() {
                 .unwrap_or_default();
             runtime::spawn_audio_engine(&app_state, error_sounds);
             runtime::start_key_detection(&app_state);
+            {
+                let state = app_state.clone();
+                tauri::async_runtime::spawn(async move {
+                    service::mood::start_on_launch(&state).await;
+                });
+            }
 
             // Clear pressed keys on window focus change to prevent stuck modifiers (Alt+Tab)
             if let Some(window) = app.get_webview_window("main") {
@@ -163,14 +159,12 @@ fn main() {
             get_initial_state,
             get_keyboard_layout,
             // Mood AI commands
-            check_llama_server_installed,
-            install_llama_server,
-            check_mood_model_installed,
-            install_mood_model,
-            start_mood_server,
-            stop_mood_server,
-            get_mood_server_status,
+            get_mood_presets,
             get_mood_service_status,
+            set_mood_api_key,
+            test_mood_connection,
+            export_mood_extension,
+            clear_mood_cache,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

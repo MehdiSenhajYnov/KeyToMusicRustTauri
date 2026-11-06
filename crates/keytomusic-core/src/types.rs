@@ -329,6 +329,54 @@ pub struct AppConfig {
     pub mood_ai_enabled: bool,
     #[serde(default = "default_mood_api_port")]
     pub mood_api_port: u16,
+    /// OpenAI-compatible endpoint used by Mood AI (OpenAI, OpenRouter, Ollama…).
+    #[serde(default = "default_mood_base_url")]
+    pub mood_base_url: String,
+    /// Vision model asked to split chapters into scenes.
+    #[serde(default = "default_mood_model")]
+    pub mood_model: String,
+    /// How much of each page the model sees (cost vs. reading the text).
+    #[serde(default)]
+    pub mood_image_detail: MoodImageDetail,
+}
+
+/// Image resolution sent to the Mood AI model.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MoodImageDetail {
+    /// Small thumbnails: cheapest, bubbles are not readable.
+    Low,
+    /// Readable pages: the model also uses the dialogue.
+    #[default]
+    High,
+}
+
+impl MoodImageDetail {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MoodImageDetail::Low => "low",
+            MoodImageDetail::High => "high",
+        }
+    }
+
+    pub fn from_str_opt(s: &str) -> Option<Self> {
+        match s {
+            "low" => Some(MoodImageDetail::Low),
+            "high" => Some(MoodImageDetail::High),
+            _ => None,
+        }
+    }
+}
+
+pub const DEFAULT_MOOD_BASE_URL: &str = "https://api.openai.com/v1";
+pub const DEFAULT_MOOD_MODEL: &str = "gpt-5-mini";
+
+fn default_mood_base_url() -> String {
+    DEFAULT_MOOD_BASE_URL.to_string()
+}
+
+fn default_mood_model() -> String {
+    DEFAULT_MOOD_MODEL.to_string()
 }
 
 fn default_chord_window_ms() -> u32 {
@@ -361,6 +409,9 @@ impl Default for AppConfig {
             playlist_import_enabled: false,
             mood_ai_enabled: false,
             mood_api_port: 8765,
+            mood_base_url: default_mood_base_url(),
+            mood_model: default_mood_model(),
+            mood_image_detail: MoodImageDetail::default(),
         }
     }
 }
@@ -389,7 +440,10 @@ mod tests {
     fn track_ducking_is_optional_on_the_wire() {
         let old: Track = serde_json::from_str(r#"{"id":"t","name":"OST","volume":1.0}"#).unwrap();
         assert!(!old.ducks_others);
-        assert!(serde_json::to_value(&old).unwrap().get("ducksOthers").is_none());
+        assert!(serde_json::to_value(&old)
+            .unwrap()
+            .get("ducksOthers")
+            .is_none());
         let ducking = Track {
             ducks_others: true,
             ..old

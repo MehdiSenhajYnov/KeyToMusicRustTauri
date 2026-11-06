@@ -5,8 +5,7 @@ use crate::audio::analysis::WaveformCache;
 use crate::audio::AudioEngineHandle;
 use crate::events::{CoreEvent, EventSink, NoopSink, SharedSink};
 use crate::keys::KeyDetector;
-use crate::mood::cache::MoodCache;
-use crate::mood::inference::LlamaServer;
+use crate::mood::engine::MoodEngine;
 use crate::storage;
 use crate::types::AppConfig;
 use crate::youtube::YouTubeCache;
@@ -33,13 +32,14 @@ pub struct AppState {
     pub config_dirty: Arc<AtomicBool>,
     /// Orders config writes, so the config lock is not held during disk I/O.
     config_write: Mutex<()>,
-    /// Running llama-server instance for mood inference.
+    /// Serializes Mood AI start/stop/reconfiguration.
     pub mood_lifecycle: tokio::sync::Mutex<()>,
-    pub llama_server: Arc<tokio::sync::Mutex<Option<LlamaServer>>>,
-    /// Running mood API HTTP server handle.
-    pub mood_api_server: Arc<Mutex<Option<tokio::task::JoinHandle<()>>>>,
-    /// Ephemeral mood cache for pre-calculated page moods.
-    pub mood_cache: Arc<Mutex<MoodCache>>,
+    /// Mood AI: chapter analysis and playback decisions.
+    pub mood: Arc<MoodEngine>,
+    /// Local HTTP API for the browser extension, with the port it listens on.
+    pub mood_api_server: Mutex<Option<(u16, tokio::task::JoinHandle<()>)>>,
+    /// Last error starting the API (port taken…), for the UIs.
+    pub mood_api_error: Mutex<Option<String>>,
     /// Destination of core events, installed by the host UI.
     events: std::sync::OnceLock<SharedSink>,
 }
@@ -69,9 +69,13 @@ impl AppState {
             config_dirty: Arc::new(AtomicBool::new(false)),
             config_write: Mutex::new(()),
             mood_lifecycle: tokio::sync::Mutex::new(()),
-            llama_server: Arc::new(tokio::sync::Mutex::new(None)),
-            mood_api_server: Arc::new(Mutex::new(None)),
-            mood_cache: Arc::new(Mutex::new(MoodCache::new())),
+            mood: Arc::new(MoodEngine::new(Some(
+                storage::get_app_data_dir()
+                    .join("cache")
+                    .join("mood_scenes.json"),
+            ))),
+            mood_api_server: Mutex::new(None),
+            mood_api_error: Mutex::new(None),
             events: std::sync::OnceLock::new(),
         }
     }

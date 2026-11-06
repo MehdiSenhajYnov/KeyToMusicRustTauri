@@ -10,7 +10,6 @@ src-tauri/target/
 data/
 
 # Local AI benchmark assets
-manga-mood-ai/models/
 
 # Logs
 *.log

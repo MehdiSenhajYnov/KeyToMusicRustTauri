@@ -75,12 +75,12 @@ pub enum CoreEvent {
     DiscoveryComplete {
         count: usize,
     },
-    MoodModelDownloadProgress {
-        downloaded: u64,
-        total: u64,
-    },
-    MoodServerStatus {
-        status: String,
+    /// Chapter analysis progress (pages decided / known, requests in flight).
+    MoodProgress {
+        analyzed: u32,
+        total: u32,
+        in_flight: u32,
+        error: Option<String>,
     },
     MoodApiStatus {
         status: String,
@@ -92,15 +92,14 @@ pub enum CoreEvent {
         intensity: u8,
         source: String,
     },
+    /// The scene changed: play this mood.
     MoodCommitted {
         mood: String,
         intensity: u8,
         source: String,
         previous_mood: Option<String>,
-        previous_intensity: Option<u8>,
-        dwell_count: u32,
-        mood_changed: bool,
-        intensity_changed: bool,
+        /// What happens in the scene, in a few words.
+        summary: String,
     },
 }
 
@@ -127,8 +126,7 @@ impl CoreEvent {
             CoreEvent::DiscoveryProgress { .. } => "discovery_progress",
             CoreEvent::DiscoveryPartial(_) => "discovery_partial",
             CoreEvent::DiscoveryComplete { .. } => "discovery_complete",
-            CoreEvent::MoodModelDownloadProgress { .. } => "mood_model_download_progress",
-            CoreEvent::MoodServerStatus { .. } => "mood_server_status",
+            CoreEvent::MoodProgress { .. } => "mood_progress",
             CoreEvent::MoodApiStatus { .. } => "mood_api_status",
             CoreEvent::MoodDetected { .. } => "mood_detected",
             CoreEvent::MoodCommitted { .. } => "mood_committed",
@@ -200,10 +198,17 @@ impl CoreEvent {
             CoreEvent::DiscoveryPartial(suggestions) => {
                 serde_json::to_value(suggestions).unwrap_or(serde_json::Value::Null)
             }
-            CoreEvent::MoodModelDownloadProgress { downloaded, total } => {
-                json!({ "downloaded": downloaded, "total": total })
-            }
-            CoreEvent::MoodServerStatus { status } => json!({ "status": status }),
+            CoreEvent::MoodProgress {
+                analyzed,
+                total,
+                in_flight,
+                error,
+            } => json!({
+                "analyzed": analyzed,
+                "total": total,
+                "inFlight": in_flight,
+                "error": error,
+            }),
             CoreEvent::MoodApiStatus {
                 status,
                 enabled,
@@ -219,19 +224,13 @@ impl CoreEvent {
                 intensity,
                 source,
                 previous_mood,
-                previous_intensity,
-                dwell_count,
-                mood_changed,
-                intensity_changed,
+                summary,
             } => json!({
                 "mood": mood,
                 "intensity": intensity,
                 "source": source,
                 "previous_mood": previous_mood,
-                "previous_intensity": previous_intensity,
-                "dwell_count": dwell_count,
-                "mood_changed": mood_changed,
-                "intensity_changed": intensity_changed,
+                "summary": summary,
             }),
         }
     }

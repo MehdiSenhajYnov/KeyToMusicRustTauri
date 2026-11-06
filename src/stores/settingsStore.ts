@@ -23,6 +23,7 @@ interface SettingsState {
   setPlaylistImportEnabled: (enabled: boolean) => Promise<void>;
   setMoodAiEnabled: (enabled: boolean) => Promise<void>;
   setMoodApiPort: (port: number) => Promise<void>;
+  setMoodProvider: (updates: Partial<Pick<AppConfig, "moodBaseUrl" | "moodModel" | "moodImageDetail">>) => Promise<void>;
   loadConfig: () => Promise<void>;
 }
 
@@ -42,6 +43,9 @@ const defaultConfig: AppConfig = {
   playlistImportEnabled: false,
   moodAiEnabled: false,
   moodApiPort: 8765,
+  moodBaseUrl: "https://api.openai.com/v1",
+  moodModel: "gpt-5-mini",
+  moodImageDetail: "high",
 };
 
 let confirmedConfig = { ...defaultConfig };
@@ -109,6 +113,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       return;
     }
     await get().updateConfig({ moodApiPort: port });
+    await useMoodStore.getState().refreshServiceStatus();
+  },
+  setMoodProvider: async (updates) => {
+    await get().updateConfig(updates);
     await useMoodStore.getState().refreshServiceStatus();
   },
 }));

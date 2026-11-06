@@ -388,43 +388,65 @@ export async function predownloadSuggestion(
 
 // ─── Mood AI ─────────────────────────────────────────────────────────────
 
-export async function checkLlamaServerInstalled(): Promise<boolean> {
-  return invoke<boolean>("check_llama_server_installed");
+export interface MoodPreset {
+  name: string;
+  baseUrl: string;
+  needsKey: boolean;
 }
 
-export async function installLlamaServer(): Promise<string> {
-  return invoke<string>("install_llama_server");
+export interface MoodPageMood {
+  mood: string;
+  intensity: number;
+  summary: string;
 }
 
-export async function checkMoodModelInstalled(): Promise<boolean> {
-  return invoke<boolean>("check_mood_model_installed");
-}
-
-export async function installMoodModel(): Promise<string> {
-  return invoke<string>("install_mood_model");
-}
-
-export async function startMoodServer(): Promise<void> {
-  return invoke("start_mood_server");
-}
-
-export async function stopMoodServer(): Promise<void> {
-  return invoke("stop_mood_server");
-}
-
-export async function getMoodServerStatus(): Promise<string> {
-  return invoke<string>("get_mood_server_status");
+export interface MoodChapter {
+  key: string;
+  title: string | null;
+  totalPages: number;
+  received: number;
+  analyzed: number;
+  inFlight: number;
+  focus: number;
+  error: string | null;
+  current: MoodPageMood | null;
 }
 
 export interface MoodServiceStatus {
-  runtime: "stopped" | "starting" | "running" | "error";
-  api: "disabled" | "stopped" | "running" | "error";
   enabled: boolean;
+  api: "disabled" | "stopped" | "running";
   port: number;
+  baseUrl: string;
+  model: string;
+  local: boolean;
+  apiKey: string | null;
+  configured: boolean;
+  error: string | null;
+  chapter: MoodChapter | null;
+}
+
+export async function getMoodPresets(): Promise<MoodPreset[]> {
+  return invoke<MoodPreset[]>("get_mood_presets");
 }
 
 export async function getMoodServiceStatus(): Promise<MoodServiceStatus> {
   return invoke<MoodServiceStatus>("get_mood_service_status");
+}
+
+export async function setMoodApiKey(key: string | null): Promise<void> {
+  return invoke("set_mood_api_key", { key });
+}
+
+export async function testMoodConnection(): Promise<string[]> {
+  return invoke<string[]>("test_mood_connection");
+}
+
+export async function exportMoodExtension(): Promise<string> {
+  return invoke<string>("export_mood_extension");
+}
+
+export async function clearMoodCache(): Promise<void> {
+  return invoke("clear_mood_cache");
 }
 
 export { type ProfileSummary };

@@ -6,13 +6,13 @@
 ## Build, Test, and Development Commands
 Use `npm install` to install frontend and Tauri CLI dependencies. `npm run dev` starts the Vite frontend on port `5173`; `npm run tauri:dev` runs the full desktop app with Rust + frontend hot reload. `npm run build` runs `tsc` and builds the web bundle into `dist/`. `npm run tauri:build` creates a desktop build. For backend quality checks, use `cargo fmt --all`, `cargo clippy --workspace --all-targets`, and `cargo test --workspace`.
 
-For the complete command index, RealTest viewer launch, and resumable Production benchmark commands, check `docs/COMMANDS_REFERENCE.md` first.
+For the complete command index (including the Mood AI evaluation), check `docs/COMMANDS_REFERENCE.md` first.
 
 ## Coding Style & Naming Conventions
 Follow the existing frontend style: 2-space indentation, double quotes, semicolons, and strict TypeScript. Name React components with `PascalCase` (`Header.tsx`), hooks with `use...` (`useKeyDetection.ts`), Zustand stores with `...Store.ts`, and utility files with descriptive lower camel or domain names such as `tauriCommands.ts`. Rust files use `snake_case`, types use `CamelCase`, and formatting should be left to `cargo fmt`.
 
 ## Testing Guidelines
-Automated tests are currently Rust-focused. Add unit tests in `#[cfg(test)]` blocks close to the code you change, following examples in `crates/keytomusic-core/src/keys/chord.rs`, `crates/keytomusic-core/src/mood/director.rs`, and `crates/keytomusic-core/src/audio/analysis.rs`. Run `cargo test --workspace` before opening a PR. There is no frontend test runner configured yet, so UI changes should include clear manual verification steps.
+Automated tests are currently Rust-focused. Add unit tests in `#[cfg(test)]` blocks close to the code you change, following examples in `crates/keytomusic-core/src/keys/chord.rs`, `crates/keytomusic-core/src/mood/chapter.rs`, and `crates/keytomusic-core/src/audio/analysis.rs`. Run `cargo test --workspace` before opening a PR. There is no frontend test runner configured yet, so UI changes should include clear manual verification steps.
 
 ## Commit & Pull Request Guidelines
 Recent history follows Conventional Commit prefixes: `feat:`, `fix:`, and `chore:` with short imperative subjects, for example `fix: resolve stuck keys in global shortcuts`. Keep commits focused and avoid mixing version bumps or task-file churn into feature commits when possible. PRs should include a brief summary, linked issue or task, commands run, and screenshots or recordings for UI changes. Call out platform-specific effects when touching keyboard capture, audio devices, or Tauri permissions.

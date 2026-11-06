@@ -23,10 +23,7 @@ interface MoodCommittedPayload {
   intensity?: number;
   source: string;
   previous_mood?: string;
-  previous_intensity?: number;
-  dwell_count?: number;
-  mood_changed?: boolean;
-  intensity_changed?: boolean;
+  summary?: string;
 }
 
 export function useMoodPlayback() {
@@ -52,7 +49,20 @@ export function useMoodPlayback() {
     if (!currentProfile) return;
 
     // Find all bindings tagged with this mood, respecting intensity threshold
-    const matchingBindings = selectMoodBindings(currentProfile.keyBindings, mood, intensity);
+    const selected = selectMoodBindings(currentProfile.keyBindings, mood, intensity);
+    // Same mood, other intensity: a track whose key does not change keeps playing.
+    const unchanged =
+      activeMoodRef.current === mood && activeIntensityRef.current !== null
+        ? selectMoodBindings(currentProfile.keyBindings, mood, activeIntensityRef.current)
+        : [];
+    const matchingBindings = selected.filter(
+      (b) => !unchanged.some((u) => u.keyCode === b.keyCode && u.trackId === b.trackId),
+    );
+    if (selected.length > 0 && matchingBindings.length === 0) {
+      activeIntensityRef.current = intensity;
+      useMoodStore.getState().setCommittedMood(mood, intensity, payload.summary);
+      return;
+    }
 
     if (matchingBindings.length === 0) {
       activeMoodRef.current = mood;
@@ -127,7 +137,7 @@ export function useMoodPlayback() {
 
     const results = await Promise.allSettled(playPromises);
     if (results.some((result) => result.status === "fulfilled" && result.value === true)) {
-      useMoodStore.getState().setCommittedMood(mood, intensity);
+      useMoodStore.getState().setCommittedMood(mood, intensity, payload.summary);
     // Toast notification
     useToastStore.getState().addToast(
       previousMood

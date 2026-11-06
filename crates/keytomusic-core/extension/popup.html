@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <img src="icons/icon32.png" alt="">
+    <h1>KeyToMusic Mood AI</h1>
+    <label class="switch" title="Activer l'extension">
+      <input type="checkbox" id="enabled">
+      <span></span>
+    </label>
+  </header>
+
+  <section id="connection" class="card">
+    <div class="row"><span class="dot" id="dot"></span><span id="state">Connexion…</span></div>
+    <p class="muted" id="detail"></p>
+  </section>
+
+  <section id="chapter" class="card" hidden>
+    <div class="label">Chapitre</div>
+    <div id="title" class="title"></div>
+    <div class="bar"><div id="progress"></div></div>
+    <div class="muted" id="counts"></div>
+    <div id="mood" class="mood" hidden></div>
+    <div class="muted" id="summary"></div>
+  </section>
+
+  <section class="card">
+    <div class="row between">
+      <span>Ce site <span class="muted" id="host"></span></span>
+      <select id="site">
+        <option value="ask">Demander</option>
+        <option value="yes">Analyser</option>
+        <option value="no">Jamais</option>
+      </select>
+    </div>
+    <div class="row between">
+      <label for="port">Port de l'app</label>
+      <input id="port" type="number" min="1024" max="65535">
+    </div>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>

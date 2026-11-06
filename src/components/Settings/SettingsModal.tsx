@@ -38,54 +38,48 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
 }
 
 function MoodAiSection({ config }: { config: import("../../types").AppConfig }) {
-  const {
-    serverStatus, apiStatus, apiPort, serverInstalled, modelInstalled, isInstallingServer,
-    modelDownloadProgress, checkInstallation,
-    installServer, installModel, startServer, stopServer, refreshServiceStatus,
-    setModelDownloadProgress,
-  } = useMoodStore();
+  const { status, presets, models, isTesting, refreshServiceStatus, loadPresets, saveApiKey, testConnection, exportExtension, clearCache } =
+    useMoodStore();
+  const [keyDraft, setKeyDraft] = useState("");
+  const [modelDraft, setModelDraft] = useState(config.moodModel);
+  const [urlDraft, setUrlDraft] = useState(config.moodBaseUrl);
+  const [exportedTo, setExportedTo] = useState<string | null>(null);
+  const settings = useSettingsStore.getState();
 
-  useEffect(() => { checkInstallation(); }, []);
+  useEffect(() => { refreshServiceStatus(); loadPresets(); }, [refreshServiceStatus, loadPresets]);
+  useEffect(() => setModelDraft(config.moodModel), [config.moodModel]);
+  useEffect(() => setUrlDraft(config.moodBaseUrl), [config.moodBaseUrl]);
 
-  // Listen for backend events
   useEffect(() => {
     const cleanups: (() => void)[] = [];
     let disposed = false;
     const register = (unlisten: () => void) => { if (disposed) unlisten(); else cleanups.push(unlisten); };
-    listen<{ downloaded: number; total: number }>("mood_model_download_progress", (e) => {
-      setModelDownloadProgress(e.payload);
-    }).then(register);
-    listen("mood_server_status", () => {
-      refreshServiceStatus();
-    }).then(register);
-    listen("mood_api_status", () => {
-      refreshServiceStatus();
-    }).then(register);
+    for (const name of ["mood_api_status", "mood_progress"]) {
+      listen(name, () => { refreshServiceStatus(); }).then(register);
+    }
     return () => { disposed = true; cleanups.forEach((u) => u()); };
-  }, [refreshServiceStatus, setModelDownloadProgress]);
+  }, [refreshServiceStatus]);
 
-  const apiStatusLabel =
-    apiStatus === "running"
-      ? `Running on 127.0.0.1:${apiPort}`
-      : apiStatus === "disabled"
-        ? "Disabled by the Mood AI toggle"
-        : apiStatus === "stopped"
-          ? "Stopped"
-          : "Error";
+  const preset = presets.find((p) => p.baseUrl === config.moodBaseUrl);
+  const needsKey = status ? !status.local : true;
+  const chapter = status?.chapter ?? null;
+  const inputClass = "bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary focus:border-border-focus outline-none";
+  const buttonClass = "px-2 py-1 text-xs bg-accent-primary/20 text-accent-primary rounded hover:bg-accent-primary/30 disabled:opacity-50";
 
   return (
     <section>
       <SectionHeader>Manga Mood AI</SectionHeader>
       <div className="space-y-3">
-        {/* Toggle */}
         <div className="flex items-center justify-between">
           <div>
             <label className="text-text-secondary text-sm font-medium">Enable Mood AI</label>
-            <p className="text-text-muted text-xs">Detect manga page mood and auto-trigger tagged sounds.</p>
+            <p className="text-text-muted text-xs">
+              A vision model reads the chapter open in your browser, splits it into scenes and plays the keys tagged with each scene's mood.
+            </p>
           </div>
           <button
-            onClick={() => useSettingsStore.getState().setMoodAiEnabled(!config.moodAiEnabled)}
-            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+            onClick={() => settings.setMoodAiEnabled(!config.moodAiEnabled)}
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
               config.moodAiEnabled ? "bg-accent-primary" : "bg-bg-tertiary"
             }`}
           >
@@ -95,145 +89,144 @@ function MoodAiSection({ config }: { config: import("../../types").AppConfig }) 
           </button>
         </div>
 
-        {/* Installation status */}
-        <div className="space-y-2">
+        {/* Provider */}
+        <div className="space-y-2 rounded border border-border-color bg-bg-tertiary/40 p-3">
+          <p className="text-text-secondary text-sm font-medium">Model</p>
           <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${serverInstalled ? "bg-accent-success" : "bg-accent-error"}`} />
-            <span className="text-text-secondary text-sm">llama-server</span>
-            {!serverInstalled && (
-              <button disabled={isInstallingServer} onClick={installServer} className="text-xs text-accent-primary hover:underline">
-                {isInstallingServer ? "Installing…" : "Install"}
-              </button>
-            )}
+            <label className="text-text-muted text-xs w-20">Provider</label>
+            <select
+              value={preset ? preset.baseUrl : "custom"}
+              onChange={(e) => {
+                if (e.target.value !== "custom") settings.setMoodProvider({ moodBaseUrl: e.target.value });
+                else setUrlDraft("");
+              }}
+              className={`${inputClass} flex-1`}
+            >
+              {presets.map((p) => <option key={p.baseUrl} value={p.baseUrl}>{p.name}</option>)}
+              <option value="custom">Other (OpenAI-compatible)</option>
+            </select>
           </div>
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${modelInstalled ? "bg-accent-success" : "bg-accent-error"}`} />
-            <span className="text-text-secondary text-sm">Qwen3-VL-4B-Thinking model</span>
-            {!modelInstalled && (
-              <button disabled={modelDownloadProgress !== null} onClick={installModel} className="text-xs text-accent-primary hover:underline">
-                {modelDownloadProgress ? "Downloading…" : "Download"}
-              </button>
-            )}
-          </div>
-          {modelDownloadProgress && modelDownloadProgress.total > 0 && (
-            <div className="space-y-1">
-              <div className="w-full bg-bg-tertiary rounded-full h-1.5">
-                <div
-                  className="bg-accent-primary h-1.5 rounded-full transition-all"
-                  style={{ width: `${(modelDownloadProgress.downloaded / modelDownloadProgress.total) * 100}%` }}
-                />
-              </div>
-              <p className="text-text-muted text-xs">
-                {(modelDownloadProgress.downloaded / 1024 / 1024).toFixed(0)} / {(modelDownloadProgress.total / 1024 / 1024).toFixed(0)} MB
-              </p>
+          {!preset && (
+            <div className="flex items-center gap-2">
+              <label className="text-text-muted text-xs w-20">URL</label>
+              <input
+                value={urlDraft}
+                placeholder="https://host/v1"
+                onChange={(e) => setUrlDraft(e.target.value)}
+                onBlur={() => urlDraft.trim() && urlDraft !== config.moodBaseUrl && settings.setMoodProvider({ moodBaseUrl: urlDraft.trim() })}
+                className={`${inputClass} flex-1`}
+              />
             </div>
           )}
+          {needsKey && (
+            <div className="flex items-center gap-2">
+              <label className="text-text-muted text-xs w-20">API key</label>
+              <input
+                type="password"
+                value={keyDraft}
+                placeholder={status?.apiKey ? `Saved (${status.apiKey})` : "sk-…"}
+                onChange={(e) => setKeyDraft(e.target.value)}
+                className={`${inputClass} flex-1`}
+              />
+              <button
+                disabled={!keyDraft.trim()}
+                onClick={async () => { await saveApiKey(keyDraft.trim()); setKeyDraft(""); }}
+                className={buttonClass}
+              >
+                Save
+              </button>
+              {status?.apiKey && (
+                <button onClick={() => saveApiKey(null)} className="text-xs text-text-muted hover:underline">Remove</button>
+              )}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <label className="text-text-muted text-xs w-20">Model</label>
+            <input
+              list="mood-models"
+              value={modelDraft}
+              onChange={(e) => setModelDraft(e.target.value)}
+              onBlur={() => modelDraft.trim() && modelDraft !== config.moodModel && settings.setMoodProvider({ moodModel: modelDraft.trim() })}
+              className={`${inputClass} flex-1`}
+            />
+            <datalist id="mood-models">
+              {models.map((m) => <option key={m} value={m} />)}
+            </datalist>
+            <button disabled={isTesting} onClick={testConnection} className={buttonClass}>
+              {isTesting ? "Testing…" : "Test"}
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-text-muted text-xs w-20">Pages</label>
+            <select
+              value={config.moodImageDetail}
+              onChange={(e) => settings.setMoodProvider({ moodImageDetail: e.target.value as "low" | "high" })}
+              className={`${inputClass} flex-1`}
+            >
+              <option value="high">Detailed — the model reads the dialogue</option>
+              <option value="low">Economy — small thumbnails, cheaper</option>
+            </select>
+          </div>
+          {status?.error && <p className="text-accent-error text-xs">{status.error}</p>}
         </div>
 
-        {!config.moodAiEnabled && (
-          <div className="rounded border border-border-color bg-bg-tertiary/40 p-3">
-            <p className="text-text-secondary text-sm font-medium">Browser extension access is off</p>
-            <p className="text-text-muted text-xs mt-1">
-              Turning on Mood AI now starts and stops the local runtime and the extension API together, so the browser popup cannot end up "connected to nothing".
-            </p>
-          </div>
-        )}
-
-        {/* Runtime + API status */}
+        {/* Extension */}
         <div className="space-y-2 rounded border border-border-color bg-bg-tertiary/40 p-3">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-text-secondary text-sm font-medium">AI Runtime</p>
+              <p className="text-text-secondary text-sm font-medium">Browser extension</p>
               <p className="text-text-muted text-xs">
-                {serverStatus === "running"
-                  ? "Ready to analyze manga pages locally."
-                  : serverStatus === "starting"
-                    ? "Starting llama-server and loading the model..."
-                    : "Stopped"}
+                {status?.api === "running"
+                  ? `Listening on 127.0.0.1:${status.port}.`
+                  : config.moodAiEnabled
+                    ? "The local API is not running."
+                    : "Enable Mood AI to let the extension connect."}
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className={`w-2 h-2 rounded-full ${
-                serverStatus === "running" ? "bg-accent-success" :
-                serverStatus === "starting" ? "bg-yellow-400 animate-pulse" :
-                serverStatus === "error" ? "bg-accent-error" :
-                "bg-text-muted"
-              }`} />
-              <span className="text-text-secondary text-sm capitalize">{serverStatus}</span>
-            </div>
+            <button
+              onClick={async () => setExportedTo(await exportExtension())}
+              className={`${buttonClass} shrink-0`}
+            >
+              Install extension
+            </button>
           </div>
-
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-text-secondary text-sm font-medium">Extension API</p>
-              <p className="text-text-muted text-xs">
-                {apiStatus === "running"
-                  ? "Browser extensions can connect right away."
-                  : apiStatus === "disabled"
-                    ? "Disabled until Mood AI is enabled."
-                    : "The browser extension will show Unreachable until this API is running."}
-              </p>
-            </div>
-            <div className="text-right shrink-0">
-              <div className="flex items-center justify-end gap-2">
-                <span className={`w-2 h-2 rounded-full ${
-                  apiStatus === "running" ? "bg-accent-success" :
-                  apiStatus === "error" ? "bg-accent-error" :
-                  apiStatus === "disabled" ? "bg-text-muted" :
-                  "bg-yellow-400"
-                }`} />
-                <span className="text-text-secondary text-sm">{apiStatusLabel}</span>
-              </div>
-            </div>
+          {exportedTo && (
+            <p className="text-text-muted text-xs">
+              Written to <span className="text-text-secondary">{exportedTo}</span>. Chrome/Edge/Brave: chrome://extensions → Developer mode → Load unpacked.
+              Firefox: about:debugging → This Firefox → Load Temporary Add-on → manifest.json.
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <label className="text-text-muted text-xs w-20">API port</label>
+            <input
+              type="number"
+              min="1024"
+              max="65535"
+              value={config.moodApiPort}
+              onChange={(e) => {
+                const port = Number(e.target.value);
+                if (port >= 1024 && port <= 65535) settings.setMoodApiPort(port);
+              }}
+              className={`${inputClass} w-24`}
+            />
           </div>
         </div>
 
-        {/* Server controls */}
-        {config.moodAiEnabled && serverInstalled && modelInstalled && (
-          <div className="flex items-center gap-3">
-            {serverStatus === "stopped" || serverStatus === "error" ? (
-              <button
-                onClick={startServer}
-                className="px-2 py-1 text-xs bg-accent-primary/20 text-accent-primary rounded hover:bg-accent-primary/30"
-              >
-                Start Runtime
-              </button>
-            ) : serverStatus === "running" ? (
-              <button
-                onClick={stopServer}
-                className="px-2 py-1 text-xs bg-accent-error/20 text-accent-error rounded hover:bg-accent-error/30"
-              >
-                Stop Runtime
-              </button>
-            ) : null}
-            <span className="text-text-muted text-xs">
-              {apiStatus === "running"
-                ? "Extension can reach KeyToMusic."
-                : "Extension access is not ready yet."}
-            </span>
+        {chapter && (
+          <div className="space-y-1 rounded border border-border-color bg-bg-tertiary/40 p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-text-secondary text-sm font-medium truncate">{chapter.title || "Current chapter"}</p>
+              <button onClick={clearCache} className="text-xs text-text-muted hover:underline shrink-0">Forget analyzed chapters</button>
+            </div>
+            <p className="text-text-muted text-xs">
+              {chapter.analyzed}/{chapter.totalPages} pages analyzed · page {chapter.focus + 1}
+              {chapter.inFlight > 0 ? ` · ${chapter.inFlight} in progress` : ""}
+            </p>
+            {chapter.current && (
+              <p className="text-text-muted text-xs">Scene: {chapter.current.mood} {chapter.current.intensity} — {chapter.current.summary}</p>
+            )}
           </div>
         )}
-
-        {/* API Port */}
-        <div className="space-y-1">
-          <label className="text-text-secondary text-sm font-medium">API Port</label>
-          <input
-            type="number"
-            min="1024"
-            max="65535"
-            value={config.moodApiPort}
-            onChange={(e) => {
-              const port = Number(e.target.value);
-              if (port >= 1024 && port <= 65535) {
-                useSettingsStore.getState().setMoodApiPort(port);
-              }
-            }}
-            className="w-24 bg-bg-tertiary border border-border-color rounded px-2 py-1 text-sm text-text-primary focus:border-border-focus outline-none"
-          />
-          <p className="text-text-muted text-xs">
-            HTTP port for external tools. If Mood AI is already enabled, the extension API is restarted automatically on the new port.
-          </p>
-        </div>
       </div>
     </section>
   );

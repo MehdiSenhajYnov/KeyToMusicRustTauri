@@ -10,7 +10,7 @@ Ce n'est pas la documentation produit canonique.
 Pour l'etat actuel du systeme, commencer par :
 
 - [README.md](/home/mehdi/Dev/KeyToMusicRustTauri/README.md)
-- [docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MANGA_MOOD_CURRENT_ARCHITECTURE.md)
+- [docs/MOOD_AI.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/MOOD_AI.md)
 - [docs/KeyToMusic_Technical_Specification.md](/home/mehdi/Dev/KeyToMusicRustTauri/docs/KeyToMusic_Technical_Specification.md)
 
 ## Organisation

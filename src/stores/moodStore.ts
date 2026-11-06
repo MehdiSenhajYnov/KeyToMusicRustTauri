@@ -4,124 +4,101 @@ import * as commands from "../utils/tauriCommands";
 import { useToastStore } from "./toastStore";
 
 interface MoodState {
-  serverStatus: "stopped" | "starting" | "running" | "error";
-  apiStatus: "disabled" | "stopped" | "running" | "error";
-  apiPort: number;
-  serverInstalled: boolean;
-  isInstallingServer: boolean;
-  modelInstalled: boolean;
-  modelDownloadProgress: { downloaded: number; total: number } | null;
+  status: commands.MoodServiceStatus | null;
+  presets: commands.MoodPreset[];
+  models: string[];
+  isTesting: boolean;
   lastDetectedMood: BaseMood | null;
   lastDetectedIntensity: MoodIntensity | null;
   committedMood: BaseMood | null;
   committedIntensity: MoodIntensity | null;
-  isAnalyzing: boolean;
+  sceneSummary: string;
 
-  checkInstallation: () => Promise<void>;
   refreshServiceStatus: () => Promise<void>;
-  installServer: () => Promise<void>;
-  installModel: () => Promise<void>;
-  startServer: () => Promise<void>;
-  stopServer: () => Promise<void>;
-  setServerStatus: (status: MoodState["serverStatus"]) => void;
-  setApiStatus: (status: MoodState["apiStatus"], port?: number) => void;
-  setModelDownloadProgress: (progress: { downloaded: number; total: number } | null) => void;
+  loadPresets: () => Promise<void>;
+  saveApiKey: (key: string | null) => Promise<void>;
+  testConnection: () => Promise<void>;
+  exportExtension: () => Promise<string | null>;
+  clearCache: () => Promise<void>;
   setLastDetectedMood: (mood: BaseMood | null, intensity?: MoodIntensity | null) => void;
-  setCommittedMood: (mood: BaseMood | null, intensity?: MoodIntensity | null) => void;
+  setCommittedMood: (mood: BaseMood | null, intensity?: MoodIntensity | null, summary?: string) => void;
 }
 
+const toast = (message: string, kind: "success" | "error" | "info") =>
+  useToastStore.getState().addToast(message, kind);
+
 export const useMoodStore = create<MoodState>((set, get) => ({
-  serverStatus: "stopped",
-  apiStatus: "disabled",
-  apiPort: 8765,
-  serverInstalled: false,
-  isInstallingServer: false,
-  modelInstalled: false,
-  modelDownloadProgress: null,
+  status: null,
+  presets: [],
+  models: [],
+  isTesting: false,
   lastDetectedMood: null,
   lastDetectedIntensity: null,
   committedMood: null,
   committedIntensity: null,
-  isAnalyzing: false,
-
-  checkInstallation: async () => {
-    try {
-      const [serverInstalled, modelInstalled] = await Promise.all([
-        commands.checkLlamaServerInstalled(),
-        commands.checkMoodModelInstalled(),
-      ]);
-      set({ serverInstalled, modelInstalled });
-      await useMoodStore.getState().refreshServiceStatus();
-    } catch (e) {
-      console.error("Failed to check mood AI installation:", e);
-    }
-  },
+  sceneSummary: "",
 
   refreshServiceStatus: async () => {
     try {
-      const status = await commands.getMoodServiceStatus();
-      set({
-        serverStatus: status.runtime as MoodState["serverStatus"],
-        apiStatus: status.api as MoodState["apiStatus"],
-        apiPort: status.port,
-      });
+      set({ status: await commands.getMoodServiceStatus() });
     } catch (e) {
-      console.error("Failed to refresh mood AI service status:", e);
-      set({ serverStatus: "stopped", apiStatus: "stopped" });
+      console.error("Failed to refresh Mood AI status:", e);
     }
   },
 
-  installServer: async () => {
-    if (get().isInstallingServer) return;
-    set({ isInstallingServer: true });
+  loadPresets: async () => {
+    if (get().presets.length) return;
     try {
-      await commands.installLlamaServer();
-      set({ serverInstalled: true });
-      useToastStore.getState().addToast("llama-server installed", "success");
+      set({ presets: await commands.getMoodPresets() });
     } catch (e) {
-      useToastStore.getState().addToast(`Failed to install llama-server: ${e}`, "error");
-    } finally { set({ isInstallingServer: false }); }
-  },
-
-  installModel: async () => {
-    if (get().modelDownloadProgress) return;
-    try {
-      set({ modelDownloadProgress: { downloaded: 0, total: 0 } });
-      await commands.installMoodModel();
-      set({ modelInstalled: true, modelDownloadProgress: null });
-      useToastStore.getState().addToast("Model downloaded", "success");
-    } catch (e) {
-      set({ modelDownloadProgress: null });
-      useToastStore.getState().addToast(`Failed to download model: ${e}`, "error");
+      console.error("Failed to load Mood AI presets:", e);
     }
   },
 
-  startServer: async () => {
-    if (get().serverStatus === "starting") return;
+  saveApiKey: async (key) => {
     try {
-      set({ serverStatus: "starting" });
-      await commands.startMoodServer();
-      await useMoodStore.getState().refreshServiceStatus();
-      useToastStore.getState().addToast("Mood AI runtime and extension API started", "success");
+      await commands.setMoodApiKey(key);
+      await get().refreshServiceStatus();
+      toast(key ? "API key saved" : "API key removed", "success");
     } catch (e) {
-      set({ serverStatus: "error" });
-      useToastStore.getState().addToast(`Failed to start server: ${e}`, "error");
+      toast(`Could not save the API key: ${e}`, "error");
     }
   },
 
-  stopServer: async () => {
+  testConnection: async () => {
+    if (get().isTesting) return;
+    set({ isTesting: true });
     try {
-      await commands.stopMoodServer();
-      await useMoodStore.getState().refreshServiceStatus();
-      useToastStore.getState().addToast("Mood AI runtime stopped", "info");
+      const models = await commands.testMoodConnection();
+      set({ models });
+      toast(`Connected — ${models.length} model${models.length === 1 ? "" : "s"} available`, "success");
     } catch (e) {
-      useToastStore.getState().addToast(`Failed to stop server: ${e}`, "error");
+      toast(`Connection failed: ${e}`, "error");
+    } finally {
+      set({ isTesting: false });
+      await get().refreshServiceStatus();
     }
   },
 
-  setServerStatus: (status) => set({ serverStatus: status }),
-  setApiStatus: (status, port) => set((state) => ({ apiStatus: status, apiPort: port ?? state.apiPort })),
-  setModelDownloadProgress: (progress) => set({ modelDownloadProgress: progress }),
-  setLastDetectedMood: (mood, intensity) => set({ lastDetectedMood: mood, lastDetectedIntensity: intensity ?? null }),
-  setCommittedMood: (mood, intensity) => set({ committedMood: mood, committedIntensity: intensity ?? null }),
+  exportExtension: async () => {
+    try {
+      const path = await commands.exportMoodExtension();
+      toast(`Extension written to ${path}`, "success");
+      return path;
+    } catch (e) {
+      toast(`Could not export the extension: ${e}`, "error");
+      return null;
+    }
+  },
+
+  clearCache: async () => {
+    await commands.clearMoodCache();
+    await get().refreshServiceStatus();
+    toast("Analyzed chapters forgotten", "info");
+  },
+
+  setLastDetectedMood: (mood, intensity) =>
+    set({ lastDetectedMood: mood, lastDetectedIntensity: intensity ?? null }),
+  setCommittedMood: (mood, intensity, summary) =>
+    set({ committedMood: mood, committedIntensity: intensity ?? null, sceneSummary: summary ?? "" }),
 }));
