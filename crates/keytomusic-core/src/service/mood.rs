@@ -269,3 +269,16 @@ pub fn export_extension(destination: Option<PathBuf>) -> Result<PathBuf, String>
     let dir = destination.unwrap_or_else(extension::default_destination);
     extension::export(&dir)
 }
+
+/// Default moods for the keys of `profile` nobody tagged: asked to the
+/// configured model when there is one, guessed from the titles otherwise.
+/// Nothing changes until the user applies them
+/// ([`autotag::apply`](crate::mood::autotag::apply)).
+pub async fn suggest_default_moods(
+    state: &AppState,
+    profile: &crate::types::Profile,
+) -> crate::mood::autotag::AutoTagResult {
+    let settings = provider_settings(&state.get_config());
+    let settings = settings.is_configured().then_some(settings);
+    crate::mood::autotag::suggest(settings.as_ref(), profile).await
+}

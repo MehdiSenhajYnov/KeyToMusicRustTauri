@@ -12,6 +12,7 @@
 //! - [`secret`]: API key storage
 
 pub mod analyzer;
+pub mod autotag;
 pub mod chapter;
 pub mod chatgpt;
 pub mod engine;
