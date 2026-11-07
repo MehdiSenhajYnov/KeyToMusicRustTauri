@@ -1,6 +1,7 @@
-//! Mood AI engine: keeps the chapter being read, runs the model on it in the
-//! background (two requests at a time), and tells the session which mood to
-//! play when the page being read changes scene.
+//! Mood AI engine: keeps the chapter being read, downloads its pages (four
+//! at a time), runs the model on them in the background (two requests at a
+//! time), and tells the session which mood to play when the page being read
+//! changes scene.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -12,12 +13,16 @@ use tokio_util::sync::CancellationToken;
 
 use super::analyzer::{self, PageLabel};
 use super::chapter::{BatchPlan, Chapter, Next};
+use super::fetch;
+use super::image::PageImage;
 use super::provider::ProviderSettings;
 use crate::events::{CoreEvent, NoopSink, SharedSink};
 use crate::types::{BaseMood, MoodIntensity};
 
 /// Requests in flight at once.
 pub const WORKERS: usize = 2;
+/// Page downloads at once.
+pub const DOWNLOADERS: usize = 4;
 /// Chapters whose moods are kept on disk (re-reading costs nothing).
 const CACHED_CHAPTERS: usize = 200;
 
@@ -31,6 +36,10 @@ pub struct ChapterSnapshot {
     pub received: u32,
     pub analyzed: u32,
     pub in_flight: u32,
+    /// Pages being downloaded by the app.
+    pub downloading: u32,
+    /// Pages the app could not download: the extension should upload them.
+    pub wanted: Vec<u32>,
     /// Page being read (0-based).
     pub focus: u32,
     pub error: Option<String>,
@@ -86,6 +95,8 @@ struct State {
 
 pub struct MoodEngine {
     state: Mutex<State>,
+    /// Last request from the browser extension.
+    extension_seen: Mutex<Option<Instant>>,
     wake: Notify,
     events: Mutex<SharedSink>,
     cancel: Mutex<Option<CancellationToken>>,
@@ -116,6 +127,7 @@ impl MoodEngine {
                 blocked: None,
                 cache: None,
             }),
+            extension_seen: Mutex::new(None),
             wake: Notify::new(),
             events: Mutex::new(Arc::new(NoopSink)),
             cancel: Mutex::new(None),
@@ -160,6 +172,13 @@ impl MoodEngine {
             let engine = self.clone();
             let token = token.clone();
             tokio::spawn(async move { engine.worker(token).await });
+        }
+        let client = fetch::client();
+        for _ in 0..DOWNLOADERS {
+            let engine = self.clone();
+            let token = token.clone();
+            let client = client.clone();
+            tokio::spawn(async move { engine.downloader(client, token).await });
         }
     }
 
@@ -216,8 +235,21 @@ impl MoodEngine {
         received
     }
 
-    /// Store pages (base64 JPEG) of the chapter being read.
-    pub fn add_pages(&self, key: &str, pages: Vec<(u32, Arc<String>)>) -> u32 {
+    /// The page URLs of the chapter (reading order): the app downloads them,
+    /// with `referer` (the reader page) for hosts that check it.
+    pub fn set_sources(&self, key: &str, urls: Vec<String>, referer: Option<String>) {
+        {
+            let mut state = self.lock();
+            self.ensure_chapter(&mut state, key);
+            let chapter = state.chapter.as_mut().expect("chapter just ensured");
+            chapter.set_sources(urls, referer);
+        }
+        self.wake.notify_waiters();
+        self.emit_progress();
+    }
+
+    /// Store pages of the chapter being read.
+    pub fn add_pages(&self, key: &str, pages: Vec<(u32, PageImage)>) -> u32 {
         let received = {
             let mut state = self.lock();
             match state.chapter.as_ref() {
@@ -255,7 +287,25 @@ impl MoodEngine {
         for event in events {
             self.emit(event);
         }
+        // The UIs follow the page being read.
+        self.emit_progress();
         snapshot.expect("chapter just ensured")
+    }
+
+    /// The extension talked to the app.
+    pub fn touch(&self) {
+        *self
+            .extension_seen
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+    }
+
+    /// How long ago the extension last talked to the app (None: not since launch).
+    pub fn extension_seen(&self) -> Option<Duration> {
+        self.extension_seen
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .map(|at| at.elapsed())
     }
 
     pub fn snapshot(&self) -> Option<ChapterSnapshot> {
@@ -281,6 +331,8 @@ impl MoodEngine {
             received: chapter.pages.len() as u32,
             analyzed: chapter.labels.len() as u32,
             in_flight: chapter.in_flight.len() as u32,
+            downloading: chapter.downloading.len() as u32,
+            wanted: chapter.wanted_uploads(),
             focus: chapter.focus,
             error: state.blocked.clone().or_else(|| chapter.last_error.clone()),
             current: chapter.labels.get(&chapter.focus).map(PageMood::from),
@@ -369,6 +421,79 @@ impl MoodEngine {
             }
             Next::Wait(delay) => Step::Wait(delay),
             Next::Idle => Step::Idle,
+        }
+    }
+
+    /// Download pages listed by the extension, the one being read first.
+    async fn downloader(self: Arc<Self>, client: reqwest::Client, cancel: CancellationToken) {
+        loop {
+            let notified = self.wake.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
+            let job = {
+                let mut state = self.lock();
+                let generation = state.generation;
+                let now = Instant::now();
+                state.chapter.as_mut().map(|chapter| {
+                    let key = chapter.key.clone();
+                    match chapter.next_download(now) {
+                        Some(job) => Ok((generation, key, job)),
+                        None => Err(chapter.next_download_retry(now)),
+                    }
+                })
+            };
+            match job {
+                Some(Ok((generation, key, (page, url, referer)))) => {
+                    let started = Instant::now();
+                    let result = tokio::select! {
+                        result = fetch::fetch_page(&client, &url, referer.as_deref()) => result,
+                        _ = cancel.cancelled() => return,
+                    };
+                    {
+                        let mut state = self.lock();
+                        if state.generation != generation {
+                            continue;
+                        }
+                        let Some(chapter) = state.chapter.as_mut().filter(|c| c.key == key) else {
+                            continue;
+                        };
+                        match result {
+                            Ok(tiles) => {
+                                chapter.add_page(page, super::image::page(tiles), Instant::now())
+                            }
+                            Err(error) => {
+                                tracing::warn!(
+                                    "Mood AI: page {} not downloaded ({error}): {url}",
+                                    page + 1
+                                );
+                                chapter.download_failed(page, error, Instant::now());
+                            }
+                        }
+                    }
+                    tracing::debug!(
+                        "Mood AI: page {} downloaded in {:.1}s",
+                        page + 1,
+                        started.elapsed().as_secs_f32()
+                    );
+                    self.emit_progress();
+                    self.wake.notify_waiters();
+                }
+                Some(Err(Some(delay))) => {
+                    tokio::select! {
+                        _ = &mut notified => {}
+                        _ = tokio::time::sleep(delay) => {}
+                        _ = cancel.cancelled() => return,
+                    }
+                }
+                _ => {
+                    tokio::select! {
+                        _ = &mut notified => {}
+                        _ = tokio::time::sleep(Duration::from_secs(5)) => {}
+                        _ = cancel.cancelled() => return,
+                    }
+                }
+            }
         }
     }
 
@@ -607,7 +732,13 @@ mod tests {
     fn late_pages_of_a_left_chapter_are_ignored() {
         let engine = MoodEngine::new(None);
         engine.open_chapter("ch2", None, None);
-        assert_eq!(engine.add_pages("ch1", vec![(0, Arc::new("x".into()))]), 0);
-        assert_eq!(engine.add_pages("ch2", vec![(0, Arc::new("x".into()))]), 1);
+        assert_eq!(
+            engine.add_pages("ch1", vec![(0, crate::mood::image::page(vec!["x".into()]))]),
+            0
+        );
+        assert_eq!(
+            engine.add_pages("ch2", vec![(0, crate::mood::image::page(vec!["x".into()]))]),
+            1
+        );
     }
 }

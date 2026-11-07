@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 
 use crate::types::{BaseMood, KeyBinding, LoopMode, MoodIntensity, Profile, Sound, SoundSource};
 
-
 /// How a loop replays its next sound's start position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MomentumBehavior {
@@ -23,6 +22,9 @@ pub struct LoopContext {
     pub sound_id: String,
     pub momentum: MomentumBehavior,
     pub persist_single_momentum: bool,
+    /// Started by Mood AI for this scene: the loop goes on with the key's
+    /// sounds of that mood only.
+    pub mood: Option<(BaseMood, MoodIntensity)>,
 }
 
 /// Choose the sound to play and the binding's next `current_index`.
@@ -105,33 +107,6 @@ pub fn loop_replay_start(
     }
 }
 
-/// Per track, the tagged binding with the highest minimum intensity not above `intensity`.
-pub fn select_mood_bindings(
-    bindings: &[KeyBinding],
-    mood: BaseMood,
-    intensity: MoodIntensity,
-) -> Vec<&KeyBinding> {
-    let level = |b: &KeyBinding| b.mood_intensity.map_or(1, |i| i.as_u8());
-    let mut per_track: Vec<&KeyBinding> = Vec::new();
-    for binding in bindings {
-        if binding.mood != Some(mood)
-            || level(binding) > intensity.as_u8()
-            || binding.sound_ids.is_empty()
-        {
-            continue;
-        }
-        match per_track
-            .iter_mut()
-            .find(|b| b.track_id == binding.track_id)
-        {
-            Some(current) if level(binding) > level(current) => *current = binding,
-            Some(_) => {}
-            None => per_track.push(binding),
-        }
-    }
-    per_track
-}
-
 pub fn mood_display(mood: BaseMood) -> &'static str {
     match mood {
         BaseMood::Epic => "Epic",
@@ -171,24 +146,18 @@ pub(crate) fn youtube_video_id(url: &str) -> Option<&str> {
 /// common mood among the bindings that play those seeds (None if untagged).
 pub fn seed_mood(profile: &Profile, seed_video_ids: &[String]) -> Option<BaseMood> {
     let seeds: HashSet<&str> = seed_video_ids.iter().map(String::as_str).collect();
-    let seed_sounds: HashSet<&str> = profile
-        .sounds
-        .iter()
-        .filter(|s| {
-            let video = match &s.source {
-                SoundSource::YouTube { url, .. } => youtube_video_id(url),
-                SoundSource::Local { .. } => s.resolved_video_id.as_deref(),
-            };
-            video.is_some_and(|v| seeds.contains(v))
-        })
-        .map(|s| s.id.as_str())
-        .collect();
     let mut counts: Vec<(BaseMood, usize)> = Vec::new();
-    for binding in &profile.key_bindings {
-        let Some(mood) = binding.mood else { continue };
-        if !binding.sound_ids.iter().any(|id| seed_sounds.contains(id.as_str())) {
+    for sound in &profile.sounds {
+        let video = match &sound.source {
+            SoundSource::YouTube { url, .. } => youtube_video_id(url),
+            SoundSource::Local { .. } => sound.resolved_video_id.as_deref(),
+        };
+        let Some(mood) = sound
+            .mood
+            .filter(|_| video.is_some_and(|v| seeds.contains(v)))
+        else {
             continue;
-        }
+        };
         match counts.iter_mut().find(|(m, _)| *m == mood) {
             Some((_, n)) => *n += 1,
             None => counts.push((mood, 1)),
@@ -253,25 +222,6 @@ mod tests {
     }
 
     #[test]
-    fn mood_selection_prefers_highest_eligible_intensity_per_track() {
-        let mut low = binding("KeyA", "t1", &["s1"]);
-        low.mood = Some(BaseMood::Epic);
-        let mut high = binding("KeyB", "t1", &["s2"]);
-        high.mood = Some(BaseMood::Epic);
-        high.mood_intensity = Some(MoodIntensity::High);
-        let mut mid = binding("KeyC", "t2", &["s3"]);
-        mid.mood = Some(BaseMood::Epic);
-        mid.mood_intensity = Some(MoodIntensity::Medium);
-        let bindings = vec![low, high, mid];
-
-        let picked = select_mood_bindings(&bindings, BaseMood::Epic, MoodIntensity::Medium);
-        let keys: Vec<&str> = picked.iter().map(|b| b.key_code.as_str()).collect();
-        assert_eq!(keys, vec!["KeyA", "KeyC"]);
-        let picked = select_mood_bindings(&bindings, BaseMood::Epic, MoodIntensity::High);
-        assert_eq!(picked[0].key_code, "KeyB");
-    }
-
-    #[test]
     fn replay_start_follows_behavior() {
         let mut s = sound("a");
         s.momentum = 12.0;
@@ -281,6 +231,7 @@ mod tests {
             sound_id: "a".into(),
             momentum: MomentumBehavior::ConfigOnly,
             persist_single_momentum: false,
+            mood: None,
         };
         assert_eq!(loop_replay_start(&s, &LoopMode::Random, false, &ctx), 0.0);
         let mood_ctx = LoopContext {
@@ -309,8 +260,8 @@ mod tests {
             cached_path: String::new(),
         };
         p.sounds[2].resolved_video_id = Some("seed2".into());
-        p.key_bindings[0].mood = Some(BaseMood::Epic); // KeyA: s1, s2
-        p.key_bindings[1].mood = Some(BaseMood::Sadness); // KeyB: s3
+        p.sounds[0].mood = Some(BaseMood::Epic);
+        p.sounds[2].mood = Some(BaseMood::Sadness);
         assert_eq!(seed_mood(&p, &["seed1".into()]), Some(BaseMood::Epic));
         assert_eq!(seed_mood(&p, &["seed2".into()]), Some(BaseMood::Sadness));
         assert_eq!(seed_mood(&p, &["other".into()]), None);

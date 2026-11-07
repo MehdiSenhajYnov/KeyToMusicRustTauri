@@ -3,10 +3,10 @@
 //! story, not flicker with every panel.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use serde_json::{json, Value};
 
+use super::image::PageImage;
 use super::provider::{self, Part, ProviderError, ProviderSettings};
 use crate::types::{BaseMood, MoodIntensity};
 
@@ -29,7 +29,7 @@ pub struct PageLabel {
 #[derive(Clone, Debug, Default)]
 pub struct BatchContext {
     /// Pages just before the batch: (page, image, label if already decided).
-    pub before: Vec<(u32, Arc<String>, Option<PageLabel>)>,
+    pub before: Vec<(u32, PageImage, Option<PageLabel>)>,
     /// Label of the page right after the batch, if already decided.
     pub after: Option<(u32, PageLabel)>,
     pub total_pages: Option<u32>,
@@ -98,7 +98,22 @@ fn describe(label: &PageLabel) -> String {
 
 /// The user message: context pages, then the pages to classify. Page numbers
 /// shown to the model are 1-based.
-pub fn build_parts(pages: &[(u32, Arc<String>)], context: &BatchContext) -> Vec<Part> {
+/// A page's tiles (a webtoon strip comes in several, top to bottom).
+fn push_page(parts: &mut Vec<Part>, heading: String, image: &PageImage) {
+    let count = image.len();
+    if count > 1 {
+        parts.push(Part::Text(format!(
+            "{heading} (a tall strip, in {count} parts from top to bottom)"
+        )));
+    } else {
+        parts.push(Part::Text(heading));
+    }
+    for tile in image.iter() {
+        parts.push(Part::Image(std::sync::Arc::new(tile.clone())));
+    }
+}
+
+pub fn build_parts(pages: &[(u32, PageImage)], context: &BatchContext) -> Vec<Part> {
     let first = pages.first().map(|(p, _)| p + 1).unwrap_or(1);
     let last = pages.last().map(|(p, _)| p + 1).unwrap_or(first);
     let mut parts = Vec::new();
@@ -123,8 +138,7 @@ pub fn build_parts(pages: &[(u32, Arc<String>)], context: &BatchContext) -> Vec<
                 Some(label) => format!("Page {} — already scored: {}", page + 1, describe(label)),
                 None => format!("Page {}", page + 1),
             };
-            parts.push(Part::Text(text));
-            parts.push(Part::Image(image.clone()));
+            push_page(&mut parts, text, image);
         }
     }
 
@@ -132,8 +146,7 @@ pub fn build_parts(pages: &[(u32, Arc<String>)], context: &BatchContext) -> Vec<
         "Pages to split into scenes: {first} to {last}."
     )));
     for (page, image) in pages {
-        parts.push(Part::Text(format!("Page {}", page + 1)));
-        parts.push(Part::Image(image.clone()));
+        push_page(&mut parts, format!("Page {}", page + 1), image);
     }
     if let Some((page, label)) = &context.after {
         parts.push(Part::Text(format!(
@@ -224,7 +237,7 @@ pub fn parse_scenes(answer: &Value, pages: &[u32]) -> Result<BTreeMap<u32, PageL
 /// Ask the model about `pages` (consecutive, 0-based, with their images).
 pub async fn analyze(
     settings: &ProviderSettings,
-    pages: &[(u32, Arc<String>)],
+    pages: &[(u32, PageImage)],
     context: &BatchContext,
 ) -> Result<BTreeMap<u32, PageLabel>, ProviderError> {
     let parts = build_parts(pages, context);
@@ -281,7 +294,7 @@ mod tests {
 
     #[test]
     fn prompt_numbers_pages_from_one_and_marks_context() {
-        let img = Arc::new("AAAA".to_string());
+        let img = crate::mood::image::page(vec!["AAAA".to_string()]);
         let context = BatchContext {
             before: vec![(
                 9,

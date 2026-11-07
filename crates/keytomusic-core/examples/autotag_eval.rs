@@ -61,6 +61,10 @@ async fn main() {
         .filter(|b| b.mood.is_none())
         .map(|b| b.key_code.clone())
         .collect();
+    for s in &mut profile.sounds {
+        s.mood = None;
+        s.mood_intensity = None;
+    }
     for b in &mut profile.key_bindings {
         b.mood = None;
         b.mood_intensity = None;

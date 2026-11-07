@@ -228,8 +228,7 @@ impl Session {
                 .into_iter()
                 .filter(|s| d.enrich.get(&s.video_id).is_none_or(|e| e.key.is_none()))
                 .collect();
-            let hints: Vec<placement::SoundHint> =
-                todo.iter().map(|s| hint_for(s, None)).collect();
+            let hints: Vec<placement::SoundHint> = todo.iter().map(|s| hint_for(s, None)).collect();
             // A card needs a track to be added: the first one, if no other fits.
             let first = profile.tracks.first().map(|t| t.id.clone());
             todo.iter()
@@ -548,16 +547,15 @@ impl Session {
         };
         let session = self.arc();
         self.runtime.spawn(async move {
-            let result =
-                service::discovery::start_discovery_focused(
-                    &session.state,
-                    profile_id,
-                    pool_ids,
-                    true,
-                    focus,
-                    like,
-                )
-                .await;
+            let result = service::discovery::start_discovery_focused(
+                &session.state,
+                profile_id,
+                pool_ids,
+                true,
+                focus,
+                like,
+            )
+            .await;
             let mut d = session.disco();
             if d.gen != gen {
                 return;
@@ -762,9 +760,8 @@ impl Session {
             return;
         };
         // Check before dropping the current selection.
-        let startable = self.with_profile(|p| {
-            p.is_some_and(|p| service::discovery::has_mood_seeds(p, mood))
-        });
+        let startable =
+            self.with_profile(|p| p.is_some_and(|p| service::discovery::has_mood_seeds(p, mood)));
         if !startable {
             self.toast(
                 ToastKind::Info,
@@ -817,8 +814,7 @@ impl Session {
             d.exhausted = false;
             // Seen ones (and the card itself) do not come back.
             let start = ((d.visited + 1).max(0) as usize).min(d.all.len());
-            let mut seen: Vec<String> =
-                d.all[..start].iter().map(|s| s.video_id.clone()).collect();
+            let mut seen: Vec<String> = d.all[..start].iter().map(|s| s.video_id.clone()).collect();
             seen.push(card.video_id);
             d.all.clear();
             d.revealed = 0;
@@ -1052,6 +1048,11 @@ impl Session {
             .map_or(1.0, placement::volume_for_loudness);
         let added = self.edit(Some("Add from Discovery"), |p| {
             let id = uuid::Uuid::new_v4().to_string();
+            // Its mood: the one guessed (that of the sounds it was found
+            // from, or of its title).
+            let mood = info
+                .mood
+                .or_else(|| rules::seed_mood(p, &suggestion.source_seed_ids));
             editor::add_sound(
                 p,
                 crate::types::Sound {
@@ -1062,6 +1063,8 @@ impl Session {
                     volume,
                     duration,
                     resolved_video_id: None,
+                    mood,
+                    mood_intensity: None,
                 },
             );
             match p
@@ -1071,11 +1074,8 @@ impl Session {
             {
                 Some(binding) => binding.sound_ids.push(id),
                 None => {
-                    // A new key gets the guessed mood (that of the sounds it
-                    // was found from, or of its title) and loop mode.
-                    let mood = info
-                        .mood
-                        .or_else(|| rules::seed_mood(p, &suggestion.source_seed_ids));
+                    // A new key gets the guessed loop mode (its mood comes
+                    // from its sound).
                     p.key_bindings.push(KeyBinding {
                         key_code: key.clone(),
                         track_id: track_id.clone(),

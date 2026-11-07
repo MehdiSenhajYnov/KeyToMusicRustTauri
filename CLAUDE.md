@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-KeyToMusic is a Tauri 2.x desktop soundboard for manga reading. Global keyboard detection triggers sounds without interrupting reading. Features: multi-track audio with crossfading, YouTube downloads, momentum (start position), loop modes, waveform visualization, discovery system, and Mood AI (a vision model behind any OpenAI-compatible API splits the chapter read in the browser into scenes and auto-triggers the keys tagged with each scene's mood).
+KeyToMusic is a Tauri 2.x desktop soundboard for manga reading. Global keyboard detection triggers sounds without interrupting reading. Features: multi-track audio with crossfading, YouTube downloads, momentum (start position), loop modes, waveform visualization, discovery system, and Mood AI (a vision model behind any OpenAI-compatible API splits the chapter read in the browser into scenes and auto-triggers the sounds tagged with each scene's mood).
 
 **Platforms:** Windows 10/11, macOS 10.15+, Linux (Ubuntu, Fedora, Arch)
 **Tech:** Tauri 2.x (Rust backend + React 18/TypeScript/Tailwind/Zustand frontend), rodio/cpal/symphonia (audio), yt-dlp (YouTube), OpenAI-compatible vision API (Mood AI)
@@ -119,22 +119,22 @@ Seeds (YouTube + local sounds) → YouTube Mix per seed → Cross-seed aggregati
 
 ### Manga Mood AI
 
-A vision model splits the chapter read in the browser into scenes and auto-triggers the keys tagged with each scene's mood. Full description: [docs/MOOD_AI.md](docs/MOOD_AI.md).
+A vision model splits the chapter read in the browser into scenes and auto-triggers the sounds tagged with each scene's mood. Full description: [docs/MOOD_AI.md](docs/MOOD_AI.md).
 
 ```
-Reader page in browser (extension, any site with a column of page images)
-  → POST /api/chapter {chapter, title, totalPages}   (pages already received come back)
-  → POST /api/pages   {chapter, pages:[{page, data(base64)}]}
-  → POST /api/position {chapter, page}                (page on screen)
+Reader page in browser (extension: ts_reader sites like sushiscan, Madara, any column of page images)
+  → POST /api/chapter {chapter, title, url, pages:[image URL]}  (the app downloads them, Referer = reader)
+  → POST /api/pages   {chapter, pages:[{page, data(base64)}]}  (only pages the app could not get: `wanted`)
+  → POST /api/position {chapter, page}                          (page on screen)
 engine: batches of 10 pages around the page read → OpenAI-compatible chat API
   (images + strict JSON schema {scenes:[{first_page,last_page,mood,intensity,summary}]})
   → page labels (cached) → page on screen changes scene → mood_detected + mood_committed
-  → Session::handle_mood (Awra) / useMoodPlayback (Tauri) plays the tagged keys
+  → Session::handle_mood (Awra) / useMoodPlayback (Tauri) plays the tagged sounds
 ```
 
 - **Base moods:** 8 values — `epic`, `tension`, `sadness`, `comedy`, `romance`, `horror`, `peaceful`, `mystery`; **intensity** `1..3`
-- **Mood Tagging:** Manual per-binding. `KeyBinding.mood: Option<BaseMood>` and `KeyBinding.moodIntensity: Option<MoodIntensity>` (minimum intensity). Per track, the binding with the highest minimum ≤ current intensity plays; an intensity change that keeps the same key does not restart it.
-- **Backend (`crates/keytomusic-core/src/mood/`):** `chatgpt.rs` (Sign in with ChatGPT: loopback OAuth + PKCE, dynamic client registration, JWKS-checked ID token, refresh, revoke; tokens in `data/mood_chatgpt.json`), `provider.rs` (ChatGPT plan → streamed `POST /v1/responses`; API key → chat completions + `/models`, drops `reasoning_effort` / falls back from `json_schema` when an endpoint rejects them), `analyzer.rs` (system prompt, schema, scenes → pages), `chapter.rs` (scheduling: page read first, then ahead, then behind; waits 1.5s for streaming pages; exponential backoff), `engine.rs` (2 workers, playback decision, disk cache), `server.rs` (axum, 64 MB body limit, re-encodes pages to ≤900px JPEG), `extension.rs` (extension files embedded with `include_bytes!`), `secret.rs`.
+- **Mood Tagging:** per sound (`Sound.mood`, `Sound.moodIntensity` = minimum intensity), see `session/moods.rs`. Per track, the keys whose sounds of the mood reach the highest level ≤ the scene's play, picking among those sounds only (ties: another key than last time); what already plays and still fits continues. `KeyBinding.mood`/`moodIntensity` are a derived copy (main mood of its sounds) for the web UI; old profiles migrate on load, web UI key edits are applied to sounds on save. "Proposer des ambiances" (`mood/autotag.rs`) asks the model for untagged sounds.
+- **Backend (`crates/keytomusic-core/src/mood/`):** `chatgpt.rs` (Sign in with ChatGPT: loopback OAuth + PKCE, dynamic client registration, JWKS-checked ID token, refresh, revoke; tokens in `data/mood_chatgpt.json`), `provider.rs` (ChatGPT plan → streamed `POST /v1/responses`; API key → chat completions + `/models`, drops `reasoning_effort` / falls back from `json_schema` when an endpoint rejects them), `analyzer.rs` (system prompt, schema, scenes → pages), `chapter.rs` (scheduling: page read first, then ahead, then behind; waits 1.5s for streaming pages; exponential backoff), `engine.rs` (2 workers, playback decision, disk cache), `fetch.rs` (page downloads with the reader as Referer, honest `KeyToMusic/…` User-Agent; `ts_reader` page list parser), `image.rs` (≤900px pages, ≤1600px spreads, webtoon strips cut into 1400px tiles), `server.rs` (axum, 64 MB body limit, protocol v3), `extension.rs` (extension files embedded with `include_bytes!`, `VERSION`, refreshes exported copies on start), `autotag.rs` (default moods for untagged sounds), `secret.rs`.
 - **Service (`service/mood.rs`):** `start_on_launch` (called by `Session::start` and the Tauri setup), `sync_service_config` (on config changes), `status`, `set_api_key`, `test_connection`, `export_extension`, `clear_cache`.
 - **Frontend:** `moodStore.ts` (status, presets, models, key/test/export/cache actions, playing mood), `useMoodPlayback.ts` (plays on `mood_committed`), `MoodAiSection` in SettingsModal, Sidebar `MoodIndicator`.
 - **Evaluation:** `cargo run --release -p keytomusic-core --example mood_eval -- <dataset>` (see docs/COMMANDS_REFERENCE.md).
@@ -177,7 +177,7 @@ Configurable key (Shift/Ctrl/Alt/None) that triggers momentum playback. Exact bi
 Binding uniqueness = `(keyCode, trackId)`. One key can have multiple bindings on different tracks — pressing a key triggers all its bindings simultaneously (`Promise.allSettled` for concurrent playback). Each binding has its own sound IDs list, loop mode, currentIndex, and mood tag.
 - Key reassignment: move all bindings to new key (merges by track) or move individual sound.
 - Loop modes: `off` (random, stop), `single` (loop same), `random` (avoid repeat, auto-next), `sequential` (cycle, auto-next)
-- **Mood tagging:** Each binding can be tagged with an 8-value base mood plus optional minimum intensity. Tagged bindings auto-trigger when Mood AI detects a compatible committed mood. Mood changes are undoable.
+- **Mood tagging:** Each sound carries an 8-value base mood plus optional minimum intensity (a key's mood in the web UI tags its sounds). Keys holding sounds of a committed mood auto-trigger with those sounds. Mood changes are undoable.
 - KeyGrid groups bindings by keyCode (one cell per key, shows track count indicator when >1 track, colored mood badge pill).
 - SoundDetails renders each binding separately with per-binding track selector, loop mode, mood dropdown, and delete.
 
@@ -303,7 +303,7 @@ pub struct AppState {
 
 - **Numpad+Shift:** OS sends alternate key (ArrowLeft, End) instead of "Shift+Numpad4". Workaround: use Ctrl/Alt as momentum modifier.
 - **Discovery:** Some videos have no Mix. Momentum detection imprecise for spoken word.
-- **Mood AI:** Needs a vision model API (costs per page with OpenAI). The extension handles readers that show pages as a vertical column of `<img>`; one-page-at-a-time and `<canvas>` readers are not supported. Mood tagging remains manual.
+- **Mood AI:** Needs a vision model (ChatGPT plan or API key). The extension handles ts_reader (page by page or vertical), Madara and any column of `<img>`; `<canvas>` readers are not supported.
 
 ## UI Notes
 

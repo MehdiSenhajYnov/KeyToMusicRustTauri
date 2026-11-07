@@ -1,18 +1,32 @@
 {
   "manifest_version": 3,
   "name": "KeyToMusic Mood AI",
-  "version": "2.0.0",
-  "description": "Envoie les pages du manga que tu lis à KeyToMusic, qui lance la musique qui colle à chaque scène.",
-  "permissions": ["storage"],
-  "host_permissions": ["<all_urls>"],
+  "version": "3.0.0",
+  "description": "Fait jouer à KeyToMusic la musique qui colle à la scène du manga que tu lis.",
+  "permissions": [
+    "storage",
+    "alarms",
+    "scripting",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js",
-    "scripts": ["background.js"]
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -37,7 +51,10 @@
       "id": "mood-ai@keytomusic.app",
       "strict_min_version": "128.0",
       "data_collection_permissions": {
-        "required": ["websiteActivity", "websiteContent"]
+        "required": [
+          "websiteActivity",
+          "websiteContent"
+        ]
       }
     }
   }

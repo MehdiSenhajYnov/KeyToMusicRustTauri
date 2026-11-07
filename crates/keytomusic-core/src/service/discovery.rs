@@ -89,11 +89,9 @@ pub fn has_mood_seeds(profile: &Profile, mood: BaseMood) -> bool {
 /// that mood starts from.
 fn mood_videos(profile: &Profile, mood: BaseMood) -> std::collections::HashSet<String> {
     profile
-        .key_bindings
+        .sounds
         .iter()
-        .filter(|b| b.mood == Some(mood))
-        .flat_map(|b| b.sound_ids.iter())
-        .filter_map(|id| profile.sounds.iter().find(|s| &s.id == id))
+        .filter(|s| s.mood == Some(mood))
         .filter_map(|s| match &s.source {
             SoundSource::YouTube { url, .. } => youtube::downloader::extract_video_id(url),
             SoundSource::Local { .. } => s.resolved_video_id.clone(),

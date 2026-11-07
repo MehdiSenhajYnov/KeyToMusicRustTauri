@@ -191,6 +191,21 @@ pub struct Sound {
     pub duration: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_video_id: Option<String>,
+    /// Scenes this sound fits (Mood AI). The source of truth: a key answers a
+    /// mood through its sounds, and plays only those of the scene's mood.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_mood_compat"
+    )]
+    pub mood: Option<BaseMood>,
+    /// Least intense scene the sound plays for (none: any).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "binding_intensity"
+    )]
+    pub mood_intensity: Option<MoodIntensity>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,6 +218,9 @@ pub struct KeyBinding {
     pub current_index: usize,
     #[serde(default)]
     pub name: Option<String>,
+    /// Main mood of the key's sounds, kept in sync from them (see
+    /// `session::moods`): what older versions and the web UI read. Profiles
+    /// from before moods moved to sounds are migrated from it.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

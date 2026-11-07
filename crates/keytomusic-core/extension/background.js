@@ -1,11 +1,13 @@
 // KeyToMusic Mood AI — background.
 // Relays the content script to the KeyToMusic app (http://127.0.0.1:<port>),
-// fetches images the page cannot hand over, and shows the mood on the icon.
+// fetches the rare pages the app cannot download itself (with the reader as
+// Referer), shows the mood on the icon, and keeps itself up to date with the
+// app.
 
 const ext = globalThis.browser ?? globalThis.chrome;
 
 const DEFAULTS = { port: 8765, enabled: true, sites: {} };
-const MAX_WIDTH = 900;
+const MAX_WIDTH = 1600;
 
 const MOODS = {
   epic: ['ÉPI', '#b42318'],
@@ -44,6 +46,56 @@ async function api(path, body) {
   return data;
 }
 
+// ── Staying up to date ──
+// The app rewrites the folder this extension was loaded from when it ships a
+// newer version; reloading picks the new files up.
+
+function newer(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d > 0;
+  }
+  return false;
+}
+
+let lastVersionCheck = 0;
+async function checkVersion(status) {
+  const now = Date.now();
+  if (!status) {
+    if (now - lastVersionCheck < 30000) return;
+    lastVersionCheck = now;
+    status = await api('/api/status').catch(() => null);
+  }
+  const shipped = status?.extensionVersion;
+  if (!shipped || !newer(shipped, ext.runtime.getManifest().version)) return;
+  const self = await ext.management?.getSelf?.().catch(() => null);
+  if (self && self.installType !== 'development') return;
+  console.info(`KeyToMusic Mood AI: updating to ${shipped}`);
+  ext.runtime.reload();
+}
+
+// Pages already open when the extension (re)loads get the content script too.
+async function injectIntoOpenTabs() {
+  if (!ext.scripting) return;
+  const tabs = await ext.tabs.query({ url: ['http://*/*', 'https://*/*'] }).catch(() => []);
+  for (const tab of tabs) {
+    ext.scripting.executeScript({ target: { tabId: tab.id }, files: ['content.js'] }).catch(() => {});
+  }
+}
+
+ext.runtime.onInstalled.addListener(() => {
+  injectIntoOpenTabs();
+  ext.alarms?.create('version', { periodInMinutes: 1 });
+});
+ext.runtime.onStartup?.addListener(() => ext.alarms?.create('version', { periodInMinutes: 1 }));
+ext.alarms?.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'version') checkVersion();
+});
+
+// ── Pages the app could not download ──
+
 function toBase64(buffer) {
   const bytes = new Uint8Array(buffer);
   let binary = '';
@@ -53,10 +105,45 @@ function toBase64(buffer) {
   return btoa(binary);
 }
 
-// Pages whose pixels the page cannot read (cross-origin): fetch them with the
-// extension's host permission, shrink, and return base64 JPEG.
-async function fetchImage(url) {
-  const response = await fetch(url, { credentials: 'include', signal: AbortSignal.timeout(30000) });
+// Image hosts often refuse requests without the reader's Referer, which a
+// fetch from here cannot set: a session rule adds it to this one request.
+let nextRuleId = 1;
+async function withReferer(url, referer, work) {
+  const dnr = ext.declarativeNetRequest;
+  if (!dnr || !referer) return work();
+  const id = nextRuleId++;
+  let added = false;
+  try {
+    await dnr.updateSessionRules({
+      addRules: [{
+        id,
+        priority: 1,
+        action: {
+          type: 'modifyHeaders',
+          requestHeaders: [{ header: 'referer', operation: 'set', value: referer }],
+        },
+        condition: {
+          urlFilter: `|${url.replace(/[|^*]/g, '*')}|`,
+          tabIds: [ext.tabs.TAB_ID_NONE],
+          resourceTypes: ['xmlhttprequest', 'other', 'image'],
+        },
+      }],
+    });
+    added = true;
+  } catch (error) {
+    console.warn('KeyToMusic Mood AI: no Referer rule', error);
+  }
+  try {
+    return await work();
+  } finally {
+    if (added) dnr.updateSessionRules({ removeRuleIds: [id] }).catch(() => {});
+  }
+}
+
+async function fetchImage(url, referer) {
+  const response = await withReferer(url, referer, () =>
+    fetch(url, { credentials: 'include', signal: AbortSignal.timeout(30000) }),
+  );
   if (!response.ok) throw new Error(`Image refusée par le site (HTTP ${response.status})`);
   const blob = await response.blob();
   const bitmap = await createImageBitmap(blob);
@@ -66,9 +153,11 @@ async function fetchImage(url) {
   const canvas = new OffscreenCanvas(width, height);
   canvas.getContext('2d').drawImage(bitmap, 0, 0, width, height);
   bitmap.close?.();
-  const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+  const jpeg = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.88 });
   return toBase64(await jpeg.arrayBuffer());
 }
+
+// ── Icon ──
 
 function showMood(tabId, current) {
   if (tabId === undefined) return;
@@ -77,24 +166,32 @@ function showMood(tabId, current) {
   if (style) ext.action.setBadgeBackgroundColor({ tabId, color: style[1] }).catch(() => {});
 }
 
+// ── Messages from the content script and the popup ──
+
 async function handle(message, sender) {
   const config = await settings();
   const tabId = sender.tab?.id;
   switch (message.type) {
     case 'settings':
       return config;
-    case 'status':
-      return api('/api/status');
+    case 'status': {
+      const status = await api('/api/status');
+      checkVersion(status);
+      return status;
+    }
     case 'chapter':
+      checkVersion();
       return api('/api/chapter', {
         chapter: message.chapter,
         title: message.title,
+        url: message.url,
+        pages: message.pages,
         totalPages: message.totalPages,
       });
     case 'pages':
       return api('/api/pages', { chapter: message.chapter, pages: message.pages });
     case 'fetchPage': {
-      const data = await fetchImage(message.url);
+      const data = await fetchImage(message.url, message.referer);
       return api('/api/pages', {
         chapter: message.chapter,
         pages: [{ page: message.page, data }],

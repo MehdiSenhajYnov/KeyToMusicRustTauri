@@ -50,6 +50,8 @@ pub async fn add_sound_from_youtube(
         volume: 1.0,
         duration,
         resolved_video_id: None,
+        mood: None,
+        mood_intensity: None,
     })
 }
 

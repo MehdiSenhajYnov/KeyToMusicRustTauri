@@ -10,6 +10,7 @@
 pub mod discovery;
 pub mod editor;
 pub mod keymap;
+pub mod moods;
 pub mod placement;
 pub mod rules;
 
@@ -105,6 +106,9 @@ struct Data {
     played_bindings: HashSet<(String, String)>,
     playing: HashMap<String, NowPlaying>,
     active_mood: Option<(BaseMood, MoodIntensity)>,
+    /// Key Mood AI last played per (mood, track): the next scene of that
+    /// mood picks another one when several fit.
+    mood_keys: HashMap<(BaseMood, String), String>,
     committed_mood: Option<(BaseMood, MoodIntensity)>,
     detected_mood: Option<(BaseMood, MoodIntensity)>,
     last_trigger: Option<Instant>,
@@ -418,6 +422,7 @@ impl Session {
             sound_id: sound.id.clone(),
             momentum,
             persist_single_momentum: matches!(binding.loop_mode, LoopMode::Single) && start > 0.0,
+            mood: None,
         })
     }
 
@@ -466,6 +471,27 @@ impl Session {
                     .played_bindings
                     .contains(&(binding.key_code.clone(), binding.track_id.clone()));
                 rules::select_loop_sound(binding, &sounds, played, rules::random_index)
+                    .map(|(sound, next)| (binding.clone(), sound.clone(), next, start(sound)))
+            })
+            .collect()
+    }
+
+    /// Like [`Self::plan`], each key limited to the given sounds (a mood's).
+    fn plan_mood(
+        data: &Data,
+        profile: &Profile,
+        picks: &[(KeyBinding, Vec<String>)],
+        start: impl Fn(&Sound) -> f64,
+    ) -> Vec<(KeyBinding, Sound, usize, f64)> {
+        let sounds: HashMap<&str, &Sound> =
+            profile.sounds.iter().map(|s| (s.id.as_str(), s)).collect();
+        picks
+            .iter()
+            .filter_map(|(binding, allowed)| {
+                let played = data
+                    .played_bindings
+                    .contains(&(binding.key_code.clone(), binding.track_id.clone()));
+                moods::pick_sound(binding, allowed, &sounds, played, rules::random_index)
                     .map(|(sound, next)| (binding.clone(), sound.clone(), next, start(sound)))
             })
             .collect()
@@ -607,9 +633,27 @@ impl Session {
                 }
                 Some(binding) => {
                     let mode = binding.loop_mode.clone();
-                    let plan = Self::plan(&data, profile, std::slice::from_ref(&binding), |s| {
-                        rules::loop_replay_start(s, &mode, auto_momentum, &ctx)
-                    });
+                    let start = |s: &Sound| rules::loop_replay_start(s, &mode, auto_momentum, &ctx);
+                    let plan = match ctx.mood {
+                        // A mood's loop stays within that mood's sounds.
+                        Some((mood, intensity)) => {
+                            let allowed: Vec<String> = binding
+                                .sound_ids
+                                .iter()
+                                .filter(|id| {
+                                    profile.sounds.iter().any(|s| {
+                                        &s.id == *id
+                                            && moods::of_sound(s).is_some_and(|(m, l)| {
+                                                m == mood && l.as_u8() <= intensity.as_u8()
+                                            })
+                                    })
+                                })
+                                .cloned()
+                                .collect();
+                            Self::plan_mood(&data, profile, &[(binding.clone(), allowed)], start)
+                        }
+                        None => Self::plan(&data, profile, std::slice::from_ref(&binding), start),
+                    };
                     match plan.into_iter().next() {
                         Some(p) => (profile.id.clone(), ctx, p),
                         None => {
@@ -659,37 +703,35 @@ impl Session {
             let Some(profile) = data.profile.as_ref() else {
                 return;
             };
-            // Same mood, other intensity: a track whose key does not change
-            // keeps playing instead of restarting.
-            let unchanged: Vec<(String, String)> = match data.active_mood {
-                Some((active, level)) if active == mood => {
-                    rules::select_mood_bindings(&profile.key_bindings, active, level)
-                        .into_iter()
-                        .map(|b| (b.key_code.clone(), b.track_id.clone()))
-                        .collect()
-                }
-                _ => Vec::new(),
-            };
-            let selected: Vec<KeyBinding> =
-                rules::select_mood_bindings(&profile.key_bindings, mood, intensity)
-                    .into_iter()
-                    .cloned()
-                    .collect();
+            // Per track, the keys fitting the scene (several can tie).
+            let selected = moods::select(profile, mood, intensity);
             let has_keys = !selected.is_empty();
-            let bindings: Vec<KeyBinding> = selected
-                .into_iter()
-                .filter(|b| {
-                    !unchanged
-                        .iter()
-                        .any(|(key, track)| *key == b.key_code && *track == b.track_id)
-                })
-                .collect();
+            let mut mood_keys = data.mood_keys.clone();
+            let mut picks: Vec<(KeyBinding, Vec<String>)> = Vec::new();
+            for choices in selected {
+                let track = choices[0].binding.track_id.clone();
+                // What plays on the track still fits the scene: it goes on.
+                let playing = data.playing.get(&track).map(|n| n.sound_id.clone());
+                if playing.is_some_and(|id| choices.iter().any(|c| c.sound_ids.contains(&id))) {
+                    continue;
+                }
+                // Several keys fit: another one than last time.
+                let last = mood_keys.get(&(mood, track.clone()));
+                let fresh: Vec<&moods::MoodPick> = choices
+                    .iter()
+                    .filter(|c| choices.len() == 1 || Some(&c.binding.key_code) != last)
+                    .collect();
+                let pick = fresh[rules::random_index(fresh.len())].clone();
+                mood_keys.insert((mood, track), pick.binding.key_code.clone());
+                picks.push((pick.binding, pick.sound_ids));
+            }
+            let bindings: Vec<&KeyBinding> = picks.iter().map(|(b, _)| b).collect();
             if has_keys && bindings.is_empty() {
                 data.active_mood = Some((mood, intensity));
                 data.committed_mood = Some((mood, intensity));
                 return;
             }
-            let plan = Self::plan(&data, profile, &bindings, |s| {
+            let plan = Self::plan_mood(&data, profile, &picks, |s| {
                 if auto_momentum || s.momentum > 0.0 {
                     s.momentum
                 } else {
@@ -698,6 +740,7 @@ impl Session {
             });
             let profile_id = profile.id.clone();
             let previous = data.active_mood.map(|(m, _)| m);
+            data.mood_keys = mood_keys;
             data.active_mood = Some((mood, intensity));
             if bindings.is_empty() {
                 drop(data);
@@ -723,12 +766,18 @@ impl Session {
             let session = self.clone();
             let profile_id = profile_id.clone();
             async move {
-                let update = Self::loop_update(
+                let update = match Self::loop_update(
                     &binding,
                     &sound,
                     start,
                     MomentumBehavior::PreferSoundMomentum,
-                );
+                ) {
+                    LoopUpdate::Set(ctx) => LoopUpdate::Set(LoopContext {
+                        mood: Some((mood, intensity)),
+                        ..ctx
+                    }),
+                    other => other,
+                };
                 let ok = matches!(
                     session
                         .play_on_track(&binding.track_id, &sound, start, update)
@@ -938,6 +987,8 @@ impl Session {
             let profile = data.profile.as_mut()?;
             let before = action.map(|_| ProfileSnapshot::capture(profile));
             let result = f(profile);
+            // Keys show the main mood of their sounds, whatever the edit moved.
+            moods::sync_bindings(profile);
             if let (Some(action), Some(before)) = (action, before) {
                 data.history
                     .push(action, before, ProfileSnapshot::capture(profile));

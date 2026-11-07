@@ -191,6 +191,8 @@ pub fn import_legacy_save(path: String) -> Result<Profile, String> {
                 volume: 1.0,
                 duration: 0.0, // Will be computed on load
                 resolved_video_id: None,
+                mood: None,
+                mood_intensity: None,
             };
             sound_ids.push(sound.id.clone());
             sounds.push(sound);

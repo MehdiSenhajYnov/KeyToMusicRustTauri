@@ -17,6 +17,8 @@ pub mod chapter;
 pub mod chatgpt;
 pub mod engine;
 pub mod extension;
+pub mod fetch;
+pub mod image;
 pub mod provider;
 pub mod secret;
 pub mod server;

@@ -1,9 +1,14 @@
 //! Local HTTP API used by the browser extension (127.0.0.1 only).
 //!
-//! - `GET  /api/status`   → is the app ready, which model, the chapter state
-//! - `POST /api/chapter`  → a chapter is open: `{chapter, title?, totalPages?}`
-//! - `POST /api/pages`    → page images: `{chapter, pages: [{page, data}]}` (base64)
-//! - `POST /api/position` → the page being read: `{chapter, page, totalPages?}`
+//! - `GET  /api/status`   → is the app ready, which model, the chapter state,
+//!   the extension version the app ships
+//! - `POST /api/chapter`  → a chapter is open: `{chapter, title?, totalPages?,
+//!   url?, pages?: [image URL]}`; with `pages`, the app downloads them itself
+//!   (`url` is sent as Referer). Answers `{received, wanted}`.
+//! - `POST /api/pages`    → page images the app could not download:
+//!   `{chapter, pages: [{page, data}]}` (base64)
+//! - `POST /api/position` → the page being read: `{chapter, page, totalPages?}`;
+//!   answers the mood of that page and the pages still `wanted` from the extension
 
 use std::sync::Arc;
 
@@ -11,18 +16,17 @@ use axum::extract::{DefaultBodyLimit, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use base64::Engine as _;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::engine::MoodEngine;
+use super::image;
 
 /// Bumped when the protocol changes; the extension checks it.
-pub const API_VERSION: u32 = 2;
+pub const API_VERSION: u32 = 3;
 const MAX_BODY: usize = 64 * 1024 * 1024;
-/// Width the model needs to read the bubbles; taller strips keep their height.
-const MAX_WIDTH: u32 = 900;
-const MAX_HEIGHT: u32 = 2400;
+/// Page lists longer than this are not chapters.
+const MAX_PAGES: usize = 1000;
 
 #[derive(Clone)]
 struct Api {
@@ -62,10 +66,12 @@ pub async fn start(
 }
 
 async fn status_handler(State(api): State<Api>) -> Json<Value> {
+    api.engine.touch();
     let settings = api.engine.settings();
     Json(json!({
         "app": "keytomusic",
         "apiVersion": API_VERSION,
+        "extensionVersion": super::extension::VERSION,
         "enabled": api.engine.is_running(),
         "configured": settings.as_ref().is_some_and(|s| s.is_configured()),
         "model": settings.map(|s| s.model).unwrap_or_default(),
@@ -80,19 +86,35 @@ struct ChapterRequest {
     chapter: String,
     title: Option<String>,
     total_pages: Option<u32>,
+    /// The reader page, Referer of the downloads.
+    url: Option<String>,
+    /// Image URL of every page, in reading order.
+    pages: Option<Vec<String>>,
 }
 
 async fn chapter_handler(
     State(api): State<Api>,
     Json(request): Json<ChapterRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    api.engine.touch();
     if request.chapter.trim().is_empty() {
         return Err(bad_request("chapter is required"));
     }
     let received = api
         .engine
         .open_chapter(&request.chapter, request.title, request.total_pages);
-    Ok(Json(json!({ "received": received })))
+    if let Some(pages) = request.pages.filter(|p| !p.is_empty()) {
+        if pages.len() > MAX_PAGES {
+            return Err(bad_request("too many pages"));
+        }
+        api.engine.set_sources(
+            &request.chapter,
+            pages,
+            request.url.or(Some(request.chapter.clone())),
+        );
+    }
+    let wanted = api.engine.snapshot().map(|s| s.wanted).unwrap_or_default();
+    Ok(Json(json!({ "received": received, "wanted": wanted })))
 }
 
 #[derive(Deserialize)]
@@ -112,11 +134,12 @@ async fn pages_handler(
     State(api): State<Api>,
     Json(request): Json<PagesRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    api.engine.touch();
     let decoded = tokio::task::spawn_blocking(move || {
         request
             .pages
             .into_iter()
-            .map(|upload| (upload.page, prepare_image(&upload.data)))
+            .map(|upload| (upload.page, image::prepare_base64(&upload.data)))
             .collect::<Vec<_>>()
     })
     .await
@@ -126,7 +149,7 @@ async fn pages_handler(
     let mut rejected = Vec::new();
     for (page, result) in decoded {
         match result {
-            Ok(image) => pages.push((page, Arc::new(image))),
+            Ok(tiles) => pages.push((page, image::page(tiles))),
             Err(error) => {
                 tracing::warn!("Mood AI: page {} rejected: {error}", page + 1);
                 rejected.push(page);
@@ -149,6 +172,7 @@ async fn position_handler(
     State(api): State<Api>,
     Json(request): Json<PositionRequest>,
 ) -> Result<Json<Value>, ApiError> {
+    api.engine.touch();
     let snapshot = api
         .engine
         .set_position(&request.chapter, request.page, request.total_pages);
@@ -157,67 +181,7 @@ async fn position_handler(
         "analyzed": snapshot.analyzed,
         "total": snapshot.total_pages,
         "current": snapshot.current,
+        "wanted": snapshot.wanted,
         "error": snapshot.error,
     })))
-}
-
-/// Decode, shrink to what the model needs, re-encode as base64 JPEG.
-pub fn prepare_image(data: &str) -> Result<String, String> {
-    let b64 = match data.split_once(";base64,") {
-        Some((_, rest)) => rest,
-        None => data,
-    };
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(b64.trim())
-        .map_err(|e| format!("base64 invalide : {e}"))?;
-    let image = image::load_from_memory(&bytes).map_err(|e| format!("image illisible : {e}"))?;
-    let (width, height) = (image.width(), image.height());
-    if width < 32 || height < 32 {
-        return Err("image trop petite".into());
-    }
-    let scale = (MAX_WIDTH as f32 / width as f32)
-        .min(MAX_HEIGHT as f32 / height as f32)
-        .min(1.0);
-    let image = if scale < 1.0 {
-        image.resize(
-            ((width as f32 * scale).round() as u32).max(1),
-            ((height as f32 * scale).round() as u32).max(1),
-            image::imageops::FilterType::Triangle,
-        )
-    } else {
-        image
-    };
-    let mut jpeg = Vec::new();
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 82);
-    image
-        .to_rgb8()
-        .write_with_encoder(encoder)
-        .map_err(|e| format!("encodage JPEG impossible : {e}"))?;
-    Ok(base64::engine::general_purpose::STANDARD.encode(jpeg))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn large_pages_are_shrunk_to_jpeg() {
-        let page = image::RgbImage::from_pixel(1800, 2600, image::Rgb([200, 200, 200]));
-        let mut png = Vec::new();
-        image::DynamicImage::ImageRgb8(page)
-            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
-            .unwrap();
-        let data = format!(
-            "data:image/png;base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(&png)
-        );
-        let out = prepare_image(&data).unwrap();
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(out)
-            .unwrap();
-        let back = image::load_from_memory(&bytes).unwrap();
-        assert_eq!(back.width(), 900);
-        assert_eq!(back.height(), 1300);
-        assert!(prepare_image("not base64!").is_err());
-    }
 }

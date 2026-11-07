@@ -41,3 +41,6 @@ nul
 # Tauri build
 src-tauri/gen/
 /target/
+
+# Test fixtures (the data/ rule above is for runtime data)
+!crates/keytomusic-core/tests/data/

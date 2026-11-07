@@ -88,32 +88,138 @@ impl Placement {
 
 /// Words that say "background sound" on their own.
 const AMBIENCE_WORDS: &[&str] = &[
-    "ambience", "ambiance", "ambient", "atmosphere", "atmosphère", "soundscape", "background",
-    "noise", "bruit", "asmr", "sleep", "sleeping", "hour", "hours", "heure", "heures", "1h", "2h",
-    "3h", "10h",
+    "ambience",
+    "ambiance",
+    "ambient",
+    "atmosphere",
+    "atmosphère",
+    "soundscape",
+    "background",
+    "noise",
+    "bruit",
+    "asmr",
+    "sleep",
+    "sleeping",
+    "hour",
+    "hours",
+    "heure",
+    "heures",
+    "1h",
+    "2h",
+    "3h",
+    "10h",
 ];
 /// Places and weather: an ambience when long, or "rain sounds"; otherwise
 /// just words of a song title ("City of Tears", "Fire Force").
 const PLACE_WORDS: &[&str] = &[
-    "rain", "pluie", "wind", "vent", "storm", "orage", "thunder", "tonnerre", "forest", "forêt",
-    "foret", "ocean", "océan", "sea", "mer", "waves", "vagues", "river", "rivière", "city",
-    "ville", "crowd", "foule", "night", "nuit", "fire", "feu", "fireplace", "cafe", "café",
-    "tavern", "taverne", "birds", "oiseaux", "cave", "grotte", "room",
+    "rain",
+    "pluie",
+    "wind",
+    "vent",
+    "storm",
+    "orage",
+    "thunder",
+    "tonnerre",
+    "forest",
+    "forêt",
+    "foret",
+    "ocean",
+    "océan",
+    "sea",
+    "mer",
+    "waves",
+    "vagues",
+    "river",
+    "rivière",
+    "city",
+    "ville",
+    "crowd",
+    "foule",
+    "night",
+    "nuit",
+    "fire",
+    "feu",
+    "fireplace",
+    "cafe",
+    "café",
+    "tavern",
+    "taverne",
+    "birds",
+    "oiseaux",
+    "cave",
+    "grotte",
+    "room",
 ];
 /// Words that say "sound effect" on their own.
 const EFFECT_MARKERS: &[&str] = &["sfx", "effect", "effects", "effet", "effets", "bruitage"];
 /// Things that make a sound: an effect when short.
 const EFFECT_WORDS: &[&str] = &[
-    "door", "porte", "knock", "punch", "coup", "hit", "explosion", "gunshot", "gun", "sword",
-    "épée", "epee", "scream", "cri", "laugh", "rire", "footsteps", "heartbeat", "cœur", "coeur",
-    "glass", "verre", "slash", "whoosh", "swoosh", "bell", "cloche", "click", "creak", "creaking",
-    "grincement", "growl", "roar", "magic", "magie", "spell", "impact", "crash", "jump", "saut",
-    "gasp", "notification",
+    "door",
+    "porte",
+    "knock",
+    "punch",
+    "coup",
+    "hit",
+    "explosion",
+    "gunshot",
+    "gun",
+    "sword",
+    "épée",
+    "epee",
+    "scream",
+    "cri",
+    "laugh",
+    "rire",
+    "footsteps",
+    "heartbeat",
+    "cœur",
+    "coeur",
+    "glass",
+    "verre",
+    "slash",
+    "whoosh",
+    "swoosh",
+    "bell",
+    "cloche",
+    "click",
+    "creak",
+    "creaking",
+    "grincement",
+    "growl",
+    "roar",
+    "magic",
+    "magie",
+    "spell",
+    "impact",
+    "crash",
+    "jump",
+    "saut",
+    "gasp",
+    "notification",
 ];
 const MUSIC_WORDS: &[&str] = &[
-    "ost", "soundtrack", "theme", "thème", "bgm", "music", "musique", "song", "piano", "orchestra",
-    "orchestral", "opening", "ending", "remix", "cover", "symphony", "violin", "guitar",
-    "instrumental", "lofi", "score", "suite",
+    "ost",
+    "soundtrack",
+    "theme",
+    "thème",
+    "bgm",
+    "music",
+    "musique",
+    "song",
+    "piano",
+    "orchestra",
+    "orchestral",
+    "opening",
+    "ending",
+    "remix",
+    "cover",
+    "symphony",
+    "violin",
+    "guitar",
+    "instrumental",
+    "lofi",
+    "score",
+    "suite",
 ];
 
 fn fold(c: char) -> char {
@@ -197,24 +303,63 @@ const MOOD_WORDS: [(BaseMood, &[&str]); 8] = [
     (
         BaseMood::Epic,
         &[
-            "epic", "epique", "battle", "bataille", "fight", "combat", "war", "guerre", "boss",
-            "heroic", "heroique", "victory", "victoire", "climax", "triumph",
-            "orchestral", "power",
+            "epic",
+            "epique",
+            "battle",
+            "bataille",
+            "fight",
+            "combat",
+            "war",
+            "guerre",
+            "boss",
+            "heroic",
+            "heroique",
+            "victory",
+            "victoire",
+            "climax",
+            "triumph",
+            "orchestral",
+            "power",
         ],
     ),
     (
         BaseMood::Tension,
         &[
-            "tension", "tense", "suspense", "chase", "poursuite", "danger", "thriller", "urgent",
-            "urgence", "stress", "infiltration", "stealth",
+            "tension",
+            "tense",
+            "suspense",
+            "chase",
+            "poursuite",
+            "danger",
+            "thriller",
+            "urgent",
+            "urgence",
+            "stress",
+            "infiltration",
+            "stealth",
         ],
     ),
     (
         BaseMood::Sadness,
         &[
-            "sad", "sadness", "triste", "tristesse", "sorrow", "melancholy", "melancolie",
-            "melancolique", "tears", "larmes", "grief", "lament", "farewell", "adieu", "crying",
-            "emotional", "emotion", "loss",
+            "sad",
+            "sadness",
+            "triste",
+            "tristesse",
+            "sorrow",
+            "melancholy",
+            "melancolie",
+            "melancolique",
+            "tears",
+            "larmes",
+            "grief",
+            "lament",
+            "farewell",
+            "adieu",
+            "crying",
+            "emotional",
+            "emotion",
+            "loss",
         ],
     ),
     (
@@ -227,31 +372,88 @@ const MOOD_WORDS: [(BaseMood, &[&str]); 8] = [
     (
         BaseMood::Romance,
         &[
-            "romance", "romantic", "romantique", "love", "amour", "amoureux", "kiss", "wedding",
-            "mariage", "confession", "tender", "tendre",
+            "romance",
+            "romantic",
+            "romantique",
+            "love",
+            "amour",
+            "amoureux",
+            "kiss",
+            "wedding",
+            "mariage",
+            "confession",
+            "tender",
+            "tendre",
         ],
     ),
     (
         BaseMood::Horror,
         &[
-            "horror", "horreur", "scary", "creepy", "terror", "terreur", "ghost", "fantome",
-            "zombie", "nightmare", "cauchemar", "haunted", "hante", "evil", "sinister",
-            "sinistre", "effrayant", "peur",
+            "horror",
+            "horreur",
+            "scary",
+            "creepy",
+            "terror",
+            "terreur",
+            "ghost",
+            "fantome",
+            "zombie",
+            "nightmare",
+            "cauchemar",
+            "haunted",
+            "hante",
+            "evil",
+            "sinister",
+            "sinistre",
+            "effrayant",
+            "peur",
         ],
     ),
     (
         BaseMood::Peaceful,
         &[
-            "peaceful", "peace", "calm", "calme", "relax", "relaxing", "relaxant", "serene",
-            "serein", "paisible", "tranquil", "tranquille", "chill", "lofi", "cozy", "gentle",
-            "doux", "douce", "village", "morning", "matin", "sunny", "breeze",
+            "peaceful",
+            "peace",
+            "calm",
+            "calme",
+            "relax",
+            "relaxing",
+            "relaxant",
+            "serene",
+            "serein",
+            "paisible",
+            "tranquil",
+            "tranquille",
+            "chill",
+            "lofi",
+            "cozy",
+            "gentle",
+            "doux",
+            "douce",
+            "village",
+            "morning",
+            "matin",
+            "sunny",
+            "breeze",
         ],
     ),
     (
         BaseMood::Mystery,
         &[
-            "mystery", "mysterious", "mystere", "mysterieux", "mysterieuse", "enigma", "enigme",
-            "detective", "investigation", "enquete", "secret", "unknown", "inconnu", "riddle",
+            "mystery",
+            "mysterious",
+            "mystere",
+            "mysterieux",
+            "mysterieuse",
+            "enigma",
+            "enigme",
+            "detective",
+            "investigation",
+            "enquete",
+            "secret",
+            "unknown",
+            "inconnu",
+            "riddle",
         ],
     ),
 ];
@@ -270,7 +472,12 @@ pub fn guess_mood(text: &str) -> Option<BaseMood> {
     let w = words(text);
     let mut scores: Vec<(BaseMood, usize)> = MOOD_WORDS
         .iter()
-        .map(|(mood, list)| (*mood, w.iter().filter(|x| list.contains(&x.as_str())).count()))
+        .map(|(mood, list)| {
+            (
+                *mood,
+                w.iter().filter(|x| list.contains(&x.as_str())).count(),
+            )
+        })
         .filter(|(_, score)| *score > 0)
         .collect();
     scores.sort_by(|a, b| b.1.cmp(&a.1));
@@ -345,8 +552,10 @@ fn track_for_role(p: &Profile, role: SoundRole) -> Option<String> {
         SoundRole::Ambience => ambience_track(p),
         SoundRole::Effect => effects_track(p),
         SoundRole::Music => {
-            let background: HashSet<String> =
-                ambience_track(p).into_iter().chain(effects_track(p)).collect();
+            let background: HashSet<String> = ambience_track(p)
+                .into_iter()
+                .chain(effects_track(p))
+                .collect();
             // The track holding the most music.
             let mut counts: HashMap<&str, usize> = HashMap::new();
             for b in &p.key_bindings {
@@ -407,7 +616,9 @@ pub fn style(p: &Profile, track: Option<&str>) -> Style {
 fn key_position(code: &str) -> Option<(f64, f64)> {
     const ROWS: [(&[&str], f64, f64); 5] = [
         (
-            &["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12"],
+            &[
+                "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+            ],
             -1.2,
             0.5,
         ),
@@ -420,12 +631,16 @@ fn key_position(code: &str) -> Option<(f64, f64)> {
             0.0,
         ),
         (
-            &["KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY", "KeyU", "KeyI", "KeyO", "KeyP"],
+            &[
+                "KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY", "KeyU", "KeyI", "KeyO", "KeyP",
+            ],
             1.0,
             0.5,
         ),
         (
-            &["KeyA", "KeyS", "KeyD", "KeyF", "KeyG", "KeyH", "KeyJ", "KeyK", "KeyL"],
+            &[
+                "KeyA", "KeyS", "KeyD", "KeyF", "KeyG", "KeyH", "KeyJ", "KeyK", "KeyL",
+            ],
             2.0,
             0.75,
         ),
@@ -474,7 +689,9 @@ fn free_key_near(anchors: &[String], role: SoundRole, taken: &HashSet<String>) -
     if !points.is_empty() {
         let mut best: Option<(&str, f64)> = None;
         for key in &free {
-            let Some(pos) = key_position(key) else { continue };
+            let Some(pos) = key_position(key) else {
+                continue;
+            };
             let d = points
                 .iter()
                 .map(|p| distance(*p, pos))
@@ -943,7 +1160,10 @@ mod tests {
 
     #[test]
     fn titles_name_their_mood() {
-        assert_eq!(guess_mood("Epic Battle Theme (Naruto OST)"), Some(BaseMood::Epic));
+        assert_eq!(
+            guess_mood("Epic Battle Theme (Naruto OST)"),
+            Some(BaseMood::Epic)
+        );
         assert_eq!(guess_mood("Sad Piano - Farewell"), Some(BaseMood::Sadness));
         assert_eq!(guess_mood("Musique mystérieuse"), Some(BaseMood::Mystery));
         assert_eq!(guess_mood("Bataille Combat"), Some(BaseMood::Epic));
@@ -955,8 +1175,14 @@ mod tests {
 
     #[test]
     fn titles_and_lengths_tell_what_a_sound_is() {
-        assert_eq!(guess_role(&hint("Epic Battle Theme (Naruto OST)", 180.0)), SoundRole::Music);
-        assert_eq!(guess_role(&hint("Rain sound for sleeping", 600.0)), SoundRole::Ambience);
+        assert_eq!(
+            guess_role(&hint("Epic Battle Theme (Naruto OST)", 180.0)),
+            SoundRole::Music
+        );
+        assert_eq!(
+            guess_role(&hint("Rain sound for sleeping", 600.0)),
+            SoundRole::Ambience
+        );
         assert_eq!(guess_role(&hint("Door creaking", 4.0)), SoundRole::Effect);
         assert_eq!(guess_role(&hint("Untitled", 3.0)), SoundRole::Effect);
         assert_eq!(guess_role(&hint("Untitled", 200.0)), SoundRole::Music);
@@ -967,13 +1193,34 @@ mod tests {
 
     #[test]
     fn song_titles_are_not_taken_for_effects_or_ambiences() {
-        assert_eq!(guess_role(&hint("Sword Art Online - Crossing Field", 180.0)), SoundRole::Music);
-        assert_eq!(guess_role(&hint("Hollow Knight - City of Tears", 200.0)), SoundRole::Music);
-        assert_eq!(guess_role(&hint("1 hour rain sounds", 3600.0)), SoundRole::Ambience);
-        assert_eq!(guess_role(&hint("Anime sword slash sound effect", 2.0)), SoundRole::Effect);
-        assert_eq!(guess_role(&hint("Naruto OST - Sadness and Sorrow", 180.0)), SoundRole::Music);
-        assert_eq!(guess_title_mood("Demon Slayer OST - Kamado Tanjiro no Uta"), None);
-        assert_eq!(guess_title_mood("Naruto OST - Sadness and Sorrow"), Some(BaseMood::Sadness));
+        assert_eq!(
+            guess_role(&hint("Sword Art Online - Crossing Field", 180.0)),
+            SoundRole::Music
+        );
+        assert_eq!(
+            guess_role(&hint("Hollow Knight - City of Tears", 200.0)),
+            SoundRole::Music
+        );
+        assert_eq!(
+            guess_role(&hint("1 hour rain sounds", 3600.0)),
+            SoundRole::Ambience
+        );
+        assert_eq!(
+            guess_role(&hint("Anime sword slash sound effect", 2.0)),
+            SoundRole::Effect
+        );
+        assert_eq!(
+            guess_role(&hint("Naruto OST - Sadness and Sorrow", 180.0)),
+            SoundRole::Music
+        );
+        assert_eq!(
+            guess_title_mood("Demon Slayer OST - Kamado Tanjiro no Uta"),
+            None
+        );
+        assert_eq!(
+            guess_title_mood("Naruto OST - Sadness and Sorrow"),
+            Some(BaseMood::Sadness)
+        );
     }
 
     #[test]
@@ -1056,7 +1303,10 @@ mod tests {
     fn kin_stay_on_their_row_rather_than_below() {
         let mut p = scene();
         let mut keys = Vec::new();
-        for (i, key) in ["KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY"].iter().enumerate() {
+        for (i, key) in ["KeyQ", "KeyW", "KeyE", "KeyR", "KeyT", "KeyY"]
+            .iter()
+            .enumerate()
+        {
             let mut b = binding(key, "m", &[&format!("s{}", i + 1)]);
             b.mood = Some(if *key == "KeyE" || *key == "KeyR" {
                 BaseMood::Tension
@@ -1133,9 +1383,13 @@ mod tests {
             url: "https://www.youtube.com/watch?v=seed1".into(),
             cached_path: String::new(),
         };
-        let mut music = binding("KeyQ", "m", &["s1"]);
-        music.mood = Some(BaseMood::Tension);
-        p.key_bindings = vec![music, binding("KeyA", "a", &["s2"]), binding("KeyS", "a", &["s3"])];
+        p.sounds[0].mood = Some(BaseMood::Tension);
+        p.key_bindings = vec![
+            binding("KeyQ", "m", &["s1"]),
+            binding("KeyA", "a", &["s2"]),
+            binding("KeyS", "a", &["s3"]),
+        ];
+        crate::session::moods::sync_bindings(&mut p);
         let mut h = hint("Some piece", 200.0);
         h.seed_video_ids = vec!["seed1".into()];
         let placed = place(&p, &h);
@@ -1152,8 +1406,15 @@ mod tests {
         let at = audible_start(&peaks, 10.0);
         assert!((at - 0.95).abs() < 1e-9, "{at}");
         assert_eq!(audible_start(&[0.5; 100], 10.0), 0.0);
-        assert_eq!(start_point(SoundRole::Music, &peaks, 10.0, Some(4.0), true), 4.0);
-        assert!((start_point(SoundRole::Music, &peaks, 10.0, Some(4.0), false) - 0.95).abs() < 1e-9);
-        assert!((start_point(SoundRole::Effect, &peaks, 10.0, Some(4.0), true) - 0.95).abs() < 1e-9);
+        assert_eq!(
+            start_point(SoundRole::Music, &peaks, 10.0, Some(4.0), true),
+            4.0
+        );
+        assert!(
+            (start_point(SoundRole::Music, &peaks, 10.0, Some(4.0), false) - 0.95).abs() < 1e-9
+        );
+        assert!(
+            (start_point(SoundRole::Effect, &peaks, 10.0, Some(4.0), true) - 0.95).abs() < 1e-9
+        );
     }
 }

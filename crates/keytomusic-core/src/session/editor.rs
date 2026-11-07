@@ -249,27 +249,24 @@ pub fn set_binding_mood(
     mood: Option<BaseMood>,
     intensity: Option<MoodIntensity>,
 ) {
-    if let Some(binding) = find_binding_mut(profile, key, track_id) {
-        binding.mood = mood;
-        binding.mood_intensity = mood.and(intensity);
+    // Moods live on sounds: tagging a key on a track tags its sounds.
+    let ids: Vec<String> = find_binding(profile, key, track_id)
+        .map(|b| b.sound_ids.clone())
+        .unwrap_or_default();
+    for id in ids {
+        super::moods::set_sound(profile, &id, mood, intensity);
     }
+    super::moods::sync_bindings(profile);
 }
 
-/// Tag every binding of `key` (all tracks) with a mood.
+/// Tag every sound of `key` (all tracks) with a mood.
 pub fn set_key_mood(
     profile: &mut Profile,
     key: &str,
     mood: Option<BaseMood>,
     intensity: Option<MoodIntensity>,
 ) {
-    for binding in profile
-        .key_bindings
-        .iter_mut()
-        .filter(|b| b.key_code == key)
-    {
-        binding.mood = mood;
-        binding.mood_intensity = mood.and(intensity);
-    }
+    super::moods::set_key(profile, key, mood, intensity);
 }
 
 /// Insert or move sounds within a binding's playback order.
@@ -325,6 +322,8 @@ pub fn add_sounds(
             volume: volume.clamp(0.0, 1.0),
             duration: new_sound.duration,
             resolved_video_id: None,
+            mood: None,
+            mood_intensity: None,
         });
         let key = &keys[i % keys.len()];
         match groups.iter_mut().find(|(k, _)| k == key) {
@@ -376,16 +375,15 @@ pub fn free_keys(profile: &Profile, count: usize, reserved: &HashSet<String>) ->
     keys
 }
 
-/// Give the bindings of `keys` on `track_id` that have no mood yet this one,
+/// Give the sounds of `keys` on `track_id` that have no mood yet this one,
 /// so freshly added sounds answer Mood AI right away.
-pub fn tag_untagged_bindings(profile: &mut Profile, keys: &[String], track_id: &str, mood: BaseMood) {
-    for binding in profile
-        .key_bindings
-        .iter_mut()
-        .filter(|b| b.track_id == track_id && keys.contains(&b.key_code) && b.mood.is_none())
-    {
-        binding.mood = Some(mood);
-    }
+pub fn tag_untagged_bindings(
+    profile: &mut Profile,
+    keys: &[String],
+    track_id: &str,
+    mood: BaseMood,
+) {
+    super::moods::tag_untagged(profile, keys, track_id, mood);
 }
 
 pub fn least_used_track(profile: &Profile) -> Option<String> {
@@ -550,6 +548,8 @@ pub(crate) mod tests {
             volume: 1.0,
             duration: 10.0,
             resolved_video_id: None,
+            mood: None,
+            mood_intensity: None,
         }
     }
 
@@ -609,19 +609,23 @@ pub(crate) mod tests {
         p.key_bindings.push(binding("KeyQ", "t2", &["s3"]));
         let reserved: HashSet<String> = ["KeyE".to_string()].into();
         assert_eq!(free_keys(&p, 3, &reserved), ["KeyW", "KeyR", "KeyT"]);
-        assert_eq!(free_keys(&p, 500, &HashSet::new()).len(), super::super::keymap::AUTO_KEY_ORDER.len() - 3);
+        assert_eq!(
+            free_keys(&p, 500, &HashSet::new()).len(),
+            super::super::keymap::AUTO_KEY_ORDER.len() - 3
+        );
     }
 
     #[test]
     fn tagging_keeps_existing_moods() {
         let mut p = profile();
-        p.key_bindings[0].mood = Some(BaseMood::Comedy);
-        p.key_bindings.push(binding("KeyC", "t1", &["s3"]));
+        p.sounds.push(sound("s4"));
+        set_key_mood(&mut p, "KeyA", Some(BaseMood::Comedy), None);
+        p.key_bindings.push(binding("KeyC", "t1", &["s4"]));
         let keys = ["KeyA".to_string(), "KeyC".to_string()];
         tag_untagged_bindings(&mut p, &keys, "t1", BaseMood::Epic);
         assert_eq!(p.key_bindings[0].mood, Some(BaseMood::Comedy));
         assert_eq!(p.key_bindings[2].mood, Some(BaseMood::Epic));
-        assert_eq!(p.key_bindings[1].mood, None);
+        assert_eq!(p.sounds[3].mood, Some(BaseMood::Epic));
     }
 
     #[test]

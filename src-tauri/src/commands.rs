@@ -79,8 +79,15 @@ async fn blocking<T: Send + 'static>(
 }
 
 #[tauri::command]
-pub async fn save_profile(profile: Profile) -> Result<(), String> {
-    blocking(move || storage::save_profile(&profile)).await
+pub async fn save_profile(mut profile: Profile) -> Result<(), String> {
+    blocking(move || {
+        // The web UI tags keys; moods live on sounds.
+        if let Ok(previous) = storage::load_profile(profile.id.clone()) {
+            keytomusic_core::session::moods::apply_key_edits(&previous, &mut profile);
+        }
+        storage::save_profile(&profile)
+    })
+    .await
 }
 
 #[tauri::command]

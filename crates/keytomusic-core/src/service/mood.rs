@@ -32,6 +32,11 @@ pub struct MoodServiceStatus {
     /// What stops Mood AI (port taken, key refused…), if anything.
     pub error: Option<String>,
     pub chapter: Option<ChapterSnapshot>,
+    /// Seconds since the browser extension last talked to the app (None:
+    /// not since launch).
+    pub extension_seen_secs: Option<u64>,
+    /// Folder of the extension copy the app keeps up to date, and its version.
+    pub extension_dir: Option<PathBuf>,
 }
 
 /// Where users review and limit what apps use of their ChatGPT plan.
@@ -98,6 +103,8 @@ pub fn status(state: &AppState) -> MoodServiceStatus {
         configured: settings.is_configured(),
         error: api_error.or_else(|| state.mood.blocking_error()),
         chapter: state.mood.snapshot(),
+        extension_seen_secs: state.mood.extension_seen().map(|d| d.as_secs()),
+        extension_dir: extension::installed_dir(),
         base_url: settings.base_url,
         model: settings.model,
     }
@@ -137,6 +144,14 @@ fn stop_api(state: &AppState) {
 
 async fn start(state: &AppState, config: &AppConfig) -> Result<(), String> {
     state.mood.configure(provider_settings(config));
+    // The extension the user loaded follows the app's version (it reloads
+    // itself when it sees the newer one).
+    let refreshed = tokio::task::spawn_blocking(extension::refresh_installed)
+        .await
+        .unwrap_or_default();
+    for dir in refreshed {
+        tracing::info!("Mood AI: extension updated in {}", dir.display());
+    }
     if !state.mood.is_running() {
         state.mood.start(state.event_sink());
     }

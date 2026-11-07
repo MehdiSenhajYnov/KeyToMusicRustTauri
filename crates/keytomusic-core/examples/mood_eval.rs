@@ -14,15 +14,14 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Instant;
 
 use base64::Engine as _;
 use keytomusic_core::mood::analyzer::{self, PageLabel};
 use keytomusic_core::mood::chapter::{Chapter, Next};
 use keytomusic_core::mood::chatgpt;
+use keytomusic_core::mood::image;
 use keytomusic_core::mood::provider::{AuthMode, ProviderSettings};
-use keytomusic_core::mood::server::prepare_image;
 use keytomusic_core::types::{BaseMood, MoodImageDetail};
 use serde_json::{json, Value};
 
@@ -52,8 +51,8 @@ async fn run_chapter(
     for (index, file) in files.iter().enumerate() {
         let bytes = std::fs::read(dir.join(file)).map_err(|e| e.to_string())?;
         let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-        let image = prepare_image(&b64)?;
-        chapter.add_page(index as u32, Arc::new(image), long_ago);
+        let tiles = image::prepare_base64(&b64)?;
+        chapter.add_page(index as u32, image::page(tiles), long_ago);
     }
     loop {
         match chapter.next_batch(Instant::now()) {

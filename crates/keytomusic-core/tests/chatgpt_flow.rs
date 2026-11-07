@@ -261,7 +261,7 @@ async fn signing_in_with_chatgpt_pays_requests_with_the_plan() {
     );
 
     // 4. A chapter batch goes through the Responses API, streamed.
-    let image = Arc::new("AAAA".to_string());
+    let image = keytomusic_core::mood::image::page(vec!["AAAA".to_string()]);
     let pages = vec![(0, image.clone()), (1, image.clone()), (2, image)];
     let labels = analyzer::analyze(&settings, &pages, &BatchContext::default())
         .await

@@ -115,13 +115,18 @@ pub fn load_profile(id: String) -> Result<Profile, String> {
     let contents =
         fs::read_to_string(&profile_path).map_err(|e| format!("Failed to read profile: {}", e))?;
 
-    serde_json::from_str(&contents).map_err(|e| format!("Failed to parse profile: {}", e))
+    let mut profile: Profile =
+        serde_json::from_str(&contents).map_err(|e| format!("Failed to parse profile: {}", e))?;
+    // Moods moved from keys to sounds.
+    crate::session::moods::migrate(&mut profile);
+    Ok(profile)
 }
 
 pub fn save_profile(profile: &Profile) -> Result<(), String> {
     let _guard = PROFILE_WRITES.lock().unwrap_or_else(|e| e.into_inner());
     // Discovery owns these fields and may have updated them since the UI loaded.
     let mut merged = profile.clone();
+    crate::session::moods::sync_bindings(&mut merged);
     if let Ok(existing) = load_profile(profile.id.clone()) {
         merged.disliked_videos = existing.disliked_videos;
         for sound in &mut merged.sounds {
